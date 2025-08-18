@@ -20,11 +20,23 @@ typing-extensions = "^4.12.0"
 pytest = "^8.3.0"
 ruff = "^0.7.0"
 mypy = "^1.13.0"
+pre-commit = "^4.3.0"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
+# Exclude common directories
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    "venv",
+]
+
+[tool.ruff.lint]
 # Enable select rules
 select = [
     "E",    # pycodestyle errors
@@ -40,16 +52,6 @@ select = [
 
 ignore = [
     "E501",  # line too long - handled by formatter
-]
-
-# Exclude common directories
-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    ".venv",
-    "venv",
 ]
 
 [tool.ruff.format]
