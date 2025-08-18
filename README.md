@@ -68,9 +68,35 @@ poetry run pytest -q
 
 ## Code Quality
 
+### Manual Checks
+
 Ensure code quality with:
 
 ```bash
-poetry run ruff .
+# Linting with ruff
+poetry run ruff check .
+poetry run ruff format .
+
+# Type checking with strict mypy
 poetry run mypy .
+
+# Run all tests
+poetry run pytest -q
 ```
+
+### Pre-commit Hooks (Optional)
+
+Install pre-commit hooks to automatically check code quality before commits:
+
+```bash
+# Install pre-commit
+poetry add --group dev pre-commit
+
+# Install the git hook scripts
+poetry run pre-commit install
+
+# (Optional) Run against all files
+poetry run pre-commit run --all-files
+```
+
+The pre-commit hooks will automatically run ruff linting/formatting and other checks on staged files before each commit.
