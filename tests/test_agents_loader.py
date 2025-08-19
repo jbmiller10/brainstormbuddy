@@ -1,7 +1,9 @@
 """Unit tests for agent specification loader and materializer."""
 
+import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -197,6 +199,23 @@ def test_load_agent_specs_nonexistent_package() -> None:
     assert "nonexistent.package.path" in str(exc_info.value)
 
 
+def test_load_agent_specs_single_module() -> None:
+    """Test loading specs from a single module name (no dots)."""
+    # This tests the single module path (len(module_parts) == 1)
+    specs = load_agent_specs("app")
+    # Should not raise an error, even if no .md files found
+    assert isinstance(specs, list)
+
+
+def test_load_agent_specs_deep_nested_package() -> None:
+    """Test loading specs from a deeply nested package path."""
+    # This tests the multi-part module path (else branch)
+    specs = load_agent_specs("app.llm.agentspecs")
+    assert len(specs) == 3
+    spec_names = {spec.name for spec in specs}
+    assert "researcher" in spec_names
+
+
 def test_materialize_agents_creates_structure(tmp_path: Path) -> None:
     """Test that materialize_agents creates the correct directory structure."""
     agents_dir = materialize_agents(tmp_path, "app.llm.agentspecs")
@@ -285,6 +304,114 @@ def test_agent_spec_is_frozen() -> None:
 
     with pytest.raises(AttributeError):
         spec.name = "modified"  # type: ignore
+
+
+def test_load_agent_specs_with_non_iterable_package() -> None:
+    """Test error handling when package files can't be iterated."""
+    # Mock a package where iterdir raises AttributeError
+    with patch("app.llm.agents.resources") as mock_resources:
+        # Mock the files function to return an object without iterdir
+        mock_pkg = MagicMock()
+        # Make iterdir raise AttributeError when accessed
+        mock_pkg.iterdir.side_effect = AttributeError("No iterdir method")
+
+        # Setup the mock chain for single module
+        mock_resources.files.return_value = mock_pkg
+
+        with pytest.raises(ValueError) as exc_info:
+            load_agent_specs("testpkg")
+
+        assert "Cannot iterate files in package" in str(exc_info.value)
+        assert "testpkg" in str(exc_info.value)
+
+
+def test_load_agent_specs_with_invalid_spec_file() -> None:
+    """Test that invalid spec files raise appropriate errors during loading."""
+    # Create a temporary package with an invalid spec
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        # Add the temp dir to sys.path so we can import from it
+        sys.path.insert(0, str(tmp_path))
+
+        try:
+            # Create a test package
+            pkg_dir = tmp_path / "test_invalid_pkg"
+            pkg_dir.mkdir()
+            (pkg_dir / "__init__.py").touch()
+
+            # Create an invalid spec file
+            invalid_spec = """---
+name: test
+description: [unclosed bracket
+---
+Content
+"""
+            (pkg_dir / "invalid.md").write_text(invalid_spec)
+
+            # This should raise a ValueError about invalid YAML
+            with pytest.raises(ValueError) as exc_info:
+                load_agent_specs("test_invalid_pkg")
+
+            assert "Error loading agent spec from invalid.md" in str(exc_info.value)
+
+        finally:
+            # Clean up sys.path
+            sys.path.remove(str(tmp_path))
+
+
+def test_materialize_agents_handles_mixed_specs() -> None:
+    """Test that materialize_agents handles packages with mixed valid/invalid specs."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        # Add temp dir to sys.path
+        sys.path.insert(0, str(tmp_path))
+
+        try:
+            # Create a test package with only valid specs
+            pkg_dir = tmp_path / "test_valid_pkg"
+            pkg_dir.mkdir()
+            (pkg_dir / "__init__.py").touch()
+
+            # Create multiple valid specs
+            spec1 = """---
+name: agent1
+description: First agent
+---
+
+First prompt.
+"""
+            (pkg_dir / "agent1.md").write_text(spec1)
+
+            spec2 = """---
+name: agent2
+description: Second agent
+tools:
+  - Read
+---
+
+Second prompt.
+"""
+            (pkg_dir / "agent2.md").write_text(spec2)
+
+            # Create a non-markdown file that should be ignored
+            (pkg_dir / "readme.txt").write_text("This is not a spec")
+
+            # Materialize the specs
+            agents_dir = materialize_agents(tmp_path / "output", "test_valid_pkg")
+
+            # Check that both valid specs were materialized
+            md_files = list(agents_dir.glob("*.md"))
+            assert len(md_files) == 2
+
+            # Verify filenames are preserved
+            filenames = {f.name for f in md_files}
+            assert "agent1.md" in filenames
+            assert "agent2.md" in filenames
+
+        finally:
+            sys.path.remove(str(tmp_path))
 
 
 def test_roundtrip_integrity() -> None:
