@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import load_settings
+from app.llm.agents import AgentSpec
 
 
 @dataclass(frozen=True)
@@ -91,3 +92,49 @@ def get_policy(stage: str) -> SessionPolicy:
         raise ValueError(f"Unknown stage: {stage}. Valid stages are: {', '.join(policies.keys())}")
 
     return policies[stage]
+
+
+def merge_agent_policy(stage_policy: SessionPolicy, agent_spec: AgentSpec | None) -> SessionPolicy:
+    """
+    Merge agent tools with stage policy, respecting denies.
+
+    The merge logic:
+    1. Start with stage's allowed tools
+    2. If agent provided, intersect with agent's requested tools
+    3. Remove any tools that are in stage's denied_tools
+    4. Global denies always win
+
+    Args:
+        stage_policy: The base stage policy
+        agent_spec: Optional agent specification with tool requests
+
+    Returns:
+        New SessionPolicy with merged tool permissions
+    """
+    # Start with stage's allowed tools
+    allowed = set(stage_policy.allowed_tools)
+
+    # If agent provided, intersect with agent's requested tools
+    if agent_spec and agent_spec.tools:
+        agent_tools = set(agent_spec.tools)
+        allowed = allowed.intersection(agent_tools)
+
+    # Remove any denied tools (denies always win)
+    denied = set(stage_policy.denied_tools)
+    final_allowed = allowed - denied
+
+    # Convert back to sorted list for consistency
+    final_allowed_list = sorted(final_allowed)
+
+    # Create new policy with merged tools
+    return SessionPolicy(
+        stage=stage_policy.stage,
+        system_prompt_path=stage_policy.system_prompt_path,
+        allowed_tools=final_allowed_list,
+        denied_tools=stage_policy.denied_tools,
+        write_roots=stage_policy.write_roots,
+        permission_mode=stage_policy.permission_mode,
+        web_tools_allowed=[
+            tool for tool in stage_policy.web_tools_allowed if tool in final_allowed_list
+        ],
+    )
