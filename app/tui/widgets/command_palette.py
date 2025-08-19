@@ -72,17 +72,20 @@ class CommandPalette(Container):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle command submission."""
         command = event.value.lower().strip()
-        self.execute_command(command)
+        # Run the async command execution
+        self.app.run_worker(self.execute_command(command))
         self.hide()
 
-    def execute_command(self, command: str) -> None:
+    async def execute_command(self, command: str) -> None:
         """Execute the selected command."""
         from textual import log
 
         log(f"Executing command: {command}")
 
         # Import here to avoid circular imports
+        from app.llm.sessions import get_policy
         from app.tui.views.session import SessionController
+        from app.tui.widgets.agent_selector import AgentSelector
         from app.tui.widgets.session_viewer import SessionViewer
 
         # Get the session viewer from the main screen
@@ -93,8 +96,18 @@ class CommandPalette(Container):
 
         # Handle clarify command
         if command == "clarify":
+            # Get stage policy for tool info
+            policy = get_policy("clarify")
+
+            # Show agent selector
+            agents = controller.get_available_agents()
+            selector = AgentSelector(agents, policy.allowed_tools, policy.denied_tools)
+            selected_agent = await self.app.push_screen_wait(selector)
+
             # Run the async task using Textual's worker system
-            self.app.run_worker(controller.start_clarify_session(), exclusive=True)
+            self.app.run_worker(
+                controller.start_clarify_session(agent=selected_agent), exclusive=True
+            )
 
         # Handle kernel command
         elif command == "kernel":
@@ -102,9 +115,17 @@ class CommandPalette(Container):
             project_slug = "default-project"
             initial_idea = "Build a better brainstorming app"
 
+            # Get stage policy for tool info
+            policy = get_policy("kernel")
+
+            # Show agent selector
+            agents = controller.get_available_agents()
+            selector = AgentSelector(agents, policy.allowed_tools, policy.denied_tools)
+            selected_agent = await self.app.push_screen_wait(selector)
+
             # Run the async task using Textual's worker system
             self.app.run_worker(
-                controller.start_kernel_session(project_slug, initial_idea),
+                controller.start_kernel_session(project_slug, initial_idea, agent=selected_agent),
                 exclusive=True,
             )
 
