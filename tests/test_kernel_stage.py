@@ -259,3 +259,148 @@ Refined idea with more details.
     assert "+Refined idea with more details." in diff_text
     assert "+2. New question added" in diff_text
     assert "+## Success Criteria" in diff_text
+
+
+@pytest.mark.asyncio
+async def test_session_controller_generate_workstreams_with_kernel(tmp_path: Path) -> None:
+    """Test generating workstreams with existing kernel file."""
+    # Create mock viewer
+    viewer = Mock(spec=SessionViewer)
+    viewer.clear = Mock()
+    viewer.write = Mock()
+    viewer.app = Mock()
+
+    controller = SessionController(viewer)
+    controller.project_slug = "test-project"
+
+    # Create project directory with kernel file
+    project_dir = tmp_path / "projects" / "test-project"
+    project_dir.mkdir(parents=True)
+
+    kernel_content = """## Core Concept
+A revolutionary task management system.
+
+## Key Questions
+1. How to optimize workflows?
+"""
+    kernel_file = project_dir / "kernel.md"
+    kernel_file.write_text(kernel_content)
+
+    # Mock the modal to return approval
+    viewer.app.push_screen_wait = AsyncMock(return_value=True)
+
+    # Mock the actual batch creation and file operations
+    with patch("app.tui.views.session.Path") as mock_path:
+        # Make Path() return paths relative to tmp_path
+        def path_side_effect(arg: str) -> Path:
+            if arg == "projects":
+                return tmp_path / "projects"
+            return Path(arg)
+
+        mock_path.side_effect = path_side_effect
+        mock_path.return_value = tmp_path / "projects"
+
+        # Mock division operator for Path objects
+        def path_div(self: Path, other: str) -> Path:
+            return self / other if isinstance(self, Path) else tmp_path / "projects" / other
+
+        mock_path.__truediv__ = path_div
+
+        await controller.generate_workstreams("test-project")
+
+    # Verify viewer was updated
+    viewer.clear.assert_called_once()
+    assert viewer.write.call_count >= 3  # Title, project, and status messages
+
+    # Verify modal was shown
+    viewer.app.push_screen_wait.assert_called_once()
+
+    # Verify files were created
+    assert (project_dir / "outline.md").exists()
+    assert (project_dir / "elements").exists()
+    assert (project_dir / "elements" / "requirements.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_session_controller_generate_workstreams_without_kernel(tmp_path: Path) -> None:
+    """Test generating workstreams without existing kernel file."""
+    # Create mock viewer
+    viewer = Mock(spec=SessionViewer)
+    viewer.clear = Mock()
+    viewer.write = Mock()
+    viewer.app = Mock()
+
+    controller = SessionController(viewer)
+
+    # Create project directory without kernel
+    project_dir = tmp_path / "projects" / "new-project"
+    project_dir.mkdir(parents=True)
+
+    # Mock the modal to return approval
+    viewer.app.push_screen_wait = AsyncMock(return_value=True)
+
+    with patch("app.tui.views.session.Path") as mock_path:
+        # Make Path() return paths relative to tmp_path
+        def path_side_effect(arg: str) -> Path:
+            if arg == "projects":
+                return tmp_path / "projects"
+            return Path(arg)
+
+        mock_path.side_effect = path_side_effect
+
+        await controller.generate_workstreams("new-project")
+
+    # Verify viewer was updated
+    viewer.clear.assert_called_once()
+    assert viewer.write.call_count >= 3
+
+    # Verify files were created (without kernel summary)
+    assert (project_dir / "outline.md").exists()
+    outline_content = (project_dir / "outline.md").read_text()
+    assert "## From Kernel" not in outline_content  # No kernel section
+
+
+@pytest.mark.asyncio
+async def test_session_controller_generate_workstreams_rejection() -> None:
+    """Test rejecting workstream generation."""
+    # Create mock viewer
+    viewer = Mock(spec=SessionViewer)
+    viewer.clear = Mock()
+    viewer.write = Mock()
+    viewer.app = Mock()
+
+    controller = SessionController(viewer)
+
+    # Mock the modal to return rejection (False)
+    viewer.app.push_screen_wait = AsyncMock(return_value=False)
+
+    await controller.generate_workstreams("test-project")
+
+    # Verify rejection message was written
+    viewer.clear.assert_called_once()
+    calls = [str(call) for call in viewer.write.call_args_list]
+    assert any("rejected" in call.lower() for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_session_controller_generate_workstreams_error(tmp_path: Path) -> None:  # noqa: ARG001
+    """Test error handling in workstream generation."""
+    # Create mock viewer
+    viewer = Mock(spec=SessionViewer)
+    viewer.clear = Mock()
+    viewer.write = Mock()
+    viewer.app = Mock()
+
+    controller = SessionController(viewer)
+
+    # Mock create_workstream_batch to raise an error
+    with patch("app.tui.views.session.create_workstream_batch") as mock_create:
+        mock_create.side_effect = PermissionError("Cannot create files")
+
+        await controller.generate_workstreams("test-project")
+
+    # Verify error message was written
+    viewer.clear.assert_called_once()
+    calls = [str(call) for call in viewer.write.call_args_list]
+    assert any("Error generating workstreams" in str(call) for call in calls)
+    assert any("No files were modified" in str(call) for call in calls)
