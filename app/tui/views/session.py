@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.files.diff import apply_patch, compute_patch, generate_diff_preview
 from app.files.workstream import create_workstream_batch
+from app.llm.agents import AgentSpec, load_agent_specs
 from app.llm.claude_client import (
     ClaudeClient,
     Event,
@@ -11,7 +12,7 @@ from app.llm.claude_client import (
     MessageDone,
     TextDelta,
 )
-from app.llm.sessions import get_policy
+from app.llm.sessions import get_policy, merge_agent_policy
 from app.tui.widgets.kernel_approval import KernelApprovalModal
 from app.tui.widgets.session_viewer import SessionViewer
 
@@ -31,20 +32,38 @@ class SessionController:
         self.current_stage: str | None = None
         self.pending_kernel_content: str | None = None
         self.project_slug: str | None = None
+        # Cache loaded agent specs
+        self._agent_specs: list[AgentSpec] | None = None
+        self.selected_agent: AgentSpec | None = None
+
+    def get_available_agents(self) -> list[AgentSpec]:
+        """
+        Get available agent specifications.
+
+        Returns:
+            List of loaded agent specs
+        """
+        if self._agent_specs is None:
+            self._agent_specs = load_agent_specs("app.llm.agentspecs")
+        return self._agent_specs
 
     async def start_clarify_session(
-        self, initial_prompt: str = "I want to build a better app"
+        self, initial_prompt: str = "I want to build a better app", agent: AgentSpec | None = None
     ) -> None:
         """
         Start a clarify stage session.
 
         Args:
             initial_prompt: The user's initial brainstorming idea
+            agent: Optional agent specification to use
         """
         self.current_stage = "clarify"
+        self.selected_agent = agent
 
-        # Get clarify policy
+        # Get clarify policy and merge with agent if provided
         policy = get_policy("clarify")
+        if agent:
+            policy = merge_agent_policy(policy, agent)
 
         # Read system prompt
         system_prompt_content = ""
@@ -54,6 +73,11 @@ class SessionController:
         # Clear viewer and show starting message
         self.viewer.clear()
         self.viewer.write("[bold cyan]Starting Clarify Session[/bold cyan]\n")
+        if agent:
+            self.viewer.write(f"[dim]Using agent: {agent.name}[/dim]\n")
+        self.viewer.write(
+            f"[dim]Allowed tools: {', '.join(policy.allowed_tools) if policy.allowed_tools else 'None'}[/dim]\n"
+        )
         self.viewer.write("[dim]Generating clarifying questions...[/dim]\n\n")
 
         # Stream events from client
@@ -70,7 +94,10 @@ class SessionController:
             self.viewer.write(f"\n[red]Error during session: {e}[/red]")
 
     async def start_kernel_session(
-        self, project_slug: str, initial_idea: str = "Build a better app"
+        self,
+        project_slug: str,
+        initial_idea: str = "Build a better app",
+        agent: AgentSpec | None = None,
     ) -> None:
         """
         Start a kernel stage session.
@@ -78,13 +105,17 @@ class SessionController:
         Args:
             project_slug: The project identifier/slug
             initial_idea: The user's refined brainstorming idea
+            agent: Optional agent specification to use
         """
         self.current_stage = "kernel"
         self.project_slug = project_slug
         self.pending_kernel_content = ""
+        self.selected_agent = agent
 
-        # Get kernel policy
+        # Get kernel policy and merge with agent if provided
         policy = get_policy("kernel")
+        if agent:
+            policy = merge_agent_policy(policy, agent)
 
         # Read system prompt
         system_prompt_content = ""
@@ -95,6 +126,11 @@ class SessionController:
         self.viewer.clear()
         self.viewer.write("[bold cyan]Starting Kernel Session[/bold cyan]\n")
         self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n")
+        if agent:
+            self.viewer.write(f"[dim]Using agent: {agent.name}[/dim]\n")
+        self.viewer.write(
+            f"[dim]Allowed tools: {', '.join(policy.allowed_tools) if policy.allowed_tools else 'None'}[/dim]\n"
+        )
         self.viewer.write("[dim]Generating kernel document...[/dim]\n\n")
 
         # Stream events from client
