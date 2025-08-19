@@ -2,9 +2,10 @@
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
+from textual.widgets import Footer, Header
 
-from app.tui.views import MainScreen
-from app.tui.widgets import CommandPalette
+from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
 
 
 class BrainstormBuddyApp(App[None]):
@@ -12,7 +13,20 @@ class BrainstormBuddyApp(App[None]):
 
     TITLE = "Brainstorm Buddy"
     SUB_TITLE = "Terminal-first brainstorming app"
-    CSS_PATH = None  # Use default CSS from widgets
+
+    DEFAULT_CSS = """
+    Screen {
+        background: $surface;
+    }
+
+    Header {
+        background: $primary;
+    }
+
+    Horizontal {
+        height: 1fr;
+    }
+    """
 
     BINDINGS = [
         Binding(":", "command_palette", "Command", priority=True),
@@ -21,7 +35,13 @@ class BrainstormBuddyApp(App[None]):
 
     def compose(self) -> ComposeResult:
         """Compose the app with three-pane layout."""
-        yield MainScreen()
+        yield Header()
+        with Horizontal():
+            yield FileTree()
+            yield SessionViewer()
+            yield ContextPanel()
+        yield Footer()
+        yield CommandPalette()
 
     def action_command_palette(self) -> None:
         """Show the command palette."""

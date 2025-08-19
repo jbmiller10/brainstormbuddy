@@ -24,17 +24,17 @@ class FileTree(Tree[str]):
         root.expand()
 
         # Add placeholder project structure
-        project1 = root.add("📁 example-project", expand=False)
+        project1 = root.add("📁 example-project", expand=True)
         project1.add_leaf("📄 kernel.md")
         project1.add_leaf("📄 outline.md")
         project1.add_leaf("📄 project.yaml")
 
-        elements = project1.add("📁 elements", expand=False)
+        elements = project1.add("📁 elements", expand=True)
         elements.add_leaf("📄 workstream-1.md")
         elements.add_leaf("📄 workstream-2.md")
 
-        research = project1.add("📁 research", expand=False)
+        research = project1.add("📁 research", expand=True)
         research.add_leaf("📄 findings.md")
 
-        exports = project1.add("📁 exports", expand=False)
+        exports = project1.add("📁 exports", expand=True)
         exports.add_leaf("📄 synthesis.md")
