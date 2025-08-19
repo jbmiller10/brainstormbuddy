@@ -9,35 +9,30 @@ A Python terminal-first brainstorming app that guides through: Capture → Clari
 ## Requirements
 
 - Python 3.11+
-- Poetry or uv
+- uv (recommended package manager)
 
 ## Installation
 
-### With Poetry
-
 ```bash
-poetry install
-```
-
-### With uv
-
-```bash
-uv venv
+# Install dependencies (uv creates venv automatically)
 uv pip install -r requirements.txt
+
+# For development, also install dev dependencies
+uv pip install -r requirements-dev.txt
 ```
 
 ## CLI Commands
 
 ### Generate Claude Configuration
 
-The `materialize-claude` command creates a `.claude` configuration directory at any specified location. This is useful for setting up Claude Code to work with your project with proper permissions and formatting hooks.
+The `materialize_claude.py` script creates a `.claude` configuration directory at any specified location. This is useful for setting up Claude Code to work with your project with proper permissions and formatting hooks.
 
 ```bash
 # Generate Claude config at a specific path
-poetry run bb materialize-claude --dest /path/to/project
+uv run materialize_claude.py /path/to/project
 
 # Example: Generate config in /tmp/test
-poetry run bb materialize-claude --dest /tmp/test
+uv run materialize_claude.py /tmp/test
 ```
 
 After generating the configuration, you can run Claude Code in that directory:
@@ -53,17 +48,17 @@ For development work, create throwaway configurations that don't clutter your re
 
 ```bash
 # Option 1: Generate in temporary directory
-poetry run bb materialize-claude --dest /tmp/claude-dev
+uv run materialize_claude.py /tmp/claude-dev
 cd /tmp/claude-dev
 claude
 # Cleanup: rm -rf /tmp/claude-dev
 
 # Option 2: Use --cwd to work from repo while config is elsewhere
-poetry run bb materialize-claude --dest /tmp/claude-dev
+uv run materialize_claude.py /tmp/claude-dev
 claude --cwd /tmp/claude-dev
 
 # Option 3: Generate in repo root but clean up after (ensure .claude is git-ignored)
-poetry run bb materialize-claude --dest .
+uv run materialize_claude.py .
 claude
 # Cleanup: rm -rf .claude
 ```
@@ -75,36 +70,31 @@ The generated configuration includes:
 
 ## Development Commands
 
+All commands use `uv run` which automatically manages the virtual environment.
+
 ### Run linting
 
 ```bash
-poetry run ruff .
+uv run ruff check .
+uv run ruff format .
 ```
 
 ### Run type checking
 
 ```bash
-poetry run mypy .
+uv run mypy . --strict
 ```
 
 ### Run tests
 
 ```bash
-poetry run pytest -q
+uv run pytest -q
 ```
 
 ### Run the TUI application
 
 ```bash
-poetry run python -m app.tui.app
-```
-
-### Alternative: With uv (optional)
-
-```bash
-uv venv
-uv pip install -r requirements.txt
-python -m app.tui.app
+uv run python -m app.tui.app
 ```
 
 ## Development
@@ -114,14 +104,14 @@ This project uses:
 - **Pydantic** for data validation
 - **SQLite with FTS** for research storage
 - **Markdown** for document processing
-- **Poetry** for dependency management
+- **uv** for dependency management
 
 ## Testing
 
 Run the test suite with:
 
 ```bash
-poetry run pytest -q
+uv run pytest -q
 ```
 
 ## Code Quality
@@ -132,14 +122,14 @@ Ensure code quality with:
 
 ```bash
 # Linting with ruff
-poetry run ruff check .
-poetry run ruff format .
+uv run ruff check .
+uv run ruff format .
 
 # Type checking with strict mypy
-poetry run mypy .
+uv run mypy . --strict
 
 # Run all tests
-poetry run pytest -q
+uv run pytest -q
 ```
 
 ### Pre-commit Hooks (Optional)
@@ -147,14 +137,11 @@ poetry run pytest -q
 Install pre-commit hooks to automatically check code quality before commits:
 
 ```bash
-# Install pre-commit
-poetry add --group dev pre-commit
-
 # Install the git hook scripts
-poetry run pre-commit install
+uv run pre-commit install
 
 # (Optional) Run against all files
-poetry run pre-commit run --all-files
+uv run pre-commit run --all-files
 ```
 
 The pre-commit hooks will automatically run ruff linting/formatting and other checks on staged files before each commit.

@@ -1,33 +1,28 @@
-"""Command-line interface for Brainstorm Buddy."""
+#!/usr/bin/env python3
+"""Standalone script to materialize Claude configuration."""
 
 import sys
 from pathlib import Path
 
-import typer
-
 from app.permissions.settings_writer import write_project_settings
 
-app = typer.Typer(
-    name="bb",
-    help="Brainstorm Buddy CLI - Tools for managing brainstorming sessions and Claude configs",
-)
 
+def main() -> None:
+    """Main entry point for materialize-claude command."""
+    if len(sys.argv) != 2:
+        print("Usage: materialize_claude.py <destination_path>")
+        print("Example: uv run materialize_claude.py /tmp/claude-work")
+        sys.exit(1)
 
-@app.command()
-def materialize_claude(
-    dest: str = typer.Option(..., "--dest", "-d", help="Destination path for .claude config"),
-) -> None:
-    """Generate Claude configuration at the specified destination."""
+    dest = Path(sys.argv[1]).resolve()
+
     try:
-        # Convert string to Path
-        dest_path = Path(dest).resolve()
-
         # Ensure the destination directory exists
-        dest_path.mkdir(parents=True, exist_ok=True)
+        dest.mkdir(parents=True, exist_ok=True)
 
         # Generate the Claude configuration
         config_dir = write_project_settings(
-            repo_root=dest_path,
+            repo_root=dest,
             config_dir_name=".claude",
             import_hooks_from="app.permissions.hooks_lib",
         )
@@ -37,7 +32,7 @@ def materialize_claude(
         print(f"  Hooks: {config_dir}/hooks/")
         print()
         print("To use this configuration with Claude Code:")
-        print(f"  cd {dest_path}")
+        print(f"  cd {dest}")
         print("  claude")
 
     except Exception as e:
@@ -46,4 +41,4 @@ def materialize_claude(
 
 
 if __name__ == "__main__":
-    app()
+    main()

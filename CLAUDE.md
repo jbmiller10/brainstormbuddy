@@ -24,7 +24,7 @@ This repo does **not** maintain a `.claude` directory at the root. Instead, we g
 
 ```bash
 # Generate a temporary Claude config
-poetry run bb materialize-claude --dest /tmp/claude-work
+uv run materialize_claude.py /tmp/claude-work
 
 # Run Claude Code from that directory
 cd /tmp/claude-work
@@ -41,7 +41,7 @@ rm -rf /tmp/claude-work
 
 ```bash
 # Generate in repo root (ensure .claude is in .gitignore)
-poetry run bb materialize-claude --dest .
+uv run materialize_claude.py .
 
 # Work with Claude Code normally
 claude
@@ -59,24 +59,31 @@ rm -rf .claude
 
 ## Commands
 
-Use **Python 3.11+**.
+Use **Python 3.11+** and **uv** for dependency management.
 
-### With Poetry (default)
+### Setup
 
 ```bash
-poetry install
-poetry run ruff .
-poetry run mypy .
-poetry run pytest -q
-poetry run python -m app.tui.app   # run the TUI
+# Install dependencies (uv creates venv automatically)
+uv pip install -r requirements.txt
+uv pip install -r requirements-dev.txt
 ```
 
-### With uv (optional)
+### Development Commands
 
 ```bash
-uv venv
-uv pip install -r requirements.txt
-python -m app.tui.app
+# Run linting
+uv run ruff check .
+uv run ruff format .
+
+# Run type checking
+uv run mypy . --strict
+
+# Run tests
+uv run pytest -q
+
+# Run the TUI application
+uv run python -m app.tui.app
 ```
 
 ## Repository structure (target)

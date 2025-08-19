@@ -1,4 +1,4 @@
-import pytest
+from typing import Any
 
 from app.core.config import Settings, load_settings
 
@@ -11,7 +11,7 @@ def test_default_settings() -> None:
     assert settings.enable_web_tools is False
 
 
-def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_override(monkeypatch: Any) -> None:
     monkeypatch.setenv("BRAINSTORMBUDDY_DATA_DIR", "custom_projects")
     monkeypatch.setenv("BRAINSTORMBUDDY_EXPORTS_DIR", "custom_exports")
     monkeypatch.setenv("BRAINSTORMBUDDY_LOG_DIR", "custom_logs")
@@ -24,7 +24,7 @@ def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.enable_web_tools is True
 
 
-def test_partial_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_partial_env_override(monkeypatch: Any) -> None:
     monkeypatch.setenv("BRAINSTORMBUDDY_DATA_DIR", "override_data")
 
     settings = Settings()
