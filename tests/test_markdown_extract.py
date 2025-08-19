@@ -295,3 +295,88 @@ Default header extraction test.
     # Should use "## Core Concept" by default
     result = extract_section_paragraph(md)
     assert result == "Default header extraction test."
+
+
+def test_extract_code_block_first_no_prose() -> None:
+    """Test when code block is first content with no prose."""
+    md = """
+## Core Concept
+
+```python
+def example():
+    # This is inside the code block
+    return 42
+```
+
+This text comes after the code block.
+
+## Next Section
+"""
+    result = extract_section_paragraph(md, "## Core Concept")
+    assert result == "This text comes after the code block."
+    assert "def example" not in result
+    assert "return 42" not in result
+
+
+def test_extract_code_block_with_tilde_fences() -> None:
+    """Test code blocks with tilde fences."""
+    md = """
+## Core Concept
+
+Some prose content here.
+
+~~~javascript
+console.log("Hello");
+console.log("World");
+~~~
+
+More text after code.
+
+## Next Section
+"""
+    result = extract_section_paragraph(md, "## Core Concept")
+    assert result == "Some prose content here."
+    assert "console.log" not in result
+    assert "Hello" not in result
+
+
+def test_extract_nested_code_blocks() -> None:
+    """Test multiple code blocks in sequence."""
+    md = """
+## Core Concept
+
+```python
+# First code block
+x = 1
+```
+
+```javascript
+// Second code block
+let y = 2;
+```
+
+This is the actual prose content.
+
+## Next Section
+"""
+    result = extract_section_paragraph(md, "## Core Concept")
+    assert result == "This is the actual prose content."
+    assert "x = 1" not in result
+    assert "let y = 2" not in result
+
+
+def test_extract_code_block_no_blank_before() -> None:
+    """Test code block immediately after prose with no blank line."""
+    md = """
+## Core Concept
+This is the prose content.
+```python
+def ignored():
+    pass
+```
+This should not be included.
+"""
+    result = extract_section_paragraph(md, "## Core Concept")
+    assert result == "This is the prose content."
+    assert "def ignored" not in result
+    assert "This should not be included" not in result

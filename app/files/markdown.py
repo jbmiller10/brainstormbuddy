@@ -50,6 +50,7 @@ def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str |
     lines = md.split("\n")
     header_found = False
     content_lines: list[str] = []
+    in_code_fence = False
 
     for _i, line in enumerate(lines):
         stripped = line.strip()
@@ -66,6 +67,19 @@ def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str |
             continue
 
         # We've found the header, now collect content
+        # Check for code fence markers (``` or ~~~)
+        if stripped.startswith(("```", "~~~")):
+            # If we already have prose content, stop extraction before the fence
+            if content_lines:
+                break
+            # Otherwise, toggle the code fence flag to skip the code block
+            in_code_fence = not in_code_fence
+            continue
+
+        # Skip lines inside code fences
+        if in_code_fence:
+            continue
+
         # Check if we've hit another header of same or higher level
         if stripped.startswith("#"):
             current_level = len(stripped) - len(stripped.lstrip("#"))
