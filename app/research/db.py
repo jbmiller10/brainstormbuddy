@@ -77,39 +77,43 @@ class ResearchDB:
         """)
 
         # Create FTS5 virtual table for full-text search
+        # Note: We don't use content=findings because it causes FTS5 to read
+        # directly from the findings table, bypassing our trigger updates
         await self.conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS findings_fts USING fts5(
                 id UNINDEXED,
                 claim,
-                evidence,
-                content=findings,
-                content_rowid=rowid
+                evidence
             )
         """)
 
         # Create triggers to keep FTS in sync
+        # Drop old triggers first to ensure clean state
+        await self.conn.execute("DROP TRIGGER IF EXISTS findings_ai")
+        await self.conn.execute("DROP TRIGGER IF EXISTS findings_ad")
+        await self.conn.execute("DROP TRIGGER IF EXISTS findings_au")
+
         await self.conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS findings_ai
+            CREATE TRIGGER findings_ai
             AFTER INSERT ON findings BEGIN
-                INSERT INTO findings_fts(rowid, id, claim, evidence)
-                VALUES (new.rowid, new.id, new.claim, new.evidence);
+                INSERT INTO findings_fts(id, claim, evidence)
+                VALUES (new.id, new.claim, new.evidence);
             END
         """)
 
         await self.conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS findings_ad
+            CREATE TRIGGER findings_ad
             AFTER DELETE ON findings BEGIN
-                DELETE FROM findings_fts WHERE rowid = old.rowid;
+                DELETE FROM findings_fts WHERE id = old.id;
             END
         """)
 
-        # Fixed: FTS5 requires DELETE + INSERT for updates, not UPDATE
         await self.conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS findings_au
+            CREATE TRIGGER findings_au
             AFTER UPDATE ON findings BEGIN
-                DELETE FROM findings_fts WHERE rowid = old.rowid;
-                INSERT INTO findings_fts(rowid, id, claim, evidence)
-                VALUES (new.rowid, new.id, new.claim, new.evidence);
+                DELETE FROM findings_fts WHERE id = old.id;
+                INSERT INTO findings_fts(id, claim, evidence)
+                VALUES (new.id, new.claim, new.evidence);
             END
         """)
 
