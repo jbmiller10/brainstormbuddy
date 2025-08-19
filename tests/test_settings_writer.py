@@ -92,7 +92,7 @@ def test_hook_files_have_content(tmp_path: Path) -> None:
         format_content = f.read()
     assert "PostToolUse" in format_content
     assert "from app.permissions.hooks_lib.format_md import _format_markdown_text" in format_content
-    assert "def main():" in format_content
+    assert "def main() -> None:" in format_content
 
 
 def test_hook_files_are_executable(tmp_path: Path) -> None:
