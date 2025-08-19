@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from app.research.db import ResearchDB
 
 
-async def test_fts_sync():
+async def test_fts_sync() -> None:
     """Test that FTS properly syncs with CRUD operations."""
     db_path = Path("/tmp/test_fts_sync.db")
     db_path.unlink(missing_ok=True)
