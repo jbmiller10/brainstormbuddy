@@ -348,23 +348,48 @@ class ResearchDB:
                 "retrieved_at": row[8],
             }
 
-    async def search_fts(self, query: str, limit: int = 100) -> list[dict[str, Any]]:
-        """Search findings using full-text search on claim and evidence."""
+    async def search_fts(
+        self,
+        query: str,
+        workstream: str | None = None,
+        source_type: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Search findings using full-text search on claim and evidence.
+
+        Returns results with rank (bm25 score) where lower values indicate better matches.
+        Optional filters for workstream and source_type can be applied.
+        """
         if not self.conn:
             raise RuntimeError("Database not connected")
 
+        # Build WHERE clause with optional filters
+        conditions = ["findings_fts MATCH ?"]
+        params: list[Any] = [query]
+
+        if workstream:
+            conditions.append("f.workstream = ?")
+            params.append(workstream)
+        if source_type:
+            conditions.append("f.source_type = ?")
+            params.append(source_type)
+
+        where_clause = " AND ".join(conditions)
+        params.append(limit)
+
         results = []
         async with self.conn.execute(
-            """
+            f"""
             SELECT f.id, f.url, f.source_type, f.claim, f.evidence,
-                   f.confidence, f.tags, f.workstream, f.retrieved_at
+                   f.confidence, f.tags, f.workstream, f.retrieved_at,
+                   bm25(findings_fts) AS rank
             FROM findings_fts fts
             JOIN findings f ON fts.id = f.id
-            WHERE findings_fts MATCH ?
+            WHERE {where_clause}
             ORDER BY bm25(findings_fts)
             LIMIT ?
-            """,
-            (query, limit),
+            """,  # nosec B608
+            params,
         ) as cursor:
             async for row in cursor:
                 results.append(
@@ -378,6 +403,7 @@ class ResearchDB:
                         "tags": json.loads(row[6]) if row[6] else [],
                         "workstream": row[7],
                         "retrieved_at": row[8],
+                        "rank": row[9],
                     }
                 )
 

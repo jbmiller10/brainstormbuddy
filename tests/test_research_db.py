@@ -158,11 +158,11 @@ async def test_get_finding(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_search_fts(tmp_path: Path) -> None:
-    """Test full-text search functionality."""
+    """Test full-text search functionality with rank."""
     db_path = tmp_path / "test.db"
 
     async with ResearchDB(db_path) as db:
-        # Insert test data
+        # Insert test data with overlapping terms for rank testing
         await db.insert_finding(
             url="https://example1.com",
             source_type="web",
@@ -187,22 +187,43 @@ async def test_search_fts(tmp_path: Path) -> None:
             confidence=0.95,
         )
 
-        # Search for "learning"
+        # Insert a finding with "learning" appearing multiple times for rank testing
+        await db.insert_finding(
+            url="https://example4.com",
+            source_type="paper",
+            claim="Learning about machine learning and deep learning",
+            evidence="Learning systems use learning algorithms for learning tasks",
+            confidence=0.8,
+        )
+
+        # Search for "learning" and verify rank field exists
         results = await db.search_fts("learning")
-        assert len(results) == 2
-        claims = [r["claim"] for r in results]
-        assert "Machine learning improves performance" in claims
-        assert "Deep learning requires large datasets" in claims
+        assert len(results) == 3
+
+        # Verify all results have rank field
+        for result in results:
+            assert "rank" in result
+            assert isinstance(result["rank"], int | float)
+
+        # Verify ordering by rank (bm25 returns negative values, more negative = better)
+        # The finding with multiple "learning" occurrences should rank first
+        ranks = [r["rank"] for r in results]
+        assert ranks == sorted(ranks), "Results should be sorted by rank (ascending)"
+
+        # The document with most "learning" occurrences should be first
+        assert "Learning about machine learning" in results[0]["claim"]
 
         # Search for "Python"
         results = await db.search_fts("Python")
         assert len(results) == 1
         assert results[0]["claim"] == "Python is popular for data science"
+        assert "rank" in results[0]
 
         # Search in evidence
         results = await db.search_fts("accuracy")
         assert len(results) == 1
         assert "95% accuracy" in results[0]["evidence"]
+        assert "rank" in results[0]
 
         # Search with no matches
         results = await db.search_fts("nonexistent")
@@ -211,6 +232,87 @@ async def test_search_fts(tmp_path: Path) -> None:
         # Test limit
         results = await db.search_fts("learning", limit=1)
         assert len(results) == 1
+        assert "rank" in results[0]
+
+
+@pytest.mark.asyncio
+async def test_search_fts_with_filters(tmp_path: Path) -> None:
+    """Test full-text search with optional workstream and source_type filters."""
+    db_path = tmp_path / "test.db"
+
+    async with ResearchDB(db_path) as db:
+        # Insert test data with various workstreams and source types
+        await db.insert_finding(
+            url="https://example1.com",
+            source_type="web",
+            claim="Machine learning research findings",
+            evidence="ML evidence for research",
+            confidence=0.9,
+            workstream="research",
+        )
+
+        await db.insert_finding(
+            url="https://example2.com",
+            source_type="paper",
+            claim="Machine learning design patterns",
+            evidence="ML patterns for design",
+            confidence=0.85,
+            workstream="design",
+        )
+
+        await db.insert_finding(
+            url="https://example3.com",
+            source_type="web",
+            claim="Deep learning research methodology",
+            evidence="DL research methods",
+            confidence=0.8,
+            workstream="research",
+        )
+
+        await db.insert_finding(
+            url="https://example4.com",
+            source_type="paper",
+            claim="Learning algorithms in production",
+            evidence="Production learning systems",
+            confidence=0.95,
+            workstream="research",
+        )
+
+        # Test search with workstream filter
+        results = await db.search_fts("learning", workstream="research")
+        assert len(results) == 3  # Three findings match "learning" and workstream="research"
+        for result in results:
+            assert result["workstream"] == "research"
+            assert "rank" in result
+
+        # Verify rank ordering is maintained with filters
+        ranks = [r["rank"] for r in results]
+        assert ranks == sorted(ranks), "Results should be sorted by rank even with filters"
+
+        # Test search with source_type filter
+        results = await db.search_fts("learning", source_type="paper")
+        assert len(results) == 2  # Two paper findings match "learning"
+        for result in results:
+            assert result["source_type"] == "paper"
+            assert "rank" in result
+
+        # Test search with both filters
+        results = await db.search_fts("learning", workstream="research", source_type="paper")
+        assert len(results) == 1  # Only one finding matches all criteria
+        assert results[0]["workstream"] == "research"
+        assert results[0]["source_type"] == "paper"
+        assert results[0]["claim"] == "Learning algorithms in production"
+        assert "rank" in results[0]
+
+        # Test filter with no matches
+        results = await db.search_fts("learning", workstream="nonexistent")
+        assert len(results) == 0
+
+        # Test that filters work with limit
+        results = await db.search_fts("learning", workstream="research", limit=1)
+        assert len(results) == 1
+        assert results[0]["workstream"] == "research"
+        assert "rank" in results[0]
 
 
 @pytest.mark.asyncio
