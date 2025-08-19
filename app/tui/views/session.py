@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from app.files.diff import apply_patch, compute_patch, generate_diff_preview
+from app.files.markdown import extract_section_paragraph
 from app.files.workstream import create_workstream_batch
 from app.llm.agents import AgentSpec, load_agent_specs
 from app.llm.claude_client import (
@@ -284,18 +285,9 @@ class SessionController:
             kernel_summary = None
             kernel_path = project_path / "kernel.md"
             if kernel_path.exists():
-                # Extract summary from kernel (simplified - in production would parse properly)
                 kernel_content = kernel_path.read_text()
-                # Look for Core Concept section
-                if "## Core Concept" in kernel_content:
-                    lines = kernel_content.split("\n")
-                    for i, line in enumerate(lines):
-                        if line.strip() == "## Core Concept" and i + 2 < len(lines):
-                            # Get the next non-empty line after the header
-                            kernel_summary = lines[i + 2].strip()
-                            if kernel_summary.startswith("*") and kernel_summary.endswith("*"):
-                                kernel_summary = kernel_summary[1:-1]
-                            break
+                # Use robust extraction utility to get the Core Concept paragraph
+                kernel_summary = extract_section_paragraph(kernel_content, "## Core Concept")
 
             # Create batch with all workstream documents
             self.viewer.write("[dim]Creating batch with outline and element documents...[/dim]\n")

@@ -28,45 +28,67 @@ The content is organized as follows:
 ## Notes
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Files matching these patterns are excluded: *lock, *.md, *repomix*
+- Files matching these patterns are excluded: *.md, *.lock, *repomix*, tests/*
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
 ```
+.github/
+  workflows/
+    ci.yml
+    release.yml
+    security.yml
+  dependabot.yml
 app/
   core/
     config.py
   files/
     atomic.py
+    batch.py
     diff.py
+    markdown.py
     mdio.py
     scaffold.py
+    workstream.py
   llm/
+    agentspecs/
+      __init__.py
+      architect.md
+      critic.md
+      researcher.md
     prompts/
       clarify.md
       kernel.md
       outline.md
       research.md
       synthesis.md
+    agents.py
     claude_client.py
     sessions.py
   permissions/
+    hooks_lib/
+      __init__.py
+      format_md.py
+      io.py
     settings_writer.py
   tui/
     views/
       __init__.py
       main_screen.py
+      session.py
     widgets/
       __init__.py
       command_palette.py
       context_panel.py
       file_tree.py
+      kernel_approval.py
       session_viewer.py
     __init__.py
     app.py
   __init__.py
+  cli.py
 brainstormbuddy/
   .obsidian/
     app.json
@@ -75,23 +97,217 @@ brainstormbuddy/
     graph.json
     workspace.json
   Welcome.md
-tests/
-  test_config.py
-  test_diff.py
-  test_format_md_hook.py
-  test_llm_fake.py
-  test_mdio.py
-  test_policies.py
-  test_scaffold.py
-  test_settings_writer.py
-  test_smoke.py
-  test_tui_imports.py
 .gitignore
 .pre-commit-config.yaml
+codecov.yml
+materialize_claude.py
 pyproject.toml
+requirements-dev.txt
+requirements.txt
 ```
 
 # Files
+
+## File: .github/workflows/release.yml
+````yaml
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Create virtual environment and install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install ruff mypy pytest build
+
+    - name: Run full test suite
+      run: |
+        source .venv/bin/activate
+        ruff check .
+        mypy . --strict
+        pytest -q
+
+    - name: Build package
+      run: |
+        source .venv/bin/activate
+        python -m build
+
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+
+    - name: Publish to PyPI
+      if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha')
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        source .venv/bin/activate
+        uv pip install twine
+        twine upload dist/*
+````
+
+## File: .github/workflows/security.yml
+````yaml
+name: Security
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Create virtual environment and install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+
+    - name: Check for dependency vulnerabilities with pip-audit
+      run: |
+        uv pip install pip-audit
+        source .venv/bin/activate
+        pip-audit
+
+    - name: Run Bandit security linter
+      run: |
+        uv pip install bandit[toml]
+        source .venv/bin/activate
+        bandit -r app/ -ll
+
+    - name: Check for outdated dependencies
+      run: |
+        uv pip list --outdated
+      continue-on-error: true
+
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+````
+
+## File: .github/dependabot.yml
+````yaml
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+````
+
+## File: app/core/config.py
+````python
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    data_dir: str = "projects"
+    exports_dir: str = "exports"
+    log_dir: str = "logs"
+    enable_web_tools: bool = False
+
+    class Config:
+        env_prefix = "BRAINSTORMBUDDY_"
+
+
+@lru_cache(maxsize=1)
+def load_settings() -> Settings:
+    return Settings()
+````
 
 ## File: app/files/atomic.py
 ````python
@@ -164,404 +380,222 @@ def atomic_write_text(path: Path | str, text: str) -> None:
         raise
 ````
 
-## File: tests/test_format_md_hook.py
+## File: app/files/markdown.py
 ````python
-import importlib.util
+"""Markdown parsing and extraction utilities."""
 
-SPEC = importlib.util.spec_from_file_location("format_md", ".claude/hooks/format_md.py")
-fmt = importlib.util.module_from_spec(SPEC)  # type: ignore
-assert SPEC and SPEC.loader
-SPEC.loader.exec_module(fmt)
-
-def test_format_markdown_text_basic() -> None:
-    raw = "#  Title\\n\\n-  item\\n-  item2"
-    out = fmt._format_markdown_text(raw)
-    assert isinstance(out, str)
-    assert "# Title" in out  # normalized header
-````
-
-## File: tests/test_mdio.py
-````python
-"""Unit tests for Markdown I/O utilities."""
-
-import tempfile
-from pathlib import Path
-
-import pytest
-
-from app.files.mdio import read_md, write_md
+import re
 
 
-def test_write_md_creates_nested_directories() -> None:
-    """Test that write_md creates parent directories if they don't exist."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Write to a deeply nested path that doesn't exist
-        nested_path = Path(tmpdir) / "level1" / "level2" / "level3" / "test.md"
-        content = "# Test Content\n\nThis is a test."
-
-        write_md(nested_path, content)
-
-        # Verify file was created and content is correct
-        assert nested_path.exists()
-        assert read_md(nested_path) == content
-
-
-def test_write_md_overwrites_existing_file() -> None:
-    """Test that write_md correctly overwrites an existing file."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "test.md"
-
-        # Write initial content
-        initial_content = "# Initial\n\nFirst version."
-        write_md(file_path, initial_content)
-        assert read_md(file_path) == initial_content
-
-        # Overwrite with new content
-        new_content = "# Updated\n\nSecond version."
-        write_md(file_path, new_content)
-        assert read_md(file_path) == new_content
-
-
-def test_unicode_content_roundtrip() -> None:
-    """Test that Unicode content is correctly written and read back."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "unicode_test.md"
-
-        # Test various Unicode characters
-        unicode_content = "# Unicode Test æøå—π🙂\n\n" + \
-                         "Chinese: 你好世界\n" + \
-                         "Japanese: こんにちは\n" + \
-                         "Arabic: مرحبا بالعالم\n" + \
-                         "Emoji: 🚀 🌟 ✨\n" + \
-                         "Math: ∑ ∫ √ ∞ π"
-
-        write_md(file_path, unicode_content)
-        read_content = read_md(file_path)
-
-        assert read_content == unicode_content
-
-
-def test_idempotent_write_same_content() -> None:
-    """Test that writing the same content twice is idempotent."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "idempotent_test.md"
-        content = "# Idempotent Test\n\nSame content written twice."
-
-        # First write
-        write_md(file_path, content)
-        first_content = read_md(file_path)
-
-        # Second write with identical content
-        write_md(file_path, content)
-        second_content = read_md(file_path)
-
-        # Content should be identical
-        assert first_content == second_content == content
-        # File should exist and have been replaced (mtime may differ)
-        assert file_path.exists()
-
-
-def test_read_md_with_string_path() -> None:
-    """Test that read_md works with string paths."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "test.md"
-        content = "# String Path Test"
-
-        write_md(str(file_path), content)
-        assert read_md(str(file_path)) == content
-
-
-def test_write_md_with_string_path() -> None:
-    """Test that write_md works with string paths."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "test.md"
-        content = "# String Path Test"
-
-        write_md(str(file_path), content)
-        assert read_md(file_path) == content
-
-
-def test_read_md_nonexistent_file() -> None:
-    """Test that read_md raises FileNotFoundError for non-existent files."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        nonexistent_path = Path(tmpdir) / "nonexistent.md"
-
-        with pytest.raises(FileNotFoundError):
-            read_md(nonexistent_path)
-
-
-def test_empty_file_roundtrip() -> None:
-    """Test that empty files are handled correctly."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "empty.md"
-
-        write_md(file_path, "")
-        assert read_md(file_path) == ""
-
-
-def test_large_content_roundtrip() -> None:
-    """Test that large content is correctly written and read back."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "large.md"
-
-        # Create a large content string (1MB+)
-        large_content = "# Large File\n\n" + ("This is a line of text. " * 100 + "\n") * 5000
-
-        write_md(file_path, large_content)
-        read_content = read_md(file_path)
-
-        assert read_content == large_content
-
-
-def test_special_characters_in_content() -> None:
-    """Test that special characters are preserved."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "special.md"
-
-        special_content = "# Special Characters\n\n" + \
-                         "Quotes: \"double\" 'single'\n" + \
-                         "Backslash: \\ \\\\ \\\\\\\n" + \
-                         "Tabs: \t\t\tindented\n" + \
-                         "NULL char exclusion test (should work without null)"
-
-        write_md(file_path, special_content)
-        assert read_md(file_path) == special_content
-
-
-def test_preserve_exact_content() -> None:
-    """Test that content with no trailing newline is preserved exactly."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        file_path = Path(tmpdir) / "exact.md"
-
-        # Content with no trailing newline
-        content_no_newline = "# No trailing newline"
-        write_md(file_path, content_no_newline)
-        assert read_md(file_path) == content_no_newline
-
-        # Content with trailing newline
-        content_with_newline = "# With trailing newline\n"
-        write_md(file_path, content_with_newline)
-        assert read_md(file_path) == content_with_newline
-````
-
-## File: app/core/config.py
-````python
-from functools import lru_cache
-
-from pydantic_settings import BaseSettings
-
-
-class Settings(BaseSettings):
-    data_dir: str = "projects"
-    exports_dir: str = "exports"
-    log_dir: str = "logs"
-    enable_web_tools: bool = False
-
-    class Config:
-        env_prefix = "BRAINSTORMBUDDY_"
-
-
-@lru_cache(maxsize=1)
-def load_settings() -> Settings:
-    return Settings()
-````
-
-## File: app/files/mdio.py
-````python
-"""Markdown file I/O utilities."""
-
-from pathlib import Path
-
-from app.files.atomic import atomic_write_text
-
-
-def read_md(path: Path | str) -> str:
+def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str | None:
     """
-    Read a markdown file and return its contents.
+    Extract the first non-empty paragraph after a specific header.
+
+    Finds the specified header (case-insensitive, trimmed) and returns the first
+    non-empty paragraph content following it. Stops at the next header of same
+    or higher level. Strips markdown emphasis markers.
 
     Args:
-        path: Path to the markdown file
+        md: The markdown content to parse
+        header: The header to search for (e.g., "## Core Concept")
 
     Returns:
-        Contents of the markdown file
+        The first non-empty paragraph after the header with emphasis stripped,
+        or None if the section is not found or has no content.
 
-    Raises:
-        FileNotFoundError: If the file doesn't exist
-        IOError: If there's an error reading the file
+    Examples:
+        >>> md = '''
+        ... ## Core Concept
+        ... *A revolutionary approach to task management*
+        ...
+        ... ## Other Section
+        ... '''
+        >>> extract_section_paragraph(md)
+        'A revolutionary approach to task management'
+
+        >>> md = '''
+        ... ## CORE CONCEPT
+        ... First paragraph here.
+        ... '''
+        >>> extract_section_paragraph(md)
+        'First paragraph here.'
     """
-    file_path = Path(path) if isinstance(path, str) else path
+    if not md or not header:
+        return None
 
-    with open(file_path, encoding="utf-8") as f:
-        return f.read()
+    # Parse header level from the header string (count # symbols)
+    header_level = len(header) - len(header.lstrip("#"))
+    if header_level == 0:
+        return None
 
+    # Clean header text for comparison
+    header_text = header.lstrip("#").strip().lower()
 
-def write_md(path: Path | str, text: str) -> None:
-    """
-    Write text to a markdown file.
+    lines = md.split("\n")
+    header_found = False
+    content_lines: list[str] = []
 
-    Args:
-        path: Path to the markdown file
-        text: Content to write to the file
+    for _i, line in enumerate(lines):
+        stripped = line.strip()
 
-    Raises:
-        IOError: If there's an error writing the file
-    """
-    file_path = Path(path) if isinstance(path, str) else path
+        # Check if this is our target header (case-insensitive)
+        if not header_found:
+            if stripped.startswith("#"):
+                # Extract level and text from current line
+                current_level = len(stripped) - len(stripped.lstrip("#"))
+                current_text = stripped.lstrip("#").strip().lower()
 
-    atomic_write_text(file_path, text)
+                if current_level == header_level and current_text == header_text:
+                    header_found = True
+            continue
+
+        # We've found the header, now collect content
+        # Check if we've hit another header of same or higher level
+        if stripped.startswith("#"):
+            current_level = len(stripped) - len(stripped.lstrip("#"))
+            if current_level <= header_level:
+                # Stop - we've reached the next section
+                break
+
+        # Skip empty lines at the beginning
+        if not stripped and not content_lines:
+            continue
+
+        # If we have content and hit an empty line, consider paragraph complete
+        if not stripped and content_lines:
+            break
+
+        # Add non-empty line to content
+        if stripped:
+            content_lines.append(stripped)
+
+    if not content_lines:
+        return None
+
+    # Join lines and strip markdown emphasis
+    paragraph = " ".join(content_lines)
+
+    # Remove bold markers (**text** or __text__)
+    paragraph = re.sub(r"\*\*(.+?)\*\*", r"\1", paragraph)
+    paragraph = re.sub(r"__(.+?)__", r"\1", paragraph)
+
+    # Remove italic markers (*text* or _text_)
+    # Be careful not to remove standalone asterisks (e.g., bullet points)
+    paragraph = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", paragraph)
+    paragraph = re.sub(r"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)", r"\1", paragraph)
+
+    return paragraph.strip()
 ````
 
-## File: app/files/scaffold.py
+## File: app/llm/agentspecs/__init__.py
 ````python
-"""Project scaffold utility for creating standardized project structures."""
+"""Agent specifications for Claude Code subagents."""
+````
 
-from datetime import datetime
-from pathlib import Path
-
-import yaml
-
-from app.files.atomic import atomic_write_text
-
-
-def scaffold_project(slug: str, base: Path | str = "projects") -> Path:
-    """
-    Create a project directory structure with seed files.
-
-    Args:
-        slug: Project identifier (will be used as directory name)
-        base: Base directory for projects (default: "projects")
-
-    Returns:
-        Path to the created/existing project directory
-
-    The function is idempotent - running it multiple times with the same
-    slug will not cause errors or duplicate content.
-    """
-    base_path = Path(base) if isinstance(base, str) else base
-    project_path = base_path / slug
-
-    # Create directory structure
-    _create_directories(project_path)
-
-    # Create seed files
-    _create_project_yaml(project_path / "project.yaml", slug)
-    _create_kernel_md(project_path / "kernel.md", slug)
-    _create_outline_md(project_path / "outline.md", slug)
-
-    return project_path
-
-
-def _create_directories(project_path: Path) -> None:
-    """Create the required directory structure."""
-    directories = [
-        project_path,
-        project_path / "elements",
-        project_path / "research",
-        project_path / "exports",
-    ]
-
-    for directory in directories:
-        directory.mkdir(parents=True, exist_ok=True)
-
-
-def _create_project_yaml(file_path: Path, slug: str) -> None:
-    """Create project.yaml with basic metadata if it doesn't exist."""
-    if file_path.exists():
-        return
-
-    project_data = {
-        "name": slug,
-        "created": datetime.now().isoformat(),
-        "stage": "capture",
-        "description": f"Brainstorming project: {slug}",
-        "tags": [],
-        "metadata": {
-            "version": "1.0.0",
-            "format": "brainstormbuddy-project",
-        },
-    }
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(project_data, f, default_flow_style=False, sort_keys=False)
-
-
-def _create_kernel_md(file_path: Path, slug: str) -> None:
-    """Create kernel.md with minimal structure if it doesn't exist."""
-    if file_path.exists():
-        return
-
-    content = f"""---
-title: Kernel
-project: {slug}
-created: {datetime.now().isoformat()}
-stage: kernel
+## File: app/llm/agentspecs/architect.md
+````markdown
+---
+name: architect
+description: Transform kernel and findings into concrete requirements and designs
+tools:
+  - Read
+  - Write
+  - Edit
 ---
 
-# Kernel
+You are a solution architect who transforms conceptual kernels and research findings into detailed requirements and implementation plans.
 
-## Core Concept
+## Your Role
+- Synthesize kernel concepts with research findings
+- Create detailed technical requirements
+- Design system architecture and components
+- Define clear interfaces and contracts
+- Establish success metrics and validation criteria
 
-*The essential idea or problem to explore.*
+## Design Process
+1. **Analyze Kernel**: Extract core concepts and constraints
+2. **Integrate Findings**: Incorporate relevant research insights
+3. **Define Requirements**: Create specific, measurable requirements
+4. **Design Architecture**: Outline system structure and components
+5. **Specify Interfaces**: Define clear boundaries and contracts
 
-## Key Questions
+## Output Format
+Structure your architectural documents as:
+- **Requirement ID**: [Unique identifier]
+- **Description**: [Clear statement of what must be achieved]
+- **Rationale**: [Why this requirement exists, linking to kernel/findings]
+- **Acceptance Criteria**: [How to verify requirement is met]
+- **Technical Approach**: [High-level implementation strategy]
+- **Dependencies**: [Other requirements or external factors]
+````
 
-*What are we trying to answer or solve?*
-
-## Success Criteria
-
-*How will we know when we've achieved our goal?*
-"""
-
-    atomic_write_text(file_path, content)
-
-
-def _create_outline_md(file_path: Path, slug: str) -> None:
-    """Create outline.md with minimal structure if it doesn't exist."""
-    if file_path.exists():
-        return
-
-    content = f"""---
-title: Outline
-project: {slug}
-created: {datetime.now().isoformat()}
-stage: outline
+## File: app/llm/agentspecs/critic.md
+````markdown
+---
+name: critic
+description: Read-only review to flag risks and inconsistencies
+tools:
+  - Read
 ---
 
-# Outline
+You are a critical reviewer focused on identifying risks, gaps, and inconsistencies in project materials.
 
-## Executive Summary
+## Your Role
+- Analyze documents for logical consistency and completeness
+- Identify potential risks and failure modes
+- Flag assumptions that need validation
+- Point out missing requirements or specifications
+- Ensure alignment between different project artifacts
 
-*High-level overview of the project.*
+## Review Criteria
+1. **Logical Consistency**: Do all parts align and support each other?
+2. **Completeness**: Are there missing elements or unexplored edge cases?
+3. **Feasibility**: Are the proposed approaches realistic and achievable?
+4. **Risk Assessment**: What could go wrong and what's the impact?
+5. **Dependencies**: Are all dependencies identified and manageable?
 
-## Main Sections
+## Output Format
+Provide your critique as:
+- **Issue Type**: [Risk/Gap/Inconsistency/Assumption]
+- **Location**: [Document/section where issue was found]
+- **Description**: [Clear explanation of the concern]
+- **Impact**: [Potential consequences if not addressed]
+- **Recommendation**: [Suggested action or mitigation]
+````
 
-### Section 1
+## File: app/llm/agentspecs/researcher.md
+````markdown
+---
+name: researcher
+description: Extract atomic findings with sources from research materials
+tools:
+  - Read
+  - Write
+  - WebSearch
+  - WebFetch
+---
 
-*Key points and structure.*
+You are a research specialist focused on extracting atomic, actionable findings from various sources.
 
-### Section 2
+## Your Role
+- Extract specific, verifiable facts and insights
+- Maintain clear source attribution for all findings
+- Organize information in a structured, searchable format
+- Focus on relevance to the project's kernel concepts
 
-*Key points and structure.*
+## Guidelines
+1. Each finding should be self-contained and independently valuable
+2. Always include source URLs or document references
+3. Distinguish between facts, opinions, and speculations
+4. Highlight contradictions or conflicting information when found
+5. Prioritize primary sources over secondary interpretations
 
-### Section 3
-
-*Key points and structure.*
-
-## Next Steps
-
-*What needs to be done next?*
-"""
-
-    atomic_write_text(file_path, content)
-
-
-def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
-    """
-    Ensure a project exists, creating it if necessary.
-
-    This is an alias for scaffold_project for clarity in different contexts.
-    """
-    return scaffold_project(slug, base)
+## Output Format
+Structure your findings as:
+- **Finding**: [Concise statement of the finding]
+- **Source**: [URL or document reference]
+- **Context**: [Brief explanation of relevance]
+- **Confidence**: [High/Medium/Low based on source quality]
 ````
 
 ## File: app/llm/prompts/clarify.md
@@ -669,38 +703,6 @@ Keep each element file under 200 words. Be specific and actionable.
 </format>
 ````
 
-## File: app/llm/prompts/research.md
-````markdown
-<instructions>
-You are in the research stage as a "researcher" agent. Your goal is to extract atomic findings from provided sources and structure them for integration into the project's knowledge base. Do not perform any web calls - work only with the provided content. Output findings as machine-readable JSONL for SQLite FTS ingestion.
-</instructions>
-
-<context>
-You have access to read project documents and provided research content. Your role is to decompose complex information into discrete, verifiable claims with proper attribution. Each finding should be self-contained and traceable to its source. Focus on relevance to the project's kernel and workstreams.
-</context>
-
-<format>
-Output ONLY a single fenced code block of type jsonl containing one JSON object per line. Do not include any text outside the fenced block. Each line must be a valid JSON object with these exact keys:
-
-- id: UUID string (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
-- url: Source URL or document reference
-- source_type: Type of source (e.g., "article", "documentation", "research_paper")
-- claim: One specific, falsifiable statement extracted from the source
-- evidence: Direct quote or paraphrase supporting the claim (max 100 words)
-- confidence: Float between 0.0 and 1.0 based on source reliability and claim specificity
-- tags: Comma-separated keywords for categorization (e.g., "architecture,performance,caching")
-- workstream: Which project workstream this finding supports
-- retrieved_at: ISO8601 timestamp (e.g., "2024-01-15T14:30:00Z")
-
-Example (exactly 2 lines in the jsonl block):
-
-```jsonl
-{"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "url": "https://docs.python.org/3/library/sqlite3.html", "source_type": "documentation", "claim": "SQLite FTS5 extension provides full-text search with BM25 ranking", "evidence": "FTS5 is an SQLite virtual table module that provides full-text search functionality with built-in BM25 ranking algorithm for relevance scoring", "confidence": 0.95, "tags": "sqlite,fts,search,ranking", "workstream": "research", "retrieved_at": "2024-01-15T10:45:00Z"}
-{"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8", "url": "https://textual.textualize.io/guide/", "source_type": "article", "claim": "Textual provides reactive data binding for TUI components", "evidence": "Textual's reactive attributes automatically update the UI when their values change, enabling declarative UI patterns", "confidence": 0.90, "tags": "textual,tui,reactive,ui", "workstream": "interface", "retrieved_at": "2024-01-15T10:47:00Z"}
-```
-</format>
-````
-
 ## File: app/llm/prompts/synthesis.md
 ````markdown
 <instructions>
@@ -733,6 +735,337 @@ Keep each section concise (50-100 words). Use bullet points and numbered lists f
 </format>
 ````
 
+## File: app/llm/agents.py
+````python
+"""Agent specification loader and materializer for Claude Code subagents."""
+
+import importlib.resources as resources
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from app.files.atomic import atomic_write_text
+
+
+@dataclass(frozen=True)
+class AgentSpec:
+    """Specification for a Claude Code subagent."""
+
+    name: str
+    description: str
+    tools: list[str]
+    prompt: str
+
+
+def _parse_agent_markdown(content: str, filename: str) -> AgentSpec:
+    """
+    Parse an agent specification from markdown with YAML frontmatter.
+
+    Args:
+        content: The markdown file content
+        filename: The source filename for error messages
+
+    Returns:
+        Parsed AgentSpec
+
+    Raises:
+        ValueError: If frontmatter is invalid or required fields are missing
+    """
+    # Extract frontmatter using regex
+    frontmatter_pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
+    match = re.match(frontmatter_pattern, content, re.DOTALL)
+
+    if not match:
+        raise ValueError(
+            f"Invalid agent spec in {filename}: Missing YAML frontmatter. "
+            "Expected format: ---\\n<yaml>\\n---\\n<markdown>"
+        )
+
+    frontmatter_str, body = match.groups()
+
+    # Parse YAML frontmatter
+    try:
+        frontmatter: dict[str, Any] = yaml.safe_load(frontmatter_str) or {}
+    except yaml.YAMLError as e:
+        raise ValueError(
+            f"Invalid YAML frontmatter in {filename}: {e}. Please check YAML syntax."
+        ) from e
+
+    # Validate required fields
+    missing_fields = []
+    if "name" not in frontmatter:
+        missing_fields.append("name")
+    if "description" not in frontmatter:
+        missing_fields.append("description")
+
+    if missing_fields:
+        raise ValueError(
+            f"Missing required fields in {filename}: {', '.join(missing_fields)}. "
+            f"Required fields are: name (str), description (str)"
+        )
+
+    # Validate field types
+    if not isinstance(frontmatter["name"], str):
+        raise ValueError(
+            f"Invalid field type in {filename}: 'name' must be a string, "
+            f"got {type(frontmatter['name']).__name__}"
+        )
+
+    if not isinstance(frontmatter["description"], str):
+        raise ValueError(
+            f"Invalid field type in {filename}: 'description' must be a string, "
+            f"got {type(frontmatter['description']).__name__}"
+        )
+
+    # Handle optional tools field
+    tools = frontmatter.get("tools", [])
+    if not isinstance(tools, list):
+        raise ValueError(
+            f"Invalid field type in {filename}: 'tools' must be a list, got {type(tools).__name__}"
+        )
+
+    # Ensure all tools are strings
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, str):
+            raise ValueError(
+                f"Invalid tool in {filename}: tools[{i}] must be a string, "
+                f"got {type(tool).__name__}"
+            )
+
+    return AgentSpec(
+        name=frontmatter["name"],
+        description=frontmatter["description"],
+        tools=tools,
+        prompt=body.strip(),
+    )
+
+
+def load_agent_specs(source_pkg: str = "app.llm.agentspecs") -> list[AgentSpec]:
+    """
+    Load agent specifications from a Python package.
+
+    Args:
+        source_pkg: Dot-separated package path containing agent spec markdown files
+
+    Returns:
+        List of loaded AgentSpec instances
+
+    Raises:
+        ValueError: If any spec file is invalid
+        ModuleNotFoundError: If the source package doesn't exist
+    """
+    specs: list[AgentSpec] = []
+
+    # Convert package string to module parts
+    module_parts = source_pkg.split(".")
+
+    # Try to access the package
+    try:
+        # For Python 3.9+, we use files() directly
+        # For compatibility with 3.11+, we handle the traversable protocol
+        if len(module_parts) == 1:
+            pkg_files = resources.files(module_parts[0])
+        else:
+            # Build up the package reference step by step
+            pkg_files = resources.files(module_parts[0])
+            for part in module_parts[1:]:
+                pkg_files = pkg_files / part
+    except (ModuleNotFoundError, AttributeError) as e:
+        raise ModuleNotFoundError(
+            f"Cannot find package '{source_pkg}'. "
+            f"Make sure it exists and is a valid Python package."
+        ) from e
+
+    # Find all .md files in the package
+    md_files = []
+    try:
+        for item in pkg_files.iterdir():
+            if item.name.endswith(".md"):
+                md_files.append(item)
+    except AttributeError as e:
+        # Fallback for older Python versions or different resource types
+        raise ValueError(
+            f"Cannot iterate files in package '{source_pkg}'. "
+            f"Make sure it's a directory package with __init__.py."
+        ) from e
+
+    # Sort files for consistent ordering
+    md_files.sort(key=lambda f: f.name)
+
+    # Parse each markdown file
+    for file_resource in md_files:
+        try:
+            content = file_resource.read_text(encoding="utf-8")
+            spec = _parse_agent_markdown(content, file_resource.name)
+            specs.append(spec)
+        except Exception as e:
+            raise ValueError(f"Error loading agent spec from {file_resource.name}: {e}") from e
+
+    return specs
+
+
+def materialize_agents(target_dir: Path, source_pkg: str = "app.llm.agentspecs") -> Path:
+    """
+    Materialize agent specs from a package to a target directory for Claude Code.
+
+    Args:
+        target_dir: Directory where .claude/agents will be created
+        source_pkg: Package path containing agent spec files
+
+    Returns:
+        Path to the created agents directory
+
+    Raises:
+        ValueError: If specs cannot be loaded or written
+    """
+    # Load specs from the source package
+    specs = load_agent_specs(source_pkg)
+
+    # Create target directory structure
+    agents_dir = target_dir / ".claude" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get original filenames from the package to preserve them
+    module_parts = source_pkg.split(".")
+    if len(module_parts) == 1:
+        pkg_files = resources.files(module_parts[0])
+    else:
+        pkg_files = resources.files(module_parts[0])
+        for part in module_parts[1:]:
+            pkg_files = pkg_files / part
+
+    # Create a mapping of spec names to original filenames
+    name_to_filename: dict[str, str] = {}
+    for item in pkg_files.iterdir():
+        if item.name.endswith(".md"):
+            content = item.read_text(encoding="utf-8")
+            try:
+                spec = _parse_agent_markdown(content, item.name)
+                name_to_filename[spec.name] = item.name
+            except ValueError:
+                # Skip invalid files
+                continue
+
+    # Write each spec to the target directory
+    for spec in specs:
+        # Use original filename if available, otherwise use name.md
+        filename = name_to_filename.get(spec.name, f"{spec.name}.md")
+        target_path = agents_dir / filename
+
+        # Reconstruct the markdown with frontmatter
+        frontmatter_dict: dict[str, Any] = {
+            "name": spec.name,
+            "description": spec.description,
+        }
+        if spec.tools:
+            frontmatter_dict["tools"] = spec.tools
+
+        frontmatter_yaml = yaml.dump(frontmatter_dict, default_flow_style=False, sort_keys=False)
+        content = f"---\n{frontmatter_yaml}---\n\n{spec.prompt}\n"
+
+        # Write the file
+        atomic_write_text(target_path, content)
+
+    return agents_dir
+````
+
+## File: app/permissions/hooks_lib/__init__.py
+````python
+"""Hook library for Claude project hooks."""
+````
+
+## File: app/permissions/hooks_lib/format_md.py
+````python
+"""Markdown formatting utilities for hooks."""
+
+import mdformat
+
+
+def _format_markdown_text(text: str) -> str:
+    """
+    Format markdown text using mdformat.
+
+    Args:
+        text: Raw markdown text to format
+
+    Returns:
+        Formatted markdown text
+    """
+    return mdformat.text(text)
+````
+
+## File: app/permissions/hooks_lib/io.py
+````python
+"""I/O utilities for hooks with durability guarantees."""
+
+import os
+import tempfile
+from pathlib import Path
+
+
+def atomic_replace_text(path: Path, text: str) -> None:
+    """
+    Atomically replace file contents with durability guarantees.
+
+    Performs atomic write with flush+fsync on both file and parent directory.
+    This ensures data is persisted to disk before returning.
+
+    Args:
+        path: Path to the file to write
+        text: Text content to write (UTF-8 encoded)
+
+    Raises:
+        IOError: If there's an error during the atomic write operation
+    """
+    # Ensure parent directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Preserve file mode if file exists
+    file_mode = None
+    if path.exists():
+        file_mode = os.stat(path).st_mode
+
+    # Write to temporary file first
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        delete=False,
+        suffix=".tmp",
+    ) as tmp_file:
+        tmp_file.write(text)
+        tmp_file.flush()
+        # Ensure data is written to disk
+        os.fsync(tmp_file.fileno())
+        tmp_path = Path(tmp_file.name)
+
+    try:
+        # Preserve file mode if original file existed
+        if file_mode is not None:
+            os.chmod(tmp_path, file_mode)
+
+        # Atomically replace the original file
+        tmp_path.replace(path)
+
+        # Fsync parent directory for durability (best-effort)
+        try:
+            dfd = os.open(path.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            # Platform/filesystem doesn't support directory fsync
+            pass
+    except Exception:
+        # Clean up temp file if replacement fails
+        tmp_path.unlink(missing_ok=True)
+        raise
+````
+
 ## File: app/tui/views/main_screen.py
 ````python
 """Main screen view with three-pane structure."""
@@ -748,6 +1081,16 @@ from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewe
 class MainScreen(Screen[None]):
     """Main three-pane screen for the application."""
 
+    DEFAULT_CSS = """
+    MainScreen {
+        layout: vertical;
+    }
+
+    Horizontal {
+        height: 1fr;
+    }
+    """
+
     def compose(self) -> ComposeResult:
         """Compose the main three-pane layout."""
         yield Header()
@@ -757,104 +1100,6 @@ class MainScreen(Screen[None]):
             yield ContextPanel()
         yield Footer()
         yield CommandPalette()
-````
-
-## File: app/tui/widgets/__init__.py
-````python
-"""Reusable widget components for the TUI."""
-
-from .command_palette import CommandPalette
-from .context_panel import ContextPanel
-from .file_tree import FileTree
-from .session_viewer import SessionViewer
-
-__all__ = ["CommandPalette", "ContextPanel", "FileTree", "SessionViewer"]
-````
-
-## File: app/tui/widgets/command_palette.py
-````python
-"""Command palette widget for executing app commands."""
-
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Container
-from textual.widgets import Input, OptionList
-
-
-class CommandPalette(Container):
-    """Command palette overlay for executing commands."""
-
-    DEFAULT_CSS = """
-    CommandPalette {
-        layer: modal;
-        align: center middle;
-        width: 60;
-        height: auto;
-        max-height: 20;
-        background: $panel;
-        border: thick $primary;
-        padding: 1;
-        display: none;
-    }
-
-    CommandPalette.visible {
-        display: block;
-    }
-
-    CommandPalette Input {
-        margin-bottom: 1;
-    }
-    """
-
-    BINDINGS = [
-        Binding("escape", "close", "Close palette"),
-    ]
-
-    def __init__(self) -> None:
-        """Initialize the command palette."""
-        super().__init__(id="command-palette")
-        self.commands = [
-            ("new project", "Create a new brainstorming project"),
-            ("clarify", "Enter clarify stage for current project"),
-            ("kernel", "Define the kernel of your idea"),
-            ("outline", "Create workstream outline"),
-            ("research import", "Import research findings"),
-            ("synthesis", "Synthesize findings into final output"),
-            ("export", "Export project to various formats"),
-        ]
-
-    def compose(self) -> ComposeResult:
-        """Compose the command palette UI."""
-        yield Input(placeholder="Type a command...", id="command-input")
-        options = [f"{cmd}: {desc}" for cmd, desc in self.commands]
-        yield OptionList(*options, id="command-list")
-
-    def show(self) -> None:
-        """Show the command palette."""
-        self.add_class("visible")
-        input_widget = self.query_one("#command-input", Input)
-        input_widget.focus()
-
-    def hide(self) -> None:
-        """Hide the command palette."""
-        self.remove_class("visible")
-
-    def action_close(self) -> None:
-        """Close the command palette."""
-        self.hide()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle command submission."""
-        command = event.value.lower().strip()
-        self.execute_command(command)
-        self.hide()
-
-    def execute_command(self, command: str) -> None:
-        """Execute the selected command."""
-        # Placeholder for command execution
-        from textual import log
-
-        log(f"Executing command: {command}")
 ````
 
 ## File: app/tui/widgets/context_panel.py
@@ -938,53 +1183,20 @@ class FileTree(Tree[str]):
         root.expand()
 
         # Add placeholder project structure
-        project1 = root.add("📁 example-project", expand=False)
+        project1 = root.add("📁 example-project", expand=True)
         project1.add_leaf("📄 kernel.md")
         project1.add_leaf("📄 outline.md")
         project1.add_leaf("📄 project.yaml")
 
-        elements = project1.add("📁 elements", expand=False)
+        elements = project1.add("📁 elements", expand=True)
         elements.add_leaf("📄 workstream-1.md")
         elements.add_leaf("📄 workstream-2.md")
 
-        research = project1.add("📁 research", expand=False)
+        research = project1.add("📁 research", expand=True)
         research.add_leaf("📄 findings.md")
 
-        exports = project1.add("📁 exports", expand=False)
+        exports = project1.add("📁 exports", expand=True)
         exports.add_leaf("📄 synthesis.md")
-````
-
-## File: app/tui/widgets/session_viewer.py
-````python
-"""Session viewer widget for displaying editor content or Claude streams."""
-
-from textual.widgets import RichLog
-
-
-class SessionViewer(RichLog):
-    """Main content viewer for editing documents or viewing session output."""
-
-    DEFAULT_CSS = """
-    SessionViewer {
-        background: $surface;
-        border: solid $primary;
-        padding: 1;
-    }
-    """
-
-    def __init__(self) -> None:
-        """Initialize the session viewer."""
-        super().__init__(id="session-viewer", wrap=True, highlight=True, markup=True)
-
-    def on_mount(self) -> None:
-        """Display welcome message on mount."""
-        self.write("[bold cyan]Welcome to Brainstorm Buddy[/bold cyan]\n")
-        self.write("\nA terminal-first brainstorming app that guides you through:\n")
-        self.write("• [yellow]Capture[/yellow] → [yellow]Clarify[/yellow] → ")
-        self.write("[yellow]Kernel[/yellow] → [yellow]Outline[/yellow] → ")
-        self.write("[yellow]Research[/yellow] → [yellow]Synthesis[/yellow] → ")
-        self.write("[yellow]Export[/yellow]\n")
-        self.write("\n[dim]Press ':' to open the command palette[/dim]")
 ````
 
 ## File: brainstormbuddy/.obsidian/app.json
@@ -1262,357 +1474,6 @@ Make a note of something, [[create a link]], or try [the Importer](https://help.
 When you're ready, delete this note and make the vault your own.
 ````
 
-## File: tests/test_config.py
-````python
-import pytest
-
-from app.core.config import Settings, load_settings
-
-
-def test_default_settings() -> None:
-    settings = Settings()
-    assert settings.data_dir == "projects"
-    assert settings.exports_dir == "exports"
-    assert settings.log_dir == "logs"
-    assert settings.enable_web_tools is False
-
-
-def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BRAINSTORMBUDDY_DATA_DIR", "custom_projects")
-    monkeypatch.setenv("BRAINSTORMBUDDY_EXPORTS_DIR", "custom_exports")
-    monkeypatch.setenv("BRAINSTORMBUDDY_LOG_DIR", "custom_logs")
-    monkeypatch.setenv("BRAINSTORMBUDDY_ENABLE_WEB_TOOLS", "true")
-
-    settings = Settings()
-    assert settings.data_dir == "custom_projects"
-    assert settings.exports_dir == "custom_exports"
-    assert settings.log_dir == "custom_logs"
-    assert settings.enable_web_tools is True
-
-
-def test_partial_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BRAINSTORMBUDDY_DATA_DIR", "override_data")
-
-    settings = Settings()
-    assert settings.data_dir == "override_data"
-    assert settings.exports_dir == "exports"
-    assert settings.log_dir == "logs"
-    assert settings.enable_web_tools is False
-
-
-def test_load_settings_singleton() -> None:
-    settings1 = load_settings()
-    settings2 = load_settings()
-    assert settings1 is settings2
-
-
-def test_load_settings_returns_settings_instance() -> None:
-    settings = load_settings()
-    assert isinstance(settings, Settings)
-    assert settings.data_dir == "projects"
-    assert settings.exports_dir == "exports"
-    assert settings.log_dir == "logs"
-    assert settings.enable_web_tools is False
-````
-
-## File: tests/test_llm_fake.py
-````python
-"""Unit tests for FakeClaudeClient implementation."""
-
-import pytest
-
-from app.llm.claude_client import (
-    Event,
-    FakeClaudeClient,
-    MessageDone,
-    TextDelta,
-)
-
-
-@pytest.mark.asyncio
-async def test_fake_client_yields_events_in_order() -> None:
-    """Test that FakeClaudeClient yields events in the expected order."""
-    client = FakeClaudeClient()
-    events: list[Event] = []
-
-    async for event in client.stream("test prompt"):
-        events.append(event)
-
-    assert len(events) == 3
-    assert isinstance(events[0], TextDelta)
-    assert events[0].text == "First chunk of text"
-    assert isinstance(events[1], TextDelta)
-    assert events[1].text == "Second chunk of text"
-    assert isinstance(events[2], MessageDone)
-
-
-@pytest.mark.asyncio
-async def test_fake_client_accepts_all_parameters() -> None:
-    """Test that FakeClaudeClient accepts all expected parameters."""
-    client = FakeClaudeClient()
-    events: list[Event] = []
-
-    async for event in client.stream(
-        prompt="test prompt",
-        system_prompt="system context",
-        allowed_tools=["tool1", "tool2"],
-        denied_tools=["tool3"],
-        permission_mode="restricted",
-        cwd="/test/path",
-    ):
-        events.append(event)
-
-    assert len(events) == 3
-    assert all(isinstance(e, TextDelta | MessageDone) for e in events)
-
-
-@pytest.mark.asyncio
-async def test_event_types_are_frozen() -> None:
-    """Test that Event dataclasses are frozen and immutable."""
-    delta = TextDelta("test")
-    done = MessageDone()
-
-    with pytest.raises(AttributeError):
-        delta.text = "modified"  # type: ignore
-
-    with pytest.raises(AttributeError):
-        done.extra = "field"  # type: ignore
-
-
-@pytest.mark.asyncio
-async def test_stream_can_be_consumed_multiple_times() -> None:
-    """Test that the stream method can be called multiple times."""
-    client = FakeClaudeClient()
-
-    first_run = [event async for event in client.stream("prompt1")]
-    second_run = [event async for event in client.stream("prompt2")]
-
-    assert len(first_run) == 3
-    assert len(second_run) == 3
-    assert first_run[0] == second_run[0]  # Same deterministic output
-````
-
-## File: tests/test_scaffold.py
-````python
-"""Tests for the project scaffold utility."""
-
-import tempfile
-from pathlib import Path
-
-import yaml
-
-from app.files.scaffold import ensure_project_exists, scaffold_project
-
-
-class TestScaffoldProject:
-    """Test suite for scaffold_project function."""
-
-    def test_creates_directory_structure(self) -> None:
-        """Test that all required directories are created."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            project_path = scaffold_project("test-project", base)
-
-            # Verify project directory exists
-            assert project_path.exists()
-            assert project_path.is_dir()
-            assert project_path == base / "test-project"
-
-            # Verify subdirectories exist
-            assert (project_path / "elements").exists()
-            assert (project_path / "elements").is_dir()
-            assert (project_path / "research").exists()
-            assert (project_path / "research").is_dir()
-            assert (project_path / "exports").exists()
-            assert (project_path / "exports").is_dir()
-
-    def test_creates_seed_files(self) -> None:
-        """Test that all required seed files are created."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            project_path = scaffold_project("test-project", base)
-
-            # Verify files exist
-            assert (project_path / "project.yaml").exists()
-            assert (project_path / "kernel.md").exists()
-            assert (project_path / "outline.md").exists()
-
-            # Verify files are not empty
-            assert (project_path / "project.yaml").stat().st_size > 0
-            assert (project_path / "kernel.md").stat().st_size > 0
-            assert (project_path / "outline.md").stat().st_size > 0
-
-    def test_project_yaml_content(self) -> None:
-        """Test that project.yaml has correct structure and content."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            project_path = scaffold_project("test-project", base)
-
-            with open(project_path / "project.yaml", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-
-            assert data["name"] == "test-project"
-            assert "created" in data
-            assert data["stage"] == "capture"
-            assert "description" in data
-            assert isinstance(data["tags"], list)
-            assert data["metadata"]["version"] == "1.0.0"
-            assert data["metadata"]["format"] == "brainstormbuddy-project"
-
-    def test_kernel_md_content(self) -> None:
-        """Test that kernel.md has correct structure."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            project_path = scaffold_project("test-project", base)
-
-            content = (project_path / "kernel.md").read_text(encoding="utf-8")
-
-            # Check frontmatter
-            assert "---" in content
-            assert "title: Kernel" in content
-            assert "project: test-project" in content
-            assert "stage: kernel" in content
-
-            # Check main headers
-            assert "# Kernel" in content
-            assert "## Core Concept" in content
-            assert "## Key Questions" in content
-            assert "## Success Criteria" in content
-
-    def test_outline_md_content(self) -> None:
-        """Test that outline.md has correct structure."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            project_path = scaffold_project("test-project", base)
-
-            content = (project_path / "outline.md").read_text(encoding="utf-8")
-
-            # Check frontmatter
-            assert "---" in content
-            assert "title: Outline" in content
-            assert "project: test-project" in content
-            assert "stage: outline" in content
-
-            # Check main headers
-            assert "# Outline" in content
-            assert "## Executive Summary" in content
-            assert "## Main Sections" in content
-            assert "### Section 1" in content
-            assert "## Next Steps" in content
-
-    def test_idempotency(self) -> None:
-        """Test that running scaffold_project twice doesn't cause errors."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-
-            # First run
-            project_path1 = scaffold_project("test-project", base)
-
-            # Get initial file modification times
-            yaml_mtime1 = (project_path1 / "project.yaml").stat().st_mtime
-            kernel_mtime1 = (project_path1 / "kernel.md").stat().st_mtime
-            outline_mtime1 = (project_path1 / "outline.md").stat().st_mtime
-
-            # Second run (should not error)
-            project_path2 = scaffold_project("test-project", base)
-
-            # Paths should be the same
-            assert project_path1 == project_path2
-
-            # Files should not be modified (times should be the same)
-            yaml_mtime2 = (project_path2 / "project.yaml").stat().st_mtime
-            kernel_mtime2 = (project_path2 / "kernel.md").stat().st_mtime
-            outline_mtime2 = (project_path2 / "outline.md").stat().st_mtime
-
-            assert yaml_mtime1 == yaml_mtime2
-            assert kernel_mtime1 == kernel_mtime2
-            assert outline_mtime1 == outline_mtime2
-
-    def test_idempotency_preserves_content(self) -> None:
-        """Test that re-running doesn't overwrite existing content."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-
-            # First run
-            project_path = scaffold_project("test-project", base)
-
-            # Modify a file
-            kernel_path = project_path / "kernel.md"
-            custom_content = "# Custom Kernel Content\n\nThis was modified."
-            kernel_path.write_text(custom_content, encoding="utf-8")
-
-            # Second run
-            scaffold_project("test-project", base)
-
-            # Content should be preserved
-            assert kernel_path.read_text(encoding="utf-8") == custom_content
-
-    def test_string_base_path(self) -> None:
-        """Test that base can be provided as a string."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_path = scaffold_project("test-project", tmpdir)
-
-            assert project_path.exists()
-            assert project_path.parent == Path(tmpdir)
-
-    def test_path_base_path(self) -> None:
-        """Test that base can be provided as a Path object."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-            project_path = scaffold_project("test-project", base)
-
-            assert project_path.exists()
-            assert project_path.parent == base
-
-    def test_nested_base_path(self) -> None:
-        """Test creating projects in nested directories."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir) / "nested" / "projects"
-            project_path = scaffold_project("test-project", base)
-
-            assert project_path.exists()
-            assert project_path.parent == base
-            assert base.exists()
-
-    def test_ensure_project_exists_alias(self) -> None:
-        """Test that ensure_project_exists works as an alias."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-
-            path1 = ensure_project_exists("test-project", base)
-            path2 = scaffold_project("test-project", base)
-
-            assert path1 == path2
-            assert path1.exists()
-
-    def test_multiple_projects(self) -> None:
-        """Test creating multiple projects in the same base directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-
-            project1 = scaffold_project("project-one", base)
-            project2 = scaffold_project("project-two", base)
-
-            assert project1.exists()
-            assert project2.exists()
-            assert project1 != project2
-            assert project1.name == "project-one"
-            assert project2.name == "project-two"
-
-    def test_slug_with_special_characters(self) -> None:
-        """Test that slugs with hyphens and underscores work."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            base = Path(tmpdir)
-
-            project1 = scaffold_project("my-cool-project", base)
-            project2 = scaffold_project("my_cool_project", base)
-
-            assert project1.exists()
-            assert project2.exists()
-            assert project1.name == "my-cool-project"
-            assert project2.name == "my_cool_project"
-````
-
 ## File: .gitignore
 ````
 # Byte-compiled / optimized / DLL files
@@ -1767,273 +1628,1099 @@ exports/
 .claude/
 ````
 
-## File: app/llm/claude_client.py
-````python
-"""Claude client interface with streaming support and fake implementation."""
+## File: codecov.yml
+````yaml
+codecov:
+  require_ci_to_pass: true
 
-from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
 
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 2%
+        patch:
+          default:
+            target: 80%
+        changes: false
 
-@dataclass(frozen=True)
-class TextDelta:
-    """Represents a text chunk in the stream."""
+    patch:
+      default:
+        target: 80%
+        threshold: 2%
 
-    text: str
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
 
-
-@dataclass(frozen=True)
-class ToolUseStart:
-    """Indicates the start of tool usage."""
-
-    tool_name: str
-    tool_id: str
-
-
-@dataclass(frozen=True)
-class ToolUseEnd:
-    """Indicates the end of tool usage."""
-
-    tool_id: str
-    result: str | None = None
-
-
-@dataclass(frozen=True)
-class MessageDone:
-    """Indicates the message stream is complete."""
-
-    pass
-
-
-Event = TextDelta | ToolUseStart | ToolUseEnd | MessageDone
-
-
-class ClaudeClient(ABC):
-    """Abstract interface for Claude API clients."""
-
-    @abstractmethod
-    async def stream(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        allowed_tools: list[str] | None = None,
-        denied_tools: list[str] | None = None,
-        permission_mode: str = "standard",
-        cwd: str | None = None,
-    ) -> AsyncGenerator[Event, None]:
-        """
-        Stream events from Claude API.
-
-        Args:
-            prompt: User prompt to send to Claude
-            system_prompt: Optional system prompt to set context
-            allowed_tools: List of allowed tool names
-            denied_tools: List of denied tool names
-            permission_mode: Permission mode for tool usage
-            cwd: Current working directory for tool execution
-
-        Yields:
-            Event objects representing stream chunks
-        """
-        raise NotImplementedError
-        yield  # pragma: no cover
-
-
-class FakeClaudeClient(ClaudeClient):
-    """Fake implementation for testing with deterministic output."""
-
-    async def stream(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        allowed_tools: list[str] | None = None,
-        denied_tools: list[str] | None = None,
-        permission_mode: str = "standard",
-        cwd: str | None = None,
-    ) -> AsyncGenerator[Event, None]:
-        """Yield a deterministic sequence of events for testing."""
-        # Parameters are intentionally unused in fake implementation
-        _ = (prompt, system_prompt, allowed_tools, denied_tools, permission_mode, cwd)
-        yield TextDelta("First chunk of text")
-        yield TextDelta("Second chunk of text")
-        yield MessageDone()
+ignore:
+  - "tests/**/*"
+  - "**/__init__.py"
+  - "**/test_*.py"
+  - "setup.py"
 ````
 
-## File: app/llm/sessions.py
+## File: materialize_claude.py
 ````python
-"""Session policy registry for stage-gated tool permissions and prompts."""
+#!/usr/bin/env python3
+"""Standalone script to materialize Claude configuration."""
 
-from dataclasses import dataclass
+import sys
 from pathlib import Path
 
-from app.core.config import load_settings
+from app.permissions.settings_writer import write_project_settings
 
 
-@dataclass(frozen=True)
-class SessionPolicy:
-    """Configuration for a brainstorming session stage."""
+def main() -> None:
+    """Main entry point for materialize-claude command."""
+    if len(sys.argv) != 2:
+        print("Usage: materialize_claude.py <destination_path>")
+        print("Example: uv run materialize_claude.py /tmp/claude-work")
+        sys.exit(1)
 
-    stage: str
-    system_prompt_path: Path
-    allowed_tools: list[str]
-    denied_tools: list[str]
-    write_roots: list[str]
-    permission_mode: str
-    web_tools_allowed: list[str]
+    dest = Path(sys.argv[1]).resolve()
 
+    try:
+        # Ensure the destination directory exists
+        dest.mkdir(parents=True, exist_ok=True)
 
-def get_policy(stage: str) -> SessionPolicy:
-    """
-    Get the policy configuration for a given stage.
+        # Generate the Claude configuration
+        config_dir = write_project_settings(
+            repo_root=dest,
+            config_dir_name=".claude",
+            import_hooks_from="app.permissions.hooks_lib",
+        )
 
-    Args:
-        stage: One of 'clarify', 'kernel', 'outline', 'research', 'synthesis'
+        print(f"✓ Successfully created Claude configuration at: {config_dir}")
+        print(f"  Settings: {config_dir}/settings.json")
+        print(f"  Hooks: {config_dir}/hooks/")
+        print()
+        print("To use this configuration with Claude Code:")
+        print(f"  cd {dest}")
+        print("  claude")
 
-    Returns:
-        SessionPolicy with appropriate configuration
-
-    Raises:
-        ValueError: If stage is not recognized
-    """
-    settings = load_settings()
-    base_prompt_path = Path(__file__).resolve().parent / "prompts"
-
-    policies = {
-        "clarify": SessionPolicy(
-            stage="clarify",
-            system_prompt_path=base_prompt_path / "clarify.md",
-            allowed_tools=["Read"],
-            denied_tools=["Write", "Edit", "Bash", "WebSearch", "WebFetch"],
-            write_roots=[],
-            permission_mode="readonly",
-            web_tools_allowed=[],
-        ),
-        "kernel": SessionPolicy(
-            stage="kernel",
-            system_prompt_path=base_prompt_path / "kernel.md",
-            allowed_tools=["Read", "Write", "Edit"],
-            denied_tools=["Bash", "WebSearch", "WebFetch"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=[],
-        ),
-        "outline": SessionPolicy(
-            stage="outline",
-            system_prompt_path=base_prompt_path / "outline.md",
-            allowed_tools=["Read", "Write", "Edit"],
-            denied_tools=["Bash", "WebSearch", "WebFetch"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=[],
-        ),
-        "research": SessionPolicy(
-            stage="research",
-            system_prompt_path=base_prompt_path / "research.md",
-            allowed_tools=(
-                ["Read", "Write", "Edit", "WebSearch", "WebFetch"]
-                if settings.enable_web_tools
-                else ["Read", "Write", "Edit"]
-            ),
-            denied_tools=["Bash"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
-        ),
-        "synthesis": SessionPolicy(
-            stage="synthesis",
-            system_prompt_path=base_prompt_path / "synthesis.md",
-            allowed_tools=["Read", "Write", "Edit"],
-            denied_tools=["Bash", "WebSearch", "WebFetch"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=[],
-        ),
-    }
-
-    if stage not in policies:
-        raise ValueError(f"Unknown stage: {stage}. Valid stages are: {', '.join(policies.keys())}")
-
-    return policies[stage]
-````
-
-## File: app/permissions/settings_writer.py
-````python
-"""Settings writer for Claude project configuration."""
-
-import json
-from pathlib import Path
-from typing import Any
-
-
-def write_project_settings(repo_root: Path = Path(".")) -> None:
-    """
-    Write Claude project settings with deny-first permissions and hook configuration.
-
-    Args:
-        repo_root: Root directory of the repository (default: current directory)
-    """
-    repo_root = Path(repo_root)
-    claude_dir = repo_root / ".claude"
-    hooks_dir = claude_dir / "hooks"
-
-    # Ensure directories exist
-    claude_dir.mkdir(exist_ok=True)
-    hooks_dir.mkdir(exist_ok=True)
-
-    # Define settings structure
-    settings: dict[str, Any] = {
-        "permissions": {
-            "allow": ["Read", "Edit", "Write"],
-            "deny": ["Bash", "WebSearch", "WebFetch"],
-            "denyPaths": [".env*", "secrets/**", ".git/**"],
-            "writeRoots": ["projects/**", "exports/**"],
-        },
-        "hooks": {
-            "PreToolUse": ".claude/hooks/gate.py",
-            "PostToolUse": ".claude/hooks/format_md.py",
-        },
-    }
-
-    # Write settings.json
-    settings_path = claude_dir / "settings.json"
-    with open(settings_path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
-        f.write("\n")  # Add trailing newline
-
-    # Create hook stub files
-    _create_hook_stub(hooks_dir / "gate.py", "PreToolUse")
-    _create_hook_stub(hooks_dir / "format_md.py", "PostToolUse")
-
-
-def _create_hook_stub(hook_path: Path, hook_type: str) -> None:
-    """
-    Create a placeholder hook file with TODO content.
-
-    Args:
-        hook_path: Path to the hook file
-        hook_type: Type of hook (PreToolUse or PostToolUse)
-    """
-    hook_content = f'''#!/usr/bin/env python3
-"""Claude {hook_type} hook."""
-
-# TODO: Implement {hook_type} hook logic
-# This hook is called {hook_type.lower().replace("tool", " tool ")}
-
-def main():
-    """Main hook entry point."""
-    pass
+    except Exception as e:
+        print(f"✗ Failed to create Claude configuration: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-'''
+````
 
-    with open(hook_path, "w", encoding="utf-8") as f:
-        f.write(hook_content)
+## File: app/files/batch.py
+````python
+"""Batch diff builder and preview for atomic multi-file operations."""
 
-    # Make the hook executable (Python will handle this cross-platform)
-    hook_path.chmod(0o755)
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from app.files.diff import (
+    Patch,
+    apply_patches,
+    compute_patch,
+    generate_diff_preview,
+    is_unchanged,
+)
+
+
+@dataclass
+class FileChange:
+    """Represents a pending change to a single file."""
+
+    path: Path
+    old_content: str
+    new_content: str
+
+    @property
+    def is_new_file(self) -> bool:
+        """Check if this represents a new file creation."""
+        return self.old_content == ""
+
+    @property
+    def has_changes(self) -> bool:
+        """Check if there are actual changes."""
+        patch = compute_patch(self.old_content, self.new_content)
+        return not is_unchanged(patch)
+
+
+@dataclass
+class BatchDiff:
+    """Aggregates multiple file changes for atomic batch operations."""
+
+    changes: list[FileChange] = field(default_factory=list)
+
+    def add_file(self, path: Path | str, old_content: str, new_content: str) -> None:
+        """
+        Add a file change to the batch.
+
+        Args:
+            path: Path to the file
+            old_content: Current content (empty string for new files)
+            new_content: New content to write
+        """
+        file_path = Path(path) if isinstance(path, str) else path
+        change = FileChange(file_path, old_content, new_content)
+
+        # Only add if there are actual changes
+        if change.has_changes:
+            self.changes.append(change)
+
+    def add_new_file(self, path: Path | str, content: str) -> None:
+        """
+        Convenience method to add a new file creation.
+
+        Args:
+            path: Path to the new file
+            content: Content for the new file
+        """
+        self.add_file(path, "", content)
+
+    def add_existing_file(self, path: Path | str, new_content: str) -> None:
+        """
+        Add an existing file modification, reading current content.
+
+        Args:
+            path: Path to the existing file
+            new_content: New content to write
+
+        Raises:
+            FileNotFoundError: If the file doesn't exist
+        """
+        file_path = Path(path) if isinstance(path, str) else path
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        with open(file_path, encoding="utf-8") as f:
+            old_content = f.read()
+
+        self.add_file(file_path, old_content, new_content)
+
+    def generate_preview(self, context_lines: int = 3) -> str:
+        """
+        Generate a combined diff preview for all changes.
+
+        Args:
+            context_lines: Number of context lines around changes
+
+        Returns:
+            Combined diff preview as a string
+        """
+        if not self.changes:
+            return "No changes to preview."
+
+        previews = []
+
+        for change in self.changes:
+            # Generate individual diff with file path as label
+            diff = generate_diff_preview(
+                change.old_content,
+                change.new_content,
+                context_lines=context_lines,
+                from_label=str(change.path),
+                to_label=str(change.path),
+            )
+
+            # Add separator between files
+            if diff != "No changes detected.":
+                previews.append(f"{'=' * 60}")
+                previews.append(f"File: {change.path}")
+                if change.is_new_file:
+                    previews.append("(new file)")
+                previews.append(f"{'=' * 60}")
+                previews.append(diff)
+
+        if not previews:
+            return "No changes to preview."
+
+        return "\n".join(previews)
+
+    def apply(self) -> list[Patch]:
+        """
+        Apply all changes atomically.
+
+        Either all files are updated successfully, or none are modified.
+        Uses temporary files and atomic replacement to ensure safety.
+
+        Returns:
+            List of Patch objects for applied changes
+
+        Raises:
+            IOError: If atomic replacement fails
+            ValueError: If any file's current content doesn't match expected
+        """
+        if not self.changes:
+            return []
+
+        # Convert to format expected by apply_patches
+        patches_list: list[tuple[Path | str, str, str]] = [
+            (change.path, change.old_content, change.new_content) for change in self.changes
+        ]
+
+        # Apply all patches atomically
+        return apply_patches(patches_list)
+
+    def clear(self) -> None:
+        """Clear all pending changes."""
+        self.changes.clear()
+
+    def __len__(self) -> int:
+        """Return the number of pending changes."""
+        return len(self.changes)
+
+    def __bool__(self) -> bool:
+        """Return True if there are pending changes."""
+        return len(self.changes) > 0
+
+
+def create_batch_from_dict(files: dict[str, str], base_path: Path | None = None) -> BatchDiff:
+    """
+    Create a BatchDiff from a dictionary of relative paths to content.
+
+    Args:
+        files: Dictionary mapping relative paths to file content
+        base_path: Base directory for resolving relative paths
+
+    Returns:
+        BatchDiff instance with all file changes
+    """
+    batch = BatchDiff()
+
+    for rel_path, content in files.items():
+        full_path = base_path / rel_path if base_path else Path(rel_path)
+
+        # Check if file exists to determine old content
+        if full_path.exists():
+            with open(full_path, encoding="utf-8") as f:
+                old_content = f.read()
+        else:
+            old_content = ""
+
+        batch.add_file(full_path, old_content, content)
+
+    return batch
+````
+
+## File: app/files/mdio.py
+````python
+"""Markdown file I/O utilities."""
+
+from pathlib import Path
+
+from app.files.atomic import atomic_write_text
+
+
+def read_md(path: Path | str) -> str:
+    """
+    Read a markdown file and return its contents.
+
+    Args:
+        path: Path to the markdown file
+
+    Returns:
+        Contents of the markdown file
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist
+        IOError: If there's an error reading the file
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    with open(file_path, encoding="utf-8") as f:
+        return f.read()
+
+
+def write_md(path: Path | str, text: str) -> None:
+    """
+    Write text to a markdown file.
+
+    Args:
+        path: Path to the markdown file
+        text: Content to write to the file
+
+    Raises:
+        IOError: If there's an error writing the file
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    atomic_write_text(file_path, text)
+````
+
+## File: app/files/scaffold.py
+````python
+"""Project scaffold utility for creating standardized project structures."""
+
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+from app.files.atomic import atomic_write_text
+
+
+def scaffold_project(slug: str, base: Path | str = "projects") -> Path:
+    """
+    Create a project directory structure with seed files.
+
+    Args:
+        slug: Project identifier (will be used as directory name)
+        base: Base directory for projects (default: "projects")
+
+    Returns:
+        Path to the created/existing project directory
+
+    The function is idempotent - running it multiple times with the same
+    slug will not cause errors or duplicate content.
+    """
+    base_path = Path(base) if isinstance(base, str) else base
+    project_path = base_path / slug
+
+    # Create directory structure
+    _create_directories(project_path)
+
+    # Create seed files
+    _create_project_yaml(project_path / "project.yaml", slug)
+    _create_kernel_md(project_path / "kernel.md", slug)
+    _create_outline_md(project_path / "outline.md", slug)
+
+    return project_path
+
+
+def _create_directories(project_path: Path) -> None:
+    """Create the required directory structure."""
+    directories = [
+        project_path,
+        project_path / "elements",
+        project_path / "research",
+        project_path / "exports",
+    ]
+
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+def _create_project_yaml(file_path: Path, slug: str) -> None:
+    """Create project.yaml with basic metadata if it doesn't exist."""
+    if file_path.exists():
+        return
+
+    project_data = {
+        "name": slug,
+        "created": datetime.now().isoformat(),
+        "stage": "capture",
+        "description": f"Brainstorming project: {slug}",
+        "tags": [],
+        "metadata": {
+            "version": "1.0.0",
+            "format": "brainstormbuddy-project",
+        },
+    }
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(project_data, f, default_flow_style=False, sort_keys=False)
+
+
+def _create_kernel_md(file_path: Path, slug: str) -> None:
+    """Create kernel.md with minimal structure if it doesn't exist."""
+    if file_path.exists():
+        return
+
+    content = f"""---
+title: Kernel
+project: {slug}
+created: {datetime.now().isoformat()}
+stage: kernel
+---
+
+# Kernel
+
+## Core Concept
+
+*The essential idea or problem to explore.*
+
+## Key Questions
+
+*What are we trying to answer or solve?*
+
+## Success Criteria
+
+*How will we know when we've achieved our goal?*
+"""
+
+    atomic_write_text(file_path, content)
+
+
+def _create_outline_md(file_path: Path, slug: str) -> None:
+    """Create outline.md with minimal structure if it doesn't exist."""
+    if file_path.exists():
+        return
+
+    content = f"""---
+title: Outline
+project: {slug}
+created: {datetime.now().isoformat()}
+stage: outline
+---
+
+# Outline
+
+## Executive Summary
+
+*High-level overview of the project.*
+
+## Main Sections
+
+### Section 1
+
+*Key points and structure.*
+
+### Section 2
+
+*Key points and structure.*
+
+### Section 3
+
+*Key points and structure.*
+
+## Next Steps
+
+*What needs to be done next?*
+"""
+
+    atomic_write_text(file_path, content)
+
+
+def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
+    """
+    Ensure a project exists, creating it if necessary.
+
+    This is an alias for scaffold_project for clarity in different contexts.
+    """
+    return scaffold_project(slug, base)
+````
+
+## File: app/files/workstream.py
+````python
+"""Workstream document generation for outline and element files."""
+
+from datetime import datetime
+from pathlib import Path
+
+from app.files.batch import BatchDiff
+
+
+def generate_outline_content(project_name: str, kernel_summary: str | None = None) -> str:
+    """
+    Generate content for outline.md file.
+
+    Args:
+        project_name: Name of the project
+        kernel_summary: Optional summary from kernel stage
+
+    Returns:
+        Markdown content for outline.md
+    """
+    timestamp = datetime.now().isoformat()
+
+    kernel_section = ""
+    if kernel_summary:
+        kernel_section = f"""
+## From Kernel
+
+{kernel_summary}
+"""
+
+    return f"""---
+title: Outline
+project: {project_name}
+created: {timestamp}
+stage: outline
+---
+
+# Project Outline: {project_name}
+
+## Executive Summary
+
+*A concise overview of the project's goals, scope, and expected outcomes.*
+{kernel_section}
+
+## Core Objectives
+
+1. **Primary Goal**: *What is the main thing we're trying to achieve?*
+2. **Secondary Goals**: *What else would we like to accomplish?*
+3. **Success Metrics**: *How will we measure success?*
+
+## Key Workstreams
+
+### Requirements Definition
+- Functional requirements
+- Non-functional requirements
+- Constraints and assumptions
+- See: [requirements.md](elements/requirements.md)
+
+### Research & Analysis
+- Background research
+- Market analysis
+- Technical feasibility
+- See: [research.md](elements/research.md)
+
+### Solution Design
+- Architecture overview
+- Key components
+- Integration points
+- See: [design.md](elements/design.md)
+
+### Implementation Plan
+- Phases and milestones
+- Resource requirements
+- Risk mitigation
+- See: [implementation.md](elements/implementation.md)
+
+### Synthesis & Recommendations
+- Key findings
+- Recommended approach
+- Next steps
+- See: [synthesis.md](elements/synthesis.md)
+
+## Timeline
+
+*Proposed timeline for the project.*
+
+| Phase | Duration | Key Deliverables |
+|-------|----------|------------------|
+| Research | 1-2 weeks | Research findings, feasibility analysis |
+| Design | 1 week | Architecture, specifications |
+| Implementation | 2-4 weeks | Working prototype/solution |
+| Testing & Refinement | 1 week | Validated solution |
+
+## Open Questions
+
+- *What questions need to be answered before proceeding?*
+- *What assumptions need validation?*
+- *What dependencies need resolution?*
+
+## Notes
+
+*Additional context, references, or considerations.*
+"""
+
+
+def generate_element_content(element_type: str, project_name: str) -> str:
+    """
+    Generate content for element markdown files.
+
+    Args:
+        element_type: Type of element (requirements, research, design, etc.)
+        project_name: Name of the project
+
+    Returns:
+        Markdown content for the element file
+    """
+    timestamp = datetime.now().isoformat()
+
+    templates = {
+        "requirements": f"""---
+title: Requirements
+project: {project_name}
+created: {timestamp}
+type: element
+workstream: requirements
+---
+
+# Requirements
+
+## Functional Requirements
+
+### Core Features
+- *What must the solution do?*
+- *What are the essential capabilities?*
+
+### User Stories
+- As a [user type], I want to [action] so that [benefit]
+- *Add more user stories as needed*
+
+## Non-Functional Requirements
+
+### Performance
+- *Response time expectations*
+- *Throughput requirements*
+- *Scalability needs*
+
+### Security
+- *Authentication/authorization requirements*
+- *Data protection needs*
+- *Compliance requirements*
+
+### Usability
+- *User experience requirements*
+- *Accessibility needs*
+- *Documentation requirements*
+
+## Constraints
+
+### Technical Constraints
+- *Platform limitations*
+- *Technology stack requirements*
+- *Integration requirements*
+
+### Business Constraints
+- *Budget limitations*
+- *Timeline restrictions*
+- *Resource availability*
+
+## Assumptions
+
+- *What are we assuming to be true?*
+- *What dependencies are we counting on?*
+
+## Acceptance Criteria
+
+- *How will we know the requirements are met?*
+- *What tests or validations will we perform?*
+""",
+        "research": f"""---
+title: Research
+project: {project_name}
+created: {timestamp}
+type: element
+workstream: research
+---
+
+# Research & Analysis
+
+## Background Research
+
+### Domain Context
+- *What is the problem space?*
+- *What are the key concepts?*
+- *What terminology is important?*
+
+### Prior Art
+- *What existing solutions are there?*
+- *What can we learn from them?*
+- *What gaps do they leave?*
+
+## Market Analysis
+
+### Target Audience
+- *Who are the users?*
+- *What are their needs?*
+- *What are their pain points?*
+
+### Competitive Landscape
+- *Who are the competitors?*
+- *What are their strengths/weaknesses?*
+- *What opportunities exist?*
+
+## Technical Research
+
+### Technology Options
+- *What technologies could we use?*
+- *What are the trade-offs?*
+- *What are the risks?*
+
+### Feasibility Analysis
+- *Is the solution technically feasible?*
+- *What are the technical challenges?*
+- *What POCs or experiments are needed?*
+
+## Key Findings
+
+1. **Finding 1**: *Description and implications*
+2. **Finding 2**: *Description and implications*
+3. **Finding 3**: *Description and implications*
+
+## Recommendations
+
+- *Based on research, what do we recommend?*
+- *What approach should we take?*
+- *What should we avoid?*
+
+## References
+
+- *List of sources, links, and citations*
+""",
+        "design": f"""---
+title: Design
+project: {project_name}
+created: {timestamp}
+type: element
+workstream: design
+---
+
+# Solution Design
+
+## Architecture Overview
+
+### High-Level Architecture
+- *System architecture diagram or description*
+- *Key components and their relationships*
+- *Data flow overview*
+
+### Design Principles
+- *What principles guide the design?*
+- *What patterns are we following?*
+- *What best practices apply?*
+
+## Component Design
+
+### Core Components
+1. **Component 1**
+   - Purpose: *What it does*
+   - Responsibilities: *What it's responsible for*
+   - Interfaces: *How it interacts with other components*
+
+2. **Component 2**
+   - Purpose: *What it does*
+   - Responsibilities: *What it's responsible for*
+   - Interfaces: *How it interacts with other components*
+
+### Data Model
+- *Data structures and schemas*
+- *Database design if applicable*
+- *Data flow and transformations*
+
+## Integration Points
+
+### External Systems
+- *What external systems do we integrate with?*
+- *What are the integration methods?*
+- *What are the data formats?*
+
+### APIs and Interfaces
+- *What APIs do we expose?*
+- *What protocols do we use?*
+- *What are the contracts?*
+
+## Security Design
+
+### Authentication & Authorization
+- *How do we handle authentication?*
+- *How do we manage authorization?*
+- *What security patterns do we use?*
+
+### Data Protection
+- *How do we protect data at rest?*
+- *How do we protect data in transit?*
+- *What encryption do we use?*
+
+## Performance Considerations
+
+- *What are the performance bottlenecks?*
+- *How do we optimize for performance?*
+- *What caching strategies do we use?*
+
+## Deployment Architecture
+
+- *How will the solution be deployed?*
+- *What infrastructure is required?*
+- *What are the scaling considerations?*
+""",
+        "implementation": f"""---
+title: Implementation Plan
+project: {project_name}
+created: {timestamp}
+type: element
+workstream: implementation
+---
+
+# Implementation Plan
+
+## Development Approach
+
+### Methodology
+- *Agile, Waterfall, or hybrid approach?*
+- *Sprint/iteration structure*
+- *Development workflow*
+
+### Team Structure
+- *Required roles and responsibilities*
+- *Team size and composition*
+- *Communication structure*
+
+## Phases and Milestones
+
+### Phase 1: Foundation
+**Duration**: *X weeks*
+**Deliverables**:
+- *Core infrastructure setup*
+- *Basic functionality*
+- *Initial testing framework*
+
+### Phase 2: Core Features
+**Duration**: *X weeks*
+**Deliverables**:
+- *Main feature implementation*
+- *Integration work*
+- *Testing and validation*
+
+### Phase 3: Enhancement
+**Duration**: *X weeks*
+**Deliverables**:
+- *Additional features*
+- *Performance optimization*
+- *Polish and refinement*
+
+### Phase 4: Deployment
+**Duration**: *X weeks*
+**Deliverables**:
+- *Production deployment*
+- *Documentation*
+- *Training materials*
+
+## Resource Requirements
+
+### Human Resources
+- *Developer hours needed*
+- *Specialist expertise required*
+- *Support staff needs*
+
+### Technical Resources
+- *Development environments*
+- *Testing infrastructure*
+- *Production infrastructure*
+
+### Tools and Licenses
+- *Required software tools*
+- *License costs*
+- *Third-party services*
+
+## Risk Management
+
+### Identified Risks
+1. **Risk 1**: *Description and impact*
+   - Mitigation: *How we'll address it*
+2. **Risk 2**: *Description and impact*
+   - Mitigation: *How we'll address it*
+
+### Contingency Planning
+- *What if timelines slip?*
+- *What if resources are unavailable?*
+- *What if requirements change?*
+
+## Quality Assurance
+
+### Testing Strategy
+- *Unit testing approach*
+- *Integration testing plan*
+- *User acceptance testing*
+
+### Code Quality
+- *Code review process*
+- *Quality metrics*
+- *Documentation standards*
+
+## Success Criteria
+
+- *How do we know implementation is successful?*
+- *What metrics will we track?*
+- *What are the acceptance criteria?*
+""",
+        "synthesis": f"""---
+title: Synthesis
+project: {project_name}
+created: {timestamp}
+type: element
+workstream: synthesis
+---
+
+# Synthesis & Recommendations
+
+## Executive Summary
+
+*High-level summary of the entire project, findings, and recommendations.*
+
+## Key Findings
+
+### Finding 1: *Title*
+**Evidence**: *What supports this finding?*
+**Implications**: *What does this mean for the project?*
+**Confidence**: High/Medium/Low
+
+### Finding 2: *Title*
+**Evidence**: *What supports this finding?*
+**Implications**: *What does this mean for the project?*
+**Confidence**: High/Medium/Low
+
+### Finding 3: *Title*
+**Evidence**: *What supports this finding?*
+**Implications**: *What does this mean for the project?*
+**Confidence**: High/Medium/Low
+
+## Integrated Analysis
+
+### Connecting the Dots
+- *How do the findings relate to each other?*
+- *What patterns emerge?*
+- *What story do they tell together?*
+
+### Trade-offs and Decisions
+- *What trade-offs were identified?*
+- *What decisions were made and why?*
+- *What alternatives were considered?*
+
+## Recommendations
+
+### Primary Recommendation
+**What**: *Clear statement of what should be done*
+**Why**: *Justification based on findings*
+**How**: *High-level approach*
+**When**: *Suggested timeline*
+
+### Alternative Options
+1. **Option A**: *Description, pros, cons*
+2. **Option B**: *Description, pros, cons*
+
+## Implementation Roadmap
+
+### Immediate Next Steps (0-2 weeks)
+1. *Action item 1*
+2. *Action item 2*
+3. *Action item 3*
+
+### Short-term Actions (2-8 weeks)
+- *Key activities and milestones*
+
+### Long-term Vision (3+ months)
+- *Future enhancements and evolution*
+
+## Critical Success Factors
+
+- *What must be in place for success?*
+- *What could derail the project?*
+- *What support is needed?*
+
+## Conclusion
+
+*Final thoughts, key takeaways, and call to action.*
+
+## Appendices
+
+### A. Detailed Evidence
+*Supporting data, research details, calculations*
+
+### B. Stakeholder Feedback
+*Input from various stakeholders*
+
+### C. References and Resources
+*Bibliography, links, additional reading*
+""",
+    }
+
+    return templates.get(
+        element_type,
+        f"""---
+title: {element_type.title()}
+project: {project_name}
+created: {timestamp}
+type: element
+workstream: {element_type}
+---
+
+# {element_type.title()}
+
+*Content for {element_type} workstream.*
+""",
+    )
+
+
+def create_workstream_batch(
+    project_path: Path,
+    project_name: str,
+    kernel_summary: str | None = None,
+    include_elements: list[str] | None = None,
+) -> BatchDiff:
+    """
+    Create a batch of workstream documents for a project.
+
+    Args:
+        project_path: Path to the project directory
+        project_name: Name of the project
+        kernel_summary: Optional summary from kernel stage
+        include_elements: List of element types to include (default: all)
+
+    Returns:
+        BatchDiff instance ready to preview or apply
+    """
+    batch = BatchDiff()
+
+    # Default elements if not specified
+    if include_elements is None:
+        include_elements = [
+            "requirements",
+            "research",
+            "design",
+            "implementation",
+            "synthesis",
+        ]
+
+    # Add outline.md
+    outline_path = project_path / "outline.md"
+    outline_content = generate_outline_content(project_name, kernel_summary)
+
+    if outline_path.exists():
+        with open(outline_path, encoding="utf-8") as f:
+            old_content = f.read()
+    else:
+        old_content = ""
+
+    batch.add_file(outline_path, old_content, outline_content)
+
+    # Add element files
+    elements_dir = project_path / "elements"
+    for element_type in include_elements:
+        element_path = elements_dir / f"{element_type}.md"
+        element_content = generate_element_content(element_type, project_name)
+
+        if element_path.exists():
+            with open(element_path, encoding="utf-8") as f:
+                old_content = f.read()
+        else:
+            old_content = ""
+
+        batch.add_file(element_path, old_content, element_content)
+
+    return batch
+````
+
+## File: app/llm/prompts/research.md
+````markdown
+<instructions>
+You are in the research stage as a "researcher" agent. Your goal is to extract atomic findings from provided sources and structure them for integration into the project's knowledge base. Do not perform any web calls - work only with the provided content. Output findings as machine-readable JSONL for SQLite FTS ingestion.
+</instructions>
+
+<context>
+You have access to read project documents and provided research content. Your role is to decompose complex information into discrete, verifiable claims with proper attribution. Each finding should be self-contained and traceable to its source. Focus on relevance to the project's kernel and workstreams.
+</context>
+
+<format>
+Output ONLY a single fenced code block of type jsonl containing one JSON object per line. Do not include any text outside the fenced block. Each line must be a valid JSON object with these exact keys:
+
+- id: UUID string (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+- url: Source URL or document reference
+- source_type: Type of source (e.g., "article", "documentation", "research_paper")
+- claim: One specific, falsifiable statement extracted from the source
+- evidence: Direct quote or paraphrase supporting the claim (max 100 words)
+- confidence: Float between 0.0 and 1.0 based on source reliability and claim specificity
+- tags: Comma-separated keywords for categorization (e.g., "architecture,performance,caching")
+- workstream: Which project workstream this finding supports
+- retrieved_at: ISO8601 timestamp (e.g., "2024-01-15T14:30:00Z")
+
+Example (exactly 2 lines in the jsonl block):
+
+```jsonl
+{"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "url": "https://docs.python.org/3/library/sqlite3.html", "source_type": "documentation", "claim": "SQLite FTS5 extension provides full-text search with BM25 ranking", "evidence": "FTS5 is an SQLite virtual table module that provides full-text search functionality with built-in BM25 ranking algorithm for relevance scoring", "confidence": 0.95, "tags": "sqlite,fts,search,ranking", "workstream": "research", "retrieved_at": "2024-01-15T10:45:00Z"}
+{"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8", "url": "https://textual.textualize.io/guide/", "source_type": "article", "claim": "Textual provides reactive data binding for TUI components", "evidence": "Textual's reactive attributes automatically update the UI when their values change, enabling declarative UI patterns", "confidence": 0.90, "tags": "textual,tui,reactive,ui", "workstream": "interface", "retrieved_at": "2024-01-15T10:47:00Z"}
+```
+</format>
 ````
 
 ## File: app/tui/views/__init__.py
@@ -2043,6 +2730,192 @@ if __name__ == "__main__":
 from .main_screen import MainScreen
 
 __all__ = ["MainScreen"]
+````
+
+## File: app/tui/widgets/kernel_approval.py
+````python
+"""Modal widget for approving kernel changes with diff preview."""
+
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.screen import ModalScreen
+from textual.widgets import Button, Label, Static
+
+
+class KernelApprovalModal(ModalScreen[bool]):
+    """Modal for reviewing and approving kernel changes."""
+
+    DEFAULT_CSS = """
+    KernelApprovalModal {
+        align: center middle;
+    }
+
+    KernelApprovalModal > Container {
+        background: $surface;
+        width: 90%;
+        height: 80%;
+        border: thick $primary;
+        padding: 1;
+    }
+
+    KernelApprovalModal .diff-container {
+        height: 1fr;
+        margin-bottom: 1;
+        border: solid $primary;
+        padding: 1;
+    }
+
+    KernelApprovalModal .button-container {
+        height: 3;
+        align: center middle;
+    }
+
+    KernelApprovalModal Button {
+        margin: 0 1;
+        width: 16;
+    }
+
+    KernelApprovalModal .accept-button {
+        background: $success;
+    }
+
+    KernelApprovalModal .reject-button {
+        background: $warning;
+    }
+    """
+
+    BINDINGS = [
+        Binding("y", "accept", "Accept", priority=True),
+        Binding("n", "reject", "Reject", priority=True),
+        Binding("escape", "reject", "Cancel"),
+    ]
+
+    def __init__(
+        self,
+        diff_content: str,
+        project_slug: str,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        """
+        Initialize the kernel approval modal.
+
+        Args:
+            diff_content: The diff preview to display
+            project_slug: The project identifier
+            name: Optional widget name
+            id: Optional widget ID
+            classes: Optional CSS classes
+        """
+        super().__init__(name=name, id=id, classes=classes)
+        self.diff_content = diff_content
+        self.project_slug = project_slug
+
+    def compose(self) -> ComposeResult:
+        """Compose the modal UI."""
+        with Container():
+            yield Label(f"[bold]Kernel Changes for Project: {self.project_slug}[/bold]")
+            yield Label("[dim]Review the changes below and approve or reject[/dim]")
+
+            with ScrollableContainer(classes="diff-container"):
+                yield Static(self.diff_content, markup=True)
+
+            with Horizontal(classes="button-container"):
+                yield Button(
+                    "Accept (Y)",
+                    variant="success",
+                    classes="accept-button",
+                    id="accept",
+                )
+                yield Button(
+                    "Reject (N)",
+                    variant="warning",
+                    classes="reject-button",
+                    id="reject",
+                )
+
+    def action_accept(self) -> None:
+        """Accept the changes."""
+        self.dismiss(True)
+
+    def action_reject(self) -> None:
+        """Reject the changes."""
+        self.dismiss(False)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
+        if event.button.id == "accept":
+            self.action_accept()
+        elif event.button.id == "reject":
+            self.action_reject()
+````
+
+## File: app/tui/widgets/session_viewer.py
+````python
+"""Session viewer widget for displaying editor content or Claude streams."""
+
+from textual.widgets import RichLog
+
+
+class SessionViewer(RichLog):
+    """Main content viewer for editing documents or viewing session output."""
+
+    DEFAULT_CSS = """
+    SessionViewer {
+        background: $surface;
+        border: solid $primary;
+        padding: 1;
+    }
+    """
+
+    def __init__(self) -> None:
+        """Initialize the session viewer."""
+        super().__init__(id="session-viewer", wrap=True, highlight=True, markup=True)
+
+    def on_mount(self) -> None:
+        """Display welcome message on mount."""
+        self.write("[bold cyan]Welcome to Brainstorm Buddy[/bold cyan]\n")
+        self.write("\nA terminal-first brainstorming app that guides you through:\n")
+        self.write("• [yellow]Capture[/yellow] → [yellow]Clarify[/yellow] → ")
+        self.write("[yellow]Kernel[/yellow] → [yellow]Outline[/yellow] → ")
+        self.write("[yellow]Research[/yellow] → [yellow]Synthesis[/yellow] → ")
+        self.write("[yellow]Export[/yellow]\n")
+        self.write("\n[dim]Press ':' to open the command palette[/dim]")
+
+    def write(
+        self,
+        content: object,
+        width: int | None = None,
+        expand: bool = False,
+        shrink: bool = True,
+        scroll_end: bool | None = None,
+        animate: bool = False,
+    ) -> "SessionViewer":
+        """
+        Write text to the viewer with optional scrolling.
+
+        Args:
+            content: Content to write (supports Rich markup)
+            width: Width hint for content
+            expand: Whether to expand content to full width
+            shrink: Whether to shrink content to fit
+            scroll_end: Whether to scroll to the end after writing
+            animate: Whether to animate scrolling
+
+        Returns:
+            Self for chaining
+        """
+        super().write(
+            content,
+            width=width,
+            expand=expand,
+            shrink=shrink,
+            scroll_end=scroll_end,
+            animate=animate,
+        )
+        return self
 ````
 
 ## File: app/tui/__init__.py
@@ -2057,343 +2930,57 @@ __all__ = ["MainScreen"]
 __version__ = "0.1.0"
 ````
 
-## File: tests/test_policies.py
+## File: app/cli.py
 ````python
-"""Unit tests for session policy registry."""
+"""Command-line interface for Brainstorm Buddy."""
 
+import sys
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
-
-from app.llm.sessions import SessionPolicy, get_policy
-
-
-def test_get_policy_clarify() -> None:
-    """Test clarify stage policy configuration."""
-    policy = get_policy("clarify")
-
-    assert policy.stage == "clarify"
-    assert "app/llm/prompts/clarify.md" in str(policy.system_prompt_path)
-    assert policy.allowed_tools == ["Read"]
-    assert set(policy.denied_tools) == {"Write", "Edit", "Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == []
-    assert policy.permission_mode == "readonly"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_kernel() -> None:
-    """Test kernel stage policy configuration."""
-    policy = get_policy("kernel")
-
-    assert policy.stage == "kernel"
-    assert "app/llm/prompts/kernel.md" in str(policy.system_prompt_path)
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_outline() -> None:
-    """Test outline stage policy configuration."""
-    policy = get_policy("outline")
-
-    assert policy.stage == "outline"
-    assert "app/llm/prompts/outline.md" in str(policy.system_prompt_path)
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_research_with_web_disabled() -> None:
-    """Test research stage policy with web tools disabled."""
-    with patch("app.llm.sessions.load_settings") as mock_settings:
-        mock_settings.return_value.enable_web_tools = False
-        policy = get_policy("research")
-
-    assert policy.stage == "research"
-    assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert "Bash" in policy.denied_tools
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_research_with_web_enabled() -> None:
-    """Test research stage policy with web tools enabled."""
-    with patch("app.llm.sessions.load_settings") as mock_settings:
-        mock_settings.return_value.enable_web_tools = True
-        policy = get_policy("research")
-
-    assert policy.stage == "research"
-    assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit", "WebSearch", "WebFetch"}
-    assert "Bash" in policy.denied_tools
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert set(policy.web_tools_allowed) == {"WebSearch", "WebFetch"}
-
-
-def test_get_policy_synthesis() -> None:
-    """Test synthesis stage policy configuration."""
-    policy = get_policy("synthesis")
-
-    assert policy.stage == "synthesis"
-    assert "app/llm/prompts/synthesis.md" in str(policy.system_prompt_path)
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_invalid_stage() -> None:
-    """Test that invalid stage raises ValueError."""
-    with pytest.raises(ValueError) as exc_info:
-        get_policy("invalid_stage")
-
-    assert "Unknown stage: invalid_stage" in str(exc_info.value)
-    assert "Valid stages are:" in str(exc_info.value)
-
-
-def test_session_policy_is_frozen() -> None:
-    """Test that SessionPolicy is immutable."""
-    policy = SessionPolicy(
-        stage="test",
-        system_prompt_path=Path("test.md"),
-        allowed_tools=[],
-        denied_tools=[],
-        write_roots=[],
-        permission_mode="test",
-        web_tools_allowed=[],
-    )
-
-    with pytest.raises(AttributeError):
-        policy.stage = "modified"  # type: ignore
-
-
-def test_policies_have_correct_prompt_paths() -> None:
-    """Test that all policies have correctly formed prompt paths."""
-    stages = ["clarify", "kernel", "outline", "research", "synthesis"]
-
-    for stage in stages:
-        policy = get_policy(stage)
-        assert policy.system_prompt_path.suffix == ".md"
-        assert "app/llm/prompts" in str(policy.system_prompt_path)
-        # Note: synthesis and research stages use prompts that don't exist yet
-        # but the paths should still be correctly formed
-````
-
-## File: tests/test_settings_writer.py
-````python
-"""Tests for Claude settings writer."""
-
-import json
-from pathlib import Path
+import typer
 
 from app.permissions.settings_writer import write_project_settings
 
-
-def test_write_project_settings_creates_structure(tmp_path: Path) -> None:
-    """Test that write_project_settings creates the expected file structure."""
-    # Run the settings writer
-    write_project_settings(repo_root=tmp_path)
-
-    # Check that directories exist
-    assert (tmp_path / ".claude").exists()
-    assert (tmp_path / ".claude" / "hooks").exists()
-
-    # Check that settings.json exists
-    settings_path = tmp_path / ".claude" / "settings.json"
-    assert settings_path.exists()
-
-    # Check that hook files exist
-    assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
-    assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
+app = typer.Typer(
+    name="bb",
+    help="Brainstorm Buddy CLI - Tools for managing brainstorming sessions and Claude configs",
+)
 
 
-def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
-    """Test that settings.json contains the expected structure."""
-    write_project_settings(repo_root=tmp_path)
+@app.command()
+def materialize_claude(
+    dest: str = typer.Option(..., "--dest", "-d", help="Destination path for .claude config"),
+) -> None:
+    """Generate Claude configuration at the specified destination."""
+    try:
+        # Convert string to Path
+        dest_path = Path(dest).resolve()
 
-    settings_path = tmp_path / ".claude" / "settings.json"
-    with open(settings_path, encoding="utf-8") as f:
-        settings = json.load(f)
+        # Ensure the destination directory exists
+        dest_path.mkdir(parents=True, exist_ok=True)
 
-    # Check permissions structure
-    assert "permissions" in settings
-    assert "allow" in settings["permissions"]
-    assert "deny" in settings["permissions"]
-    assert "denyPaths" in settings["permissions"]
-    assert "writeRoots" in settings["permissions"]
+        # Generate the Claude configuration
+        config_dir = write_project_settings(
+            repo_root=dest_path,
+            config_dir_name=".claude",
+            import_hooks_from="app.permissions.hooks_lib",
+        )
 
-    # Check allowed tools
-    assert set(settings["permissions"]["allow"]) == {"Read", "Edit", "Write"}
+        print(f"✓ Successfully created Claude configuration at: {config_dir}")
+        print(f"  Settings: {config_dir}/settings.json")
+        print(f"  Hooks: {config_dir}/hooks/")
+        print()
+        print("To use this configuration with Claude Code:")
+        print(f"  cd {dest_path}")
+        print("  claude")
 
-    # Check denied tools
-    assert set(settings["permissions"]["deny"]) == {"Bash", "WebSearch", "WebFetch"}
-
-    # Check denied paths
-    assert ".env*" in settings["permissions"]["denyPaths"]
-    assert "secrets/**" in settings["permissions"]["denyPaths"]
-    assert ".git/**" in settings["permissions"]["denyPaths"]
-
-    # Check write roots
-    assert "projects/**" in settings["permissions"]["writeRoots"]
-    assert "exports/**" in settings["permissions"]["writeRoots"]
-
-
-def test_hooks_configuration(tmp_path: Path) -> None:
-    """Test that hooks are correctly configured in settings.json."""
-    write_project_settings(repo_root=tmp_path)
-
-    settings_path = tmp_path / ".claude" / "settings.json"
-    with open(settings_path, encoding="utf-8") as f:
-        settings = json.load(f)
-
-    # Check hooks structure
-    assert "hooks" in settings
-    assert "PreToolUse" in settings["hooks"]
-    assert "PostToolUse" in settings["hooks"]
-
-    # Check hook paths
-    assert settings["hooks"]["PreToolUse"] == ".claude/hooks/gate.py"
-    assert settings["hooks"]["PostToolUse"] == ".claude/hooks/format_md.py"
+    except Exception as e:
+        print(f"✗ Failed to create Claude configuration: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
-def test_hook_files_have_content(tmp_path: Path) -> None:
-    """Test that hook files contain placeholder content."""
-    write_project_settings(repo_root=tmp_path)
-
-    gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
-    format_hook = tmp_path / ".claude" / "hooks" / "format_md.py"
-
-    # Check gate.py content
-    with open(gate_hook, encoding="utf-8") as f:
-        gate_content = f.read()
-    assert "PreToolUse" in gate_content
-    assert "TODO" in gate_content
-    assert "def main():" in gate_content
-
-    # Check format_md.py content
-    with open(format_hook, encoding="utf-8") as f:
-        format_content = f.read()
-    assert "PostToolUse" in format_content
-    assert "TODO" in format_content
-    assert "def main():" in format_content
-
-
-def test_hook_files_are_executable(tmp_path: Path) -> None:
-    """Test that hook files have executable permissions."""
-    write_project_settings(repo_root=tmp_path)
-
-    gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
-    format_hook = tmp_path / ".claude" / "hooks" / "format_md.py"
-
-    # Check that files have execute permissions for owner
-    assert gate_hook.stat().st_mode & 0o100
-    assert format_hook.stat().st_mode & 0o100
-
-
-def test_idempotent_operation(tmp_path: Path) -> None:
-    """Test that running write_project_settings multiple times is safe."""
-    # Run twice
-    write_project_settings(repo_root=tmp_path)
-    write_project_settings(repo_root=tmp_path)
-
-    # Should not raise errors and files should still exist
-    assert (tmp_path / ".claude" / "settings.json").exists()
-    assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
-    assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
-````
-
-## File: tests/test_smoke.py
-````python
-"""Smoke tests to verify basic imports and structure."""
-
-
-def test_app_imports() -> None:
-    """Test that the app module can be imported."""
-    import app
-
-    assert app is not None
-    assert hasattr(app, "__version__")
-
-
-def test_tui_app_imports() -> None:
-    """Test that the TUI app can be imported."""
-    from app.tui import app as tui_module
-    from app.tui.app import BrainstormBuddyApp
-
-    assert tui_module is not None
-    assert BrainstormBuddyApp is not None
-    assert hasattr(BrainstormBuddyApp, "TITLE")
-    assert BrainstormBuddyApp.TITLE == "Brainstorm Buddy"
-````
-
-## File: tests/test_tui_imports.py
-````python
-"""Import tests for TUI modules to ensure no import errors."""
-
-
-def test_tui_app_imports() -> None:
-    """Test that the main TUI app module imports successfully."""
-    from app.tui.app import BrainstormBuddyApp, main  # noqa: F401
-
-    assert BrainstormBuddyApp is not None
-    assert main is not None
-
-
-def test_tui_views_imports() -> None:
-    """Test that all view modules import successfully."""
-    from app.tui.views import MainScreen  # noqa: F401
-    from app.tui.views.main_screen import MainScreen as MS  # noqa: F401
-
-    assert MainScreen is MS
-
-
-def test_tui_widgets_imports() -> None:
-    """Test that all widget modules import successfully."""
-    from app.tui.widgets import (  # noqa: F401
-        CommandPalette,
-        ContextPanel,
-        FileTree,
-        SessionViewer,
-    )
-    from app.tui.widgets.command_palette import CommandPalette as CP  # noqa: F401
-    from app.tui.widgets.context_panel import ContextPanel as CTX  # noqa: F401
-    from app.tui.widgets.file_tree import FileTree as FT  # noqa: F401
-    from app.tui.widgets.session_viewer import SessionViewer as SV  # noqa: F401
-
-    assert CommandPalette is CP
-    assert ContextPanel is CTX
-    assert FileTree is FT
-    assert SessionViewer is SV
-
-
-def test_widget_instantiation() -> None:
-    """Test that widgets can be instantiated without errors."""
-    from app.tui.widgets import (
-        CommandPalette,
-        ContextPanel,
-        FileTree,
-        SessionViewer,
-    )
-
-    # Create instances to ensure no initialization errors
-    file_tree = FileTree()
-    session_viewer = SessionViewer()
-    context_panel = ContextPanel()
-    command_palette = CommandPalette()
-
-    assert file_tree is not None
-    assert session_viewer is not None
-    assert context_panel is not None
-    assert command_palette is not None
+if __name__ == "__main__":
+    app()
 ````
 
 ## File: .pre-commit-config.yaml
@@ -2434,6 +3021,118 @@ repos:
 #       args: [--strict, --ignore-missing-imports]
 ````
 
+## File: requirements-dev.txt
+````
+# Development dependencies for brainstormbuddy
+# Install with: uv pip install -r requirements-dev.txt
+
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
+
+# Linting and formatting
+ruff>=0.7.0
+
+# Type checking
+mypy>=1.13.0
+types-PyYAML>=6.0
+pytest-stub>=1.1.0
+
+# CLI
+typer>=0.9.0
+
+# Pre-commit hooks (optional)
+pre-commit>=4.3.0
+
+# Security and packaging (optional)
+pip-audit>=2.7.0
+bandit[toml]>=1.7.0
+build>=1.0.0
+twine>=5.0.0
+````
+
+## File: requirements.txt
+````
+# This file was autogenerated by uv via the following command:
+#    uv pip compile pyproject.toml -o requirements.txt
+aiofiles==24.1.0
+    # via brainstormbuddy (pyproject.toml)
+aiosqlite==0.20.0
+    # via brainstormbuddy (pyproject.toml)
+annotated-types==0.7.0
+    # via pydantic
+linkify-it-py==2.0.3
+    # via markdown-it-py
+markdown-it-py==3.0.0
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   mdformat
+    #   mdit-py-plugins
+    #   rich
+    #   textual
+mdformat==0.7.22
+    # via brainstormbuddy (pyproject.toml)
+mdit-py-plugins==0.5.0
+    # via markdown-it-py
+mdurl==0.1.2
+    # via markdown-it-py
+platformdirs==4.3.8
+    # via textual
+pydantic==2.11.7
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   pydantic-settings
+pydantic-core==2.33.2
+    # via pydantic
+pydantic-settings==2.10.1
+    # via brainstormbuddy (pyproject.toml)
+pygments==2.19.2
+    # via rich
+python-dotenv==1.1.1
+    # via pydantic-settings
+pyyaml==6.0.2
+    # via brainstormbuddy (pyproject.toml)
+rich==14.1.0
+    # via textual
+textual==0.86.3
+    # via brainstormbuddy (pyproject.toml)
+typing-extensions==4.14.1
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   aiosqlite
+    #   pydantic
+    #   pydantic-core
+    #   textual
+    #   typing-inspection
+typing-inspection==0.4.1
+    # via
+    #   pydantic
+    #   pydantic-settings
+uc-micro-py==1.0.3
+    # via linkify-it-py
+typer==0.9.0  # CLI framework
+````
+
+## File: app/tui/widgets/__init__.py
+````python
+"""Reusable widget components for the TUI."""
+
+from .command_palette import CommandPalette
+from .context_panel import ContextPanel
+from .file_tree import FileTree
+from .kernel_approval import KernelApprovalModal
+from .session_viewer import SessionViewer
+
+__all__ = [
+    "CommandPalette",
+    "ContextPanel",
+    "FileTree",
+    "KernelApprovalModal",
+    "SessionViewer",
+]
+````
+
 ## File: app/files/diff.py
 ````python
 """Diff and patch utilities for atomic file operations."""
@@ -2443,6 +3142,8 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.files.atomic import atomic_write_text
 
 
 @dataclass
@@ -2497,51 +3198,8 @@ def apply_patch(path: Path | str, patch: Patch) -> None:
     Raises:
         IOError: If there's an error during the atomic write operation
     """
-    file_path = Path(path) if isinstance(path, str) else path
-
-    # Precompute file mode if file exists
-    file_mode = None
-    if file_path.exists():
-        file_mode = os.stat(file_path).st_mode
-
-    # Ensure parent directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to a temporary file first
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=file_path.parent,
-        delete=False,
-        suffix=".tmp",
-    ) as tmp_file:
-        tmp_file.write(patch.modified)
-        tmp_file.flush()
-        os.fsync(tmp_file.fileno())
-        tmp_path = Path(tmp_file.name)
-
-    try:
-        # Preserve file mode if original file existed
-        if file_mode is not None:
-            os.chmod(tmp_path, file_mode)
-
-        # Atomically replace the original file
-        tmp_path.replace(file_path)
-
-        # Fsync parent directory for durability (best-effort)
-        try:
-            dfd = os.open(file_path.parent, os.O_DIRECTORY)
-            try:
-                os.fsync(dfd)
-            finally:
-                os.close(dfd)
-        except OSError:
-            # Platform/filesystem doesn't support directory fsync
-            pass
-    except Exception:
-        # Clean up temp file if replacement fails
-        tmp_path.unlink(missing_ok=True)
-        raise
+    # Delegate to atomic_write_text for the actual atomic write
+    atomic_write_text(path, patch.modified)
 
 
 def generate_diff_preview(
@@ -2701,6 +3359,8 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
                 suffix=".tmp",
             ) as tmp_file:
                 tmp_file.write(new_content)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
                 tmp_path = Path(tmp_file.name)
 
             # Store temp file info for later replacement
@@ -2718,6 +3378,8 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
                     suffix=".backup",
                 ) as backup_file:
                     backup_file.write(original_content)
+                    backup_file.flush()
+                    os.fsync(backup_file.fileno())
                     backup_path = Path(backup_file.name)
                 backup_files.append((target_path, backup_path))
 
@@ -2732,6 +3394,24 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
                 # Atomic replace
                 temp_path.replace(target_path)
                 completed_replacements.append(target_path)
+
+            # Fsync parent directories for durability (best-effort)
+            # Collect unique parent directories
+            parent_dirs = set()
+            for target_path, _, _, _, _ in temp_files:
+                parent_dirs.add(target_path.parent)
+
+            # Fsync each parent directory once
+            for parent_dir in parent_dirs:
+                try:
+                    dfd = os.open(parent_dir, os.O_DIRECTORY)
+                    try:
+                        os.fsync(dfd)
+                    finally:
+                        os.close(dfd)
+                except OSError:
+                    # Platform/filesystem doesn't support directory fsync
+                    pass
 
         except Exception as e:
             # Restore original files from backups or remove newly created files
@@ -2778,15 +3458,283 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
     return computed_patches
 ````
 
+## File: app/llm/sessions.py
+````python
+"""Session policy registry for stage-gated tool permissions and prompts."""
+
+from dataclasses import dataclass, replace
+from pathlib import Path
+
+from app.core.config import load_settings
+from app.llm.agents import AgentSpec
+
+
+@dataclass(frozen=True)
+class SessionPolicy:
+    """Configuration for a brainstorming session stage."""
+
+    stage: str
+    system_prompt_path: Path
+    allowed_tools: list[str]
+    denied_tools: list[str]
+    write_roots: list[str]
+    permission_mode: str
+    web_tools_allowed: list[str]
+
+
+def get_policy(stage: str) -> SessionPolicy:
+    """
+    Get the policy configuration for a given stage.
+
+    Args:
+        stage: One of 'clarify', 'kernel', 'outline', 'research', 'synthesis'
+
+    Returns:
+        SessionPolicy with appropriate configuration
+
+    Raises:
+        ValueError: If stage is not recognized
+    """
+    settings = load_settings()
+    base_prompt_path = Path(__file__).resolve().parent / "prompts"
+
+    policies = {
+        "clarify": SessionPolicy(
+            stage="clarify",
+            system_prompt_path=base_prompt_path / "clarify.md",
+            allowed_tools=["Read"],
+            denied_tools=["Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+            write_roots=[],
+            permission_mode="readonly",
+            web_tools_allowed=[],
+        ),
+        "kernel": SessionPolicy(
+            stage="kernel",
+            system_prompt_path=base_prompt_path / "kernel.md",
+            allowed_tools=["Read", "Write", "Edit"],
+            denied_tools=["Bash", "WebSearch", "WebFetch"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=[],
+        ),
+        "outline": SessionPolicy(
+            stage="outline",
+            system_prompt_path=base_prompt_path / "outline.md",
+            allowed_tools=["Read", "Write", "Edit"],
+            denied_tools=["Bash", "WebSearch", "WebFetch"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=[],
+        ),
+        "research": SessionPolicy(
+            stage="research",
+            system_prompt_path=base_prompt_path / "research.md",
+            allowed_tools=(
+                ["Read", "Write", "Edit", "WebSearch", "WebFetch"]
+                if settings.enable_web_tools
+                else ["Read", "Write", "Edit"]
+            ),
+            denied_tools=["Bash"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=(["WebSearch", "WebFetch"] if settings.enable_web_tools else []),
+        ),
+        "synthesis": SessionPolicy(
+            stage="synthesis",
+            system_prompt_path=base_prompt_path / "synthesis.md",
+            allowed_tools=["Read", "Write", "Edit"],
+            denied_tools=["Bash", "WebSearch", "WebFetch"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=[],
+        ),
+    }
+
+    if stage not in policies:
+        raise ValueError(f"Unknown stage: {stage}. Valid stages are: {', '.join(policies.keys())}")
+
+    return policies[stage]
+
+
+def merge_agent_policy(stage_policy: SessionPolicy, agent_spec: AgentSpec | None) -> SessionPolicy:
+    """
+    Merge an agent specification with a stage policy.
+
+    Rules:
+    - If agent_spec is None, return the stage policy unchanged
+    - If agent has empty tools list, the merged policy has no allowed tools
+    - Otherwise, agent tools are intersected with stage allowed tools
+    - Denied tools from stage policy are always preserved (deny wins)
+
+    Args:
+        stage_policy: The base stage policy
+        agent_spec: Optional agent specification to merge
+
+    Returns:
+        Merged SessionPolicy
+    """
+    if agent_spec is None:
+        return stage_policy
+
+    # If agent has empty tools list, no tools are allowed
+    if agent_spec.tools == []:
+        merged_allowed_tools: list[str] = []
+    else:
+        # Intersect agent tools with stage allowed tools
+        stage_allowed_set = set(stage_policy.allowed_tools)
+        agent_tools_set = set(agent_spec.tools)
+        merged_allowed_tools = list(stage_allowed_set & agent_tools_set)
+
+    # Create merged policy with updated allowed_tools
+    return replace(stage_policy, allowed_tools=merged_allowed_tools)
+````
+
+## File: app/permissions/settings_writer.py
+````python
+"""Settings writer for Claude project configuration."""
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+def write_project_settings(
+    repo_root: Path = Path("."),
+    config_dir_name: str = ".claude",
+    import_hooks_from: str = "app.permissions.hooks_lib",
+) -> Path:
+    """
+    Write Claude project settings with deny-first permissions and hook configuration.
+
+    Args:
+        repo_root: Root directory of the repository (default: current directory)
+        config_dir_name: Name of the configuration directory (default: ".claude")
+        import_hooks_from: Python module path to import hooks from (default: "app.permissions.hooks_lib")
+
+    Returns:
+        Path to the created configuration directory
+    """
+    repo_root = Path(repo_root)
+    config_dir = repo_root / config_dir_name
+    hooks_dir = config_dir / "hooks"
+
+    # Ensure directories exist
+    config_dir.mkdir(exist_ok=True)
+    hooks_dir.mkdir(exist_ok=True)
+
+    # Define settings structure
+    settings: dict[str, Any] = {
+        "permissions": {
+            "allow": ["Read", "Edit", "Write"],
+            "deny": ["Bash", "WebSearch", "WebFetch"],
+            "denyPaths": [".env*", "secrets/**", ".git/**"],
+            "writeRoots": ["projects/**", "exports/**"],
+        },
+        "hooks": {
+            "PreToolUse": f"{config_dir_name}/hooks/gate.py",
+            "PostToolUse": f"{config_dir_name}/hooks/format_md.py",
+        },
+    }
+
+    # Write settings.json
+    settings_path = config_dir / "settings.json"
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")  # Add trailing newline
+
+    # Create hook stub files
+    _create_gate_hook(hooks_dir / "gate.py")
+    _create_format_md_hook(hooks_dir / "format_md.py", import_hooks_from)
+
+    return config_dir
+
+
+def _create_gate_hook(hook_path: Path) -> None:
+    """
+    Create the PreToolUse gate hook stub.
+
+    Args:
+        hook_path: Path to the hook file
+    """
+    hook_content = '''#!/usr/bin/env python3
+"""Claude PreToolUse hook."""
+
+# TODO: Implement PreToolUse hook logic
+# This hook is called pre tool use
+
+def main():
+    """Main hook entry point."""
+    pass
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(hook_content)
+
+    # Make the hook executable (Python will handle this cross-platform)
+    hook_path.chmod(0o755)
+
+
+def _create_format_md_hook(hook_path: Path, import_hooks_from: str) -> None:
+    """
+    Create the PostToolUse format_md hook that imports from hooks_lib.
+
+    Args:
+        hook_path: Path to the hook file
+        import_hooks_from: Python module path to import hooks from
+    """
+    hook_content = f'''#!/usr/bin/env python3
+"""Claude PostToolUse hook: format Markdown via mdformat (pure Python)."""
+
+from __future__ import annotations
+import json
+import sys
+from pathlib import Path
+
+# Import formatting function and atomic writer from the app's hooks library
+from {import_hooks_from}.format_md import _format_markdown_text
+from {import_hooks_from}.io import atomic_replace_text
+
+
+def main() -> None:
+    """Main hook entry point."""
+    # stdin JSON: dict with tool_name and target_path keys
+    payload = json.load(sys.stdin)
+    path = Path(payload.get("target_path") or "")
+    if path.suffix.lower() != ".md":
+        sys.exit(0)
+    # Read, format, write back atomically with durability guarantees
+    content = path.read_text(encoding="utf-8") if path.exists() else ""
+    formatted = _format_markdown_text(content)
+    if formatted != content:
+        atomic_replace_text(path, formatted)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(hook_content)
+
+    # Make the hook executable (Python will handle this cross-platform)
+    hook_path.chmod(0o755)
+````
+
 ## File: app/tui/app.py
 ````python
 """Textual App for Brainstorm Buddy with three-pane layout."""
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
+from textual.widgets import Footer, Header
 
-from app.tui.views import MainScreen
-from app.tui.widgets import CommandPalette
+from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
 
 
 class BrainstormBuddyApp(App[None]):
@@ -2794,7 +3742,20 @@ class BrainstormBuddyApp(App[None]):
 
     TITLE = "Brainstorm Buddy"
     SUB_TITLE = "Terminal-first brainstorming app"
-    CSS_PATH = None  # Use default CSS from widgets
+
+    DEFAULT_CSS = """
+    Screen {
+        background: $surface;
+    }
+
+    Header {
+        background: $primary;
+    }
+
+    Horizontal {
+        height: 1fr;
+    }
+    """
 
     BINDINGS = [
         Binding(":", "command_palette", "Command", priority=True),
@@ -2803,7 +3764,13 @@ class BrainstormBuddyApp(App[None]):
 
     def compose(self) -> ComposeResult:
         """Compose the app with three-pane layout."""
-        yield MainScreen()
+        yield Header()
+        with Horizontal():
+            yield FileTree()
+            yield SessionViewer()
+            yield ContextPanel()
+        yield Footer()
+        yield CommandPalette()
 
     def action_command_palette(self) -> None:
         """Show the command palette."""
@@ -2821,443 +3788,712 @@ if __name__ == "__main__":
     main()
 ````
 
-## File: tests/test_diff.py
+## File: .github/workflows/ci.yml
+````yaml
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Install ruff
+      run: |
+        uv venv
+        uv pip install ruff
+
+    - name: Run ruff linting
+      run: |
+        source .venv/bin/activate
+        ruff check .
+
+    - name: Run ruff formatting check
+      run: |
+        source .venv/bin/activate
+        ruff format --check .
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install mypy types-PyYAML pytest-stub
+
+    - name: Run mypy type checking
+      run: |
+        source .venv/bin/activate
+        mypy . --strict
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install pytest pytest-cov pytest-asyncio
+
+    - name: Run tests with coverage
+      run: |
+        source .venv/bin/activate
+        PYTHONPATH=$PWD pytest -q --tb=short --cov=app --cov-report=xml --cov-report=term-missing
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: Python-${{ matrix.python-version }}
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
+        verbose: true
+````
+
+## File: app/llm/claude_client.py
 ````python
-"""Tests for diff and patch utilities."""
+"""Claude client interface with streaming support and fake implementation."""
 
-import os
+from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class TextDelta:
+    """Represents a text chunk in the stream."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class ToolUseStart:
+    """Indicates the start of tool usage."""
+
+    tool_name: str
+    tool_id: str
+
+
+@dataclass(frozen=True)
+class ToolUseEnd:
+    """Indicates the end of tool usage."""
+
+    tool_id: str
+    result: str | None = None
+
+
+@dataclass(frozen=True)
+class MessageDone:
+    """Indicates the message stream is complete."""
+
+    pass
+
+
+Event = TextDelta | ToolUseStart | ToolUseEnd | MessageDone
+
+
+class ClaudeClient(ABC):
+    """Abstract interface for Claude API clients."""
+
+    @abstractmethod
+    async def stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        allowed_tools: list[str] | None = None,
+        denied_tools: list[str] | None = None,
+        permission_mode: str = "standard",
+        cwd: str | None = None,
+    ) -> AsyncGenerator[Event, None]:
+        """
+        Stream events from Claude API.
+
+        Args:
+            prompt: User prompt to send to Claude
+            system_prompt: Optional system prompt to set context
+            allowed_tools: List of allowed tool names
+            denied_tools: List of denied tool names
+            permission_mode: Permission mode for tool usage
+            cwd: Current working directory for tool execution
+
+        Yields:
+            Event objects representing stream chunks
+        """
+        raise NotImplementedError
+        yield  # pragma: no cover
+
+
+class FakeClaudeClient(ClaudeClient):
+    """Fake implementation for testing with deterministic output."""
+
+    async def stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        allowed_tools: list[str] | None = None,
+        denied_tools: list[str] | None = None,
+        permission_mode: str = "standard",
+        cwd: str | None = None,
+    ) -> AsyncGenerator[Event, None]:
+        """Yield a deterministic sequence of events for testing."""
+        # Parameters are intentionally unused in fake implementation
+        _ = (allowed_tools, denied_tools, permission_mode, cwd)
+
+        # Check if this is a kernel stage request
+        if system_prompt and "kernel stage" in system_prompt.lower():
+            # Generate a kernel document based on the prompt
+            kernel_content = f"""## Core Concept
+The essential idea is to {prompt[:100].lower().strip(".")}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
+
+## Key Questions
+1. What are the fundamental requirements that must be satisfied for this concept to succeed?
+2. How can we validate the core assumptions before committing significant resources?
+3. What are the critical dependencies and how can we mitigate risks associated with them?
+4. How will we measure progress and know when key milestones are achieved?
+
+## Success Criteria
+- Clear problem-solution fit demonstrated through user feedback or metrics
+- Scalable architecture that can grow with demand
+- Measurable improvement over existing alternatives
+- Sustainable resource model for long-term viability
+
+## Constraints
+- Must work within existing technical infrastructure
+- Budget and timeline considerations must be realistic
+- Regulatory and compliance requirements must be met
+- User experience must remain intuitive and accessible
+
+## Primary Value Proposition
+This initiative creates value by directly addressing the identified problem space with a solution that is both practical and innovative. The approach balances technical feasibility with user needs, ensuring that the outcome is not just theoretically sound but also delivers tangible benefits in real-world applications."""
+
+            # Stream the kernel content
+            for chunk in kernel_content.split("\n"):
+                yield TextDelta(chunk + "\n")
+
+            # Signal completion
+            yield MessageDone()
+
+        # Check if this is a clarify stage request
+        elif system_prompt and "clarify stage" in system_prompt.lower():
+            # Generate clarify questions based on the prompt
+            yield TextDelta(f"I see you want to explore: {prompt[:100]}\n\n")
+            yield TextDelta(
+                "Let me ask some clarifying questions to help sharpen your thinking:\n\n"
+            )
+
+            questions = [
+                "1. What specific problem are you trying to solve, and who will benefit most from the solution?",
+                "2. What constraints (time, budget, technical, regulatory) must you work within?",
+                "3. How would you measure success for this initiative after 3 months?",
+                "4. What existing solutions have you considered, and why aren't they sufficient?",
+                "5. What's the minimum viable version that would still deliver value?",
+            ]
+
+            for question in questions:
+                yield TextDelta(f"{question}\n\n")
+
+            yield MessageDone()
+        else:
+            # Default test output
+            yield TextDelta("First chunk of text")
+            yield TextDelta("Second chunk of text")
+            yield MessageDone()
+````
+
+## File: app/tui/widgets/command_palette.py
+````python
+"""Command palette widget for executing app commands."""
+
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Container
+from textual.widgets import Input, OptionList
+
+
+class CommandPalette(Container):
+    """Command palette overlay for executing commands."""
+
+    DEFAULT_CSS = """
+    CommandPalette {
+        layer: modal;
+        align: center middle;
+        width: 60;
+        height: auto;
+        max-height: 20;
+        background: $panel;
+        border: thick $primary;
+        padding: 1;
+        display: none;
+    }
+
+    CommandPalette.visible {
+        display: block;
+    }
+
+    CommandPalette Input {
+        margin-bottom: 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "close", "Close palette"),
+    ]
+
+    def __init__(self) -> None:
+        """Initialize the command palette."""
+        super().__init__(id="command-palette")
+        self.commands = [
+            ("new project", "Create a new brainstorming project"),
+            ("clarify", "Enter clarify stage for current project"),
+            ("kernel", "Define the kernel of your idea"),
+            ("outline", "Create workstream outline"),
+            ("generate workstreams", "Generate outline and element documents"),
+            ("research import", "Import research findings"),
+            ("synthesis", "Synthesize findings into final output"),
+            ("export", "Export project to various formats"),
+        ]
+
+    def compose(self) -> ComposeResult:
+        """Compose the command palette UI."""
+        yield Input(placeholder="Type a command...", id="command-input")
+        options = [f"{cmd}: {desc}" for cmd, desc in self.commands]
+        yield OptionList(*options, id="command-list")
+
+    def show(self) -> None:
+        """Show the command palette."""
+        self.add_class("visible")
+        input_widget = self.query_one("#command-input", Input)
+        input_widget.focus()
+
+    def hide(self) -> None:
+        """Hide the command palette."""
+        self.remove_class("visible")
+
+    def action_close(self) -> None:
+        """Close the command palette."""
+        self.hide()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle command submission."""
+        command = event.value.lower().strip()
+        self.execute_command(command)
+        self.hide()
+
+    def execute_command(self, command: str) -> None:
+        """Execute the selected command."""
+        from textual import log
+
+        log(f"Executing command: {command}")
+
+        # Import here to avoid circular imports
+        from app.tui.views.session import SessionController
+        from app.tui.widgets.session_viewer import SessionViewer
+
+        # Get the session viewer from the main screen
+        viewer = self.app.query_one("#session-viewer", SessionViewer)
+
+        # Create controller
+        controller = SessionController(viewer)
+
+        # Handle clarify command
+        if command == "clarify":
+            # Run the async task using Textual's worker system
+            self.app.run_worker(controller.start_clarify_session(), exclusive=True)
+
+        # Handle kernel command
+        elif command == "kernel":
+            # For now, use a default project slug - in production, this would prompt for it
+            project_slug = "default-project"
+            initial_idea = "Build a better brainstorming app"
+
+            # Run the async task using Textual's worker system
+            self.app.run_worker(
+                controller.start_kernel_session(project_slug, initial_idea),
+                exclusive=True,
+            )
+
+        # Handle generate workstreams command
+        elif command == "generate workstreams":
+            # Run the async task using Textual's worker system
+            self.app.run_worker(controller.generate_workstreams(), exclusive=True)
+````
+
+## File: app/tui/views/session.py
+````python
+"""Session controller for managing brainstorming sessions and Claude interactions."""
+
 from pathlib import Path
-from unittest.mock import patch as mock_patch
 
-import pytest
-
-from app.files.diff import (
-    apply_patch,
-    apply_patch_from_strings,
-    apply_patches,
-    compute_patch,
-    generate_diff_preview,
-    is_unchanged,
+from app.files.diff import apply_patch, compute_patch, generate_diff_preview
+from app.files.markdown import extract_section_paragraph
+from app.files.workstream import create_workstream_batch
+from app.llm.claude_client import (
+    ClaudeClient,
+    Event,
+    FakeClaudeClient,
+    MessageDone,
+    TextDelta,
 )
-
-
-def test_compute_patch_no_changes() -> None:
-    """Test computing patch when content is unchanged."""
-    content = "Hello\nWorld\n"
-    patch = compute_patch(content, content)
-
-    assert patch.original == content
-    assert patch.modified == content
-    assert is_unchanged(patch)
-
-
-def test_compute_patch_with_changes() -> None:
-    """Test computing patch with actual changes."""
-    old = "Hello\nWorld\n"
-    new = "Hello\nBeautiful\nWorld\n"
-    patch = compute_patch(old, new)
-
-    assert patch.original == old
-    assert patch.modified == new
-    assert not is_unchanged(patch)
-    assert len(patch.diff_lines) > 0
-
-
-def test_apply_patch_creates_new_file(tmp_path: Path) -> None:
-    """Test applying patch to create a new file."""
-    file_path = tmp_path / "test.md"
-    content = "# Test Document\n\nThis is a test."
-
-    patch = compute_patch("", content)
-    apply_patch(file_path, patch)
-
-    assert file_path.exists()
-    with open(file_path, encoding="utf-8") as f:
-        assert f.read() == content
-
-
-def test_apply_patch_replaces_existing_file(tmp_path: Path) -> None:
-    """Test applying patch to replace an existing file."""
-    file_path = tmp_path / "test.md"
-    old_content = "Old content"
-    new_content = "New content"
-
-    # Create initial file
-    file_path.write_text(old_content)
-
-    # Apply patch
-    patch = compute_patch(old_content, new_content)
-    apply_patch(file_path, patch)
-
-    assert file_path.read_text() == new_content
-
-
-def test_apply_patch_atomic_on_error(tmp_path: Path) -> None:
-    """Test that apply_patch preserves original on replace failure."""
-    # 1) Create file_path with "Original"
-    file_path = tmp_path / "test.md"
-    file_path.write_text("Original")
-
-    # 2) Compute patch "Original" -> "New content"
-    patch = compute_patch("Original", "New content")
-
-    # 3) Monkeypatch Path.replace to raise PermissionError
-    def mock_replace_failure(self: Path, target: Path) -> None:  # noqa: ARG001
-        raise PermissionError("Simulated replace failure")
-
-    # 4) Call apply_patch inside pytest.raises
-    with mock_patch.object(Path, "replace", mock_replace_failure):
-        with pytest.raises(PermissionError) as exc_info:
-            apply_patch(file_path, patch)
-
-        assert "Simulated replace failure" in str(exc_info.value)
-
-    # 5) Assert file still contains "Original"
-    assert file_path.read_text() == "Original"
-
-    # 6) Assert no *.tmp files remain in parent directory
-    temp_files = list(tmp_path.glob("*.tmp"))
-    assert len(temp_files) == 0
-
-
-def test_generate_diff_preview() -> None:
-    """Test generating human-readable diff preview."""
-    old = "Line 1\nLine 2\nLine 3\n"
-    new = "Line 1\nModified Line 2\nLine 3\n"
-
-    preview = generate_diff_preview(old, new)
-
-    assert "Line 2" in preview
-    assert "Modified Line 2" in preview
-    assert "-" in preview  # Removal indicator
-    assert "+" in preview  # Addition indicator
-    # Verify line breaks are present
-    assert "\n" in preview
-    lines = preview.split("\n")
-    assert len(lines) > 1  # Should have multiple lines
-
-
-def test_generate_diff_preview_no_changes() -> None:
-    """Test diff preview when there are no changes."""
-    content = "Same content"
-    preview = generate_diff_preview(content, content)
-
-    assert preview == "No changes detected."
-
-
-def test_is_unchanged() -> None:
-    """Test the is_unchanged helper function."""
-    # Test with identical content
-    patch1 = compute_patch("same", "same")
-    assert is_unchanged(patch1)
-
-    # Test with different content
-    patch2 = compute_patch("old", "new")
-    assert not is_unchanged(patch2)
-
-
-def test_apply_patch_from_strings_success(tmp_path: Path) -> None:
-    """Test the helper function for applying patches from strings."""
-    file_path = tmp_path / "test.md"
-    old_content = "Original\n"
-    new_content = "Modified\n"
-
-    # Create initial file
-    file_path.write_text(old_content)
-
-    # Apply patch
-    patch = apply_patch_from_strings(file_path, old_content, new_content)
-
-    assert patch is not None
-    assert file_path.read_text() == new_content
-
-
-def test_apply_patch_from_strings_no_changes(tmp_path: Path) -> None:
-    """Test that no patch is applied when content is unchanged."""
-    file_path = tmp_path / "test.md"
-    content = "Same content\n"
-
-    file_path.write_text(content)
-    patch = apply_patch_from_strings(file_path, content, content)
-
-    assert patch is None
-    assert file_path.read_text() == content
-
-
-def test_apply_patch_from_strings_content_mismatch(tmp_path: Path) -> None:
-    """Test that ValueError is raised when current content doesn't match expected."""
-    file_path = tmp_path / "test.md"
-    file_path.write_text("Actual content")
-
-    with pytest.raises(ValueError) as exc_info:
-        apply_patch_from_strings(file_path, "Expected content", "New content")
-
-    assert "doesn't match expected old_content" in str(exc_info.value)
-
-
-def test_apply_patch_creates_parent_directories(tmp_path: Path) -> None:
-    """Test that apply_patch creates parent directories if they don't exist."""
-    file_path = tmp_path / "nested" / "dir" / "test.md"
-    content = "Test content"
-
-    patch = compute_patch("", content)
-    apply_patch(file_path, patch)
-
-    assert file_path.exists()
-    assert file_path.read_text() == content
-
-
-def test_multi_line_diff() -> None:
-    """Test diff computation with multi-line changes."""
-    old = """# Document
-
-First paragraph.
-
-Second paragraph.
-
-Third paragraph.
-"""
-    new = """# Document
-
-First paragraph.
-
-Modified second paragraph with more text.
-
-Third paragraph.
-
-Fourth paragraph added.
-"""
-
-    patch = compute_patch(old, new)
-    assert not is_unchanged(patch)
-
-    preview = generate_diff_preview(old, new)
-    assert "Modified second paragraph" in preview
-    assert "Fourth paragraph added" in preview
-
-
-def test_generate_diff_preview_context_lines() -> None:
-    """Test that context_lines parameter affects the diff output."""
-    old = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\n"
-    new = "Line 1\nLine 2\nLine 3\nModified Line 4\nLine 5\nLine 6\nLine 7\nLine 8\n"
-
-    # Test with different context sizes
-    preview_small = generate_diff_preview(old, new, context_lines=1)
-    preview_large = generate_diff_preview(old, new, context_lines=3)
-
-    # Both should contain the change
-    assert "Modified Line 4" in preview_small
-    assert "Modified Line 4" in preview_large
-
-    # Larger context should include more surrounding lines
-    lines_small = preview_small.split("\n")
-    lines_large = preview_large.split("\n")
-
-    # The larger context should have more lines
-    # (accounting for header lines and the actual diff content)
-    assert len(lines_large) >= len(lines_small)
-
-
-def test_generate_diff_preview_with_labels() -> None:
-    """Test that custom labels appear in the diff header."""
-    old = "A\n"
-    new = "B\n"
-
-    # Call with custom labels
-    preview = generate_diff_preview(
-        old, new, context_lines=1, from_label="old.md", to_label="new.md"
-    )
-
-    # Assert the preview contains the custom labels
-    assert "--- old.md" in preview
-    assert "+++ new.md" in preview
-
-    # Ensure both "-" (deletion) and "+" (addition) markers appear
-    assert "-A" in preview
-    assert "+B" in preview
-
-
-def test_apply_patches_success(tmp_path: Path) -> None:
-    """Test successful multi-file patch application."""
-    # Create initial files
-    file1 = tmp_path / "file1.txt"
-    file2 = tmp_path / "file2.txt"
-    file3 = tmp_path / "nested" / "file3.txt"
-
-    file1.write_text("Original content 1")
-    file2.write_text("Original content 2")
-    # file3 doesn't exist yet - will be created
-
-    # Prepare patches
-    patches_list: list[tuple[Path | str, str, str]] = [
-        (file1, "Original content 1", "Modified content 1"),
-        (file2, "Original content 2", "Modified content 2"),
-        (file3, "", "New file content 3"),  # New file
-    ]
-
-    # Apply patches
-    results = apply_patches(patches_list)
-
-    # Verify all files were updated
-    assert len(results) == 3
-    assert file1.read_text() == "Modified content 1"
-    assert file2.read_text() == "Modified content 2"
-    assert file3.exists()
-    assert file3.read_text() == "New file content 3"
-
-    # Verify patch objects
-    for patch in results:
-        assert not is_unchanged(patch)
-
-
-def test_apply_patches_rollback_on_failure(tmp_path: Path) -> None:
-    """Test that all files remain unchanged when any replacement fails."""
-    # Create initial files
-    file1 = tmp_path / "file1.txt"
-    file2 = tmp_path / "file2.txt"
-
-    file1.write_text("Original content 1")
-    file2.write_text("Original content 2")
-
-    original1 = file1.read_text()
-    original2 = file2.read_text()
-
-    # Prepare patches
-    patches_list: list[tuple[Path | str, str, str]] = [
-        (file1, "Original content 1", "Modified content 1"),
-        (file2, "Original content 2", "Modified content 2"),
-    ]
-
-    # Mock Path.replace to fail on the second file
-    call_count = 0
-    original_replace = Path.replace
-
-    def mock_replace(self: Path, target: Path) -> None:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 2:
-            raise PermissionError("Simulated failure on second file")
-        original_replace(self, target)
-
-    with mock_patch.object(Path, "replace", mock_replace):
-        with pytest.raises(IOError) as exc_info:
-            apply_patches(patches_list)
-
-        assert "Failed to atomically replace files" in str(exc_info.value)
-
-    # Verify original files are unchanged
-    assert file1.read_text() == original1
-    assert file2.read_text() == original2
-
-    # Verify no temp files left behind
-    temp_files = list(tmp_path.glob("*.tmp"))
-    assert len(temp_files) == 0
-
-
-def test_apply_patch_atomic_failure(tmp_path: Path) -> None:
-    """Test that apply_patch cleans temp and preserves original on replace failure."""
-    file_path = tmp_path / "test.txt"
-    original_content = "Original content"
-    new_content = "New content"
-
-    # Create initial file
-    file_path.write_text(original_content)
-
-    # Create a patch
-    patch = compute_patch(original_content, new_content)
-
-    # Mock Path.replace to raise an exception
-    def mock_replace_error(self: Path, target: Path) -> None:  # noqa: ARG001
-        raise PermissionError("Simulated replace failure")
-
-    with mock_patch.object(Path, "replace", mock_replace_error):
-        with pytest.raises(PermissionError) as exc_info:
-            apply_patch(file_path, patch)
-
-        assert "Simulated replace failure" in str(exc_info.value)
-
-    # Verify original file is unchanged
-    assert file_path.read_text() == original_content
-
-    # Verify no temp files left behind
-    temp_files = list(tmp_path.glob("*.tmp"))
-    assert len(temp_files) == 0
-
-
-def test_apply_patches_rollback_removes_new_files(tmp_path: Path) -> None:
-    """Test that rollback removes files that didn't exist before the batch operation."""
-    # Create file1 with content "Orig1"
-    file1 = tmp_path / "file1.txt"
-    file1.write_text("Orig1")
-
-    # Do NOT create file2 (it will be new)
-    file2 = tmp_path / "file2.txt"
-
-    # Prepare patches
-    patches_list: list[tuple[Path | str, str, str]] = [
-        (file1, "Orig1", "Mod1"),  # Modify existing file
-        (file2, "", "New2"),  # Create new file
-    ]
-
-    # Monkeypatch Path.replace to succeed on first, fail on second
-    call_count = 0
-    original_replace = Path.replace
-
-    def mock_replace(self: Path, target: Path) -> None:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 2:
-            raise PermissionError("Simulated failure on second replace")
-        original_replace(self, target)
-
-    # Act: call apply_patches and assert it raises OSError
-    with mock_patch.object(Path, "replace", mock_replace):
-        with pytest.raises(OSError) as exc_info:
-            apply_patches(patches_list)
-
-        assert "Failed to atomically replace files" in str(exc_info.value)
-
-    # Assert file1 content remains "Orig1"
-    assert file1.read_text() == "Orig1"
-
-    # Assert file2 does not exist (it must be removed)
-    assert not file2.exists()
-
-    # Assert no *.tmp or *.backup files remain in tmp_path
-    temp_files = list(tmp_path.glob("*.tmp"))
-    backup_files = list(tmp_path.glob("*.backup"))
-    assert len(temp_files) == 0
-    assert len(backup_files) == 0
-
-
-@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
-def test_apply_patch_preserves_mode(tmp_path: Path) -> None:
-    """Test that apply_patch preserves file mode on POSIX systems."""
-    # Create a file with mode 0o744 and content "Old"
-    file_path = tmp_path / "test.txt"
-    file_path.write_text("Old")
-    os.chmod(file_path, 0o744)
-
-    # Verify initial mode
-    initial_mode = os.stat(file_path).st_mode & 0o777
-    assert initial_mode == 0o744
-
-    # Compute patch for "Old" -> "New"
-    patch = compute_patch("Old", "New")
-
-    # Apply patch
-    apply_patch(file_path, patch)
-
-    # Assert file content changed
-    assert file_path.read_text() == "New"
-
-    # Assert file mode is preserved
-    final_mode = os.stat(file_path).st_mode & 0o777
-    assert final_mode == 0o744
+from app.llm.sessions import get_policy
+from app.tui.widgets.kernel_approval import KernelApprovalModal
+from app.tui.widgets.session_viewer import SessionViewer
+
+
+class SessionController:
+    """Controller for managing brainstorming sessions."""
+
+    def __init__(self, session_viewer: SessionViewer) -> None:
+        """
+        Initialize the session controller.
+
+        Args:
+            session_viewer: The widget to display session output
+        """
+        self.viewer = session_viewer
+        self.client: ClaudeClient = FakeClaudeClient()
+        self.current_stage: str | None = None
+        self.pending_kernel_content: str | None = None
+        self.project_slug: str | None = None
+
+    async def start_clarify_session(
+        self, initial_prompt: str = "I want to build a better app"
+    ) -> None:
+        """
+        Start a clarify stage session.
+
+        Args:
+            initial_prompt: The user's initial brainstorming idea
+        """
+        self.current_stage = "clarify"
+
+        # Get clarify policy
+        policy = get_policy("clarify")
+
+        # Read system prompt
+        system_prompt_content = ""
+        if policy.system_prompt_path.exists():
+            system_prompt_content = policy.system_prompt_path.read_text()
+
+        # Clear viewer and show starting message
+        self.viewer.clear()
+        self.viewer.write("[bold cyan]Starting Clarify Session[/bold cyan]\n")
+        self.viewer.write("[dim]Generating clarifying questions...[/dim]\n\n")
+
+        # Stream events from client
+        try:
+            async for event in self.client.stream(
+                prompt=initial_prompt,
+                system_prompt=system_prompt_content,
+                allowed_tools=policy.allowed_tools,
+                denied_tools=policy.denied_tools,
+                permission_mode=policy.permission_mode,
+            ):
+                await self._handle_event(event)
+        except Exception as e:
+            self.viewer.write(f"\n[red]Error during session: {e}[/red]")
+
+    async def start_kernel_session(
+        self, project_slug: str, initial_idea: str = "Build a better app"
+    ) -> None:
+        """
+        Start a kernel stage session.
+
+        Args:
+            project_slug: The project identifier/slug
+            initial_idea: The user's refined brainstorming idea
+        """
+        self.current_stage = "kernel"
+        self.project_slug = project_slug
+        self.pending_kernel_content = ""
+
+        # Get kernel policy
+        policy = get_policy("kernel")
+
+        # Read system prompt
+        system_prompt_content = ""
+        if policy.system_prompt_path.exists():
+            system_prompt_content = policy.system_prompt_path.read_text()
+
+        # Clear viewer and show starting message
+        self.viewer.clear()
+        self.viewer.write("[bold cyan]Starting Kernel Session[/bold cyan]\n")
+        self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n")
+        self.viewer.write("[dim]Generating kernel document...[/dim]\n\n")
+
+        # Stream events from client
+        try:
+            async for event in self.client.stream(
+                prompt=initial_idea,
+                system_prompt=system_prompt_content,
+                allowed_tools=policy.allowed_tools,
+                denied_tools=policy.denied_tools,
+                permission_mode=policy.permission_mode,
+            ):
+                await self._handle_kernel_event(event)
+        except Exception as e:
+            self.viewer.write(f"\n[red]Error during session: {e}[/red]")
+
+    async def _handle_event(self, event: Event) -> None:
+        """
+        Handle a stream event from the Claude client.
+
+        Args:
+            event: The event to handle
+        """
+        if isinstance(event, TextDelta):
+            # Display text chunks as they arrive
+            self.viewer.write(event.text, scroll_end=True)
+        elif isinstance(event, MessageDone):
+            # Session complete
+            self.viewer.write(
+                "\n[dim]Session complete. Consider these questions as you refine your idea.[/dim]"
+            )
+
+    async def _handle_kernel_event(self, event: Event) -> None:
+        """
+        Handle a stream event from the Claude client during kernel stage.
+
+        Args:
+            event: The event to handle
+        """
+        if isinstance(event, TextDelta):
+            # Accumulate text for the kernel content
+            if self.pending_kernel_content is not None:
+                self.pending_kernel_content += event.text
+            # Display text chunks as they arrive
+            self.viewer.write(event.text, scroll_end=True)
+        elif isinstance(event, MessageDone):
+            # Session complete - show diff preview
+            self.viewer.write("\n[dim]Kernel generation complete.[/dim]\n")
+            await self._show_kernel_diff_preview()
+
+    async def _show_kernel_diff_preview(self) -> None:
+        """Show a diff preview and prompt for approval."""
+        if not self.project_slug or not self.pending_kernel_content:
+            self.viewer.write("[red]Error: No kernel content to preview[/red]\n")
+            return
+
+        # Construct kernel file path
+        kernel_path = Path("projects") / self.project_slug / "kernel.md"
+
+        # Read existing content if file exists
+        old_content = ""
+        if kernel_path.exists():
+            old_content = kernel_path.read_text()
+
+        # Generate diff preview
+        diff_preview = generate_diff_preview(
+            old_content,
+            self.pending_kernel_content,
+            context_lines=3,
+            from_label=f"projects/{self.project_slug}/kernel.md (current)",
+            to_label=f"projects/{self.project_slug}/kernel.md (proposed)",
+        )
+
+        # Get the app instance through the viewer
+        app = self.viewer.app
+
+        # Show modal and wait for response
+        modal = KernelApprovalModal(diff_preview, self.project_slug)
+        approved = await app.push_screen_wait(modal)
+
+        if approved:
+            self.approve_kernel_changes()
+        else:
+            self.reject_kernel_changes()
+
+    def approve_kernel_changes(self) -> bool:
+        """
+        Apply the pending kernel changes atomically.
+
+        Returns:
+            True if changes were applied successfully, False otherwise
+        """
+        if not self.project_slug or not self.pending_kernel_content:
+            self.viewer.write("[red]Error: No pending changes to apply[/red]\n")
+            return False
+
+        try:
+            # Construct kernel file path
+            kernel_path = Path("projects") / self.project_slug / "kernel.md"
+
+            # Ensure parent directory exists
+            kernel_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Read existing content if file exists
+            old_content = ""
+            if kernel_path.exists():
+                old_content = kernel_path.read_text()
+
+            # Compute and apply patch
+            patch = compute_patch(old_content, self.pending_kernel_content)
+            apply_patch(kernel_path, patch)
+
+            self.viewer.write(
+                f"\n[green]✓ Kernel successfully written to projects/{self.project_slug}/kernel.md[/green]\n"
+            )
+
+            # Clear pending content
+            self.pending_kernel_content = None
+            return True
+
+        except Exception as e:
+            self.viewer.write(
+                f"\n[red]Error applying changes: {e}[/red]\n"
+                "[yellow]Original file remains unchanged.[/yellow]\n"
+            )
+            return False
+
+    def reject_kernel_changes(self) -> None:
+        """Reject the pending kernel changes."""
+        self.viewer.write("\n[yellow]Changes rejected. Kernel file remains unchanged.[/yellow]\n")
+        self.pending_kernel_content = None
+
+    async def generate_workstreams(self, project_slug: str = "default-project") -> None:
+        """
+        Generate workstream documents (outline and elements) for a project.
+
+        Args:
+            project_slug: The project identifier/slug
+        """
+        self.project_slug = project_slug
+
+        # Clear viewer and show starting message
+        self.viewer.clear()
+        self.viewer.write("[bold cyan]Generating Workstream Documents[/bold cyan]\n")
+        self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n\n")
+
+        try:
+            # Get project path
+            project_path = Path("projects") / project_slug
+
+            # Check if kernel exists and read it for summary
+            kernel_summary = None
+            kernel_path = project_path / "kernel.md"
+            if kernel_path.exists():
+                kernel_content = kernel_path.read_text()
+                # Use robust extraction utility to get the Core Concept paragraph
+                kernel_summary = extract_section_paragraph(kernel_content, "## Core Concept")
+
+            # Create batch with all workstream documents
+            self.viewer.write("[dim]Creating batch with outline and element documents...[/dim]\n")
+            batch = create_workstream_batch(
+                project_path, project_slug, kernel_summary=kernel_summary
+            )
+
+            if not batch:
+                self.viewer.write(
+                    "[yellow]No changes needed - all files are up to date.[/yellow]\n"
+                )
+                return
+
+            # Generate and show preview
+            self.viewer.write("\n[bold]Preview of changes:[/bold]\n")
+            preview = batch.generate_preview(context_lines=2)
+
+            # Limit preview display for readability
+            preview_lines = preview.split("\n")
+            if len(preview_lines) > 50:
+                # Show first 40 lines and summary
+                self.viewer.write("\n".join(preview_lines[:40]))
+                self.viewer.write(f"\n[dim]... ({len(preview_lines) - 40} more lines) ...[/dim]\n")
+            else:
+                self.viewer.write(preview)
+
+            self.viewer.write(f"\n[dim]Total files to create/update: {len(batch)}[/dim]\n")
+
+            # Get the app instance through the viewer
+            app = self.viewer.app
+
+            # Create a simple approval modal (reuse KernelApprovalModal for now)
+            # In production, we'd create a dedicated WorkstreamApprovalModal
+            modal = KernelApprovalModal(preview, project_slug)
+            approved = await app.push_screen_wait(modal)
+
+            if approved:
+                # Apply all changes atomically
+                self.viewer.write("\n[dim]Applying changes atomically...[/dim]\n")
+                patches = batch.apply()
+
+                self.viewer.write(
+                    f"\n[green]✓ Successfully created/updated {len(patches)} files:[/green]\n"
+                )
+                for change in batch.changes:
+                    status = "created" if change.is_new_file else "updated"
+                    self.viewer.write(
+                        f"  • {change.path.relative_to(Path('projects'))} ({status})\n"
+                    )
+            else:
+                self.viewer.write("\n[yellow]Changes rejected. No files were modified.[/yellow]\n")
+
+        except Exception as e:
+            self.viewer.write(f"\n[red]Error generating workstreams: {e}[/red]\n")
+            self.viewer.write("[yellow]No files were modified.[/yellow]\n")
 ````
 
 ## File: pyproject.toml
 ````toml
+[project]
+name = "brainstormbuddy"
+version = "0.1.0"
+description = "Python terminal-first brainstorming app using Claude Code"
+readme = "README.md"
+requires-python = ">=3.11"
+
 [tool.poetry]
 name = "brainstormbuddy"
 version = "0.1.0"
@@ -3277,6 +4513,7 @@ markdown-it-py = "^3.0.0"
 mdformat = "^0.7.17"
 aiosqlite = "^0.20.0"
 typing-extensions = "^4.12.0"
+typer = "^0.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -3285,6 +4522,7 @@ ruff = "^0.7.0"
 mypy = "^1.13.0"
 pre-commit = "^4.3.0"
 types-PyYAML = "^6.0"
+
 
 [tool.ruff]
 line-length = 100

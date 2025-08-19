@@ -101,8 +101,9 @@ import json
 import sys
 from pathlib import Path
 
-# Import formatting function from the app's hooks library
+# Import formatting function and atomic writer from the app's hooks library
 from {import_hooks_from}.format_md import _format_markdown_text
+from {import_hooks_from}.io import atomic_replace_text
 
 
 def main() -> None:
@@ -112,13 +113,11 @@ def main() -> None:
     path = Path(payload.get("target_path") or "")
     if path.suffix.lower() != ".md":
         sys.exit(0)
-    # Read, format, write back atomically (simple temp+replace)
+    # Read, format, write back atomically with durability guarantees
     content = path.read_text(encoding="utf-8") if path.exists() else ""
     formatted = _format_markdown_text(content)
     if formatted != content:
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(formatted, encoding="utf-8")
-        tmp.replace(path)
+        atomic_replace_text(path, formatted)
     sys.exit(0)
 
 

@@ -11,6 +11,16 @@ from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewe
 class MainScreen(Screen[None]):
     """Main three-pane screen for the application."""
 
+    DEFAULT_CSS = """
+    MainScreen {
+        layout: vertical;
+    }
+
+    Horizontal {
+        height: 1fr;
+    }
+    """
+
     def compose(self) -> ComposeResult:
         """Compose the main three-pane layout."""
         yield Header()
