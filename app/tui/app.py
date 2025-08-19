@@ -1,7 +1,10 @@
-"""Minimal Textual App for Brainstorm Buddy."""
+"""Textual App for Brainstorm Buddy with three-pane layout."""
 
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, Static
+from textual.binding import Binding
+
+from app.tui.views import MainLayout
+from app.tui.widgets import CommandPalette
 
 
 class BrainstormBuddyApp(App[None]):
@@ -9,12 +12,21 @@ class BrainstormBuddyApp(App[None]):
 
     TITLE = "Brainstorm Buddy"
     SUB_TITLE = "Terminal-first brainstorming app"
+    CSS_PATH = None  # Use default CSS from widgets
+
+    BINDINGS = [
+        Binding(":", "command_palette", "Command", priority=True),
+        Binding("q", "quit", "Quit"),
+    ]
 
     def compose(self) -> ComposeResult:
-        """Compose the app with placeholder widgets."""
-        yield Header()
-        yield Static("Welcome to Brainstorm Buddy!", id="placeholder")
-        yield Footer()
+        """Compose the app with three-pane layout."""
+        return MainLayout.compose()
+
+    def action_command_palette(self) -> None:
+        """Show the command palette."""
+        palette = self.query_one("#command-palette", CommandPalette)
+        palette.show()
 
 
 def main() -> None:

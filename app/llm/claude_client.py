@@ -1,7 +1,7 @@
 """Claude client interface with streaming support and fake implementation."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
 
@@ -42,7 +42,7 @@ class ClaudeClient(ABC):
     """Abstract interface for Claude API clients."""
 
     @abstractmethod
-    def stream(
+    async def stream(
         self,
         prompt: str,
         system_prompt: str | None = None,
@@ -50,7 +50,7 @@ class ClaudeClient(ABC):
         denied_tools: list[str] | None = None,
         permission_mode: str = "standard",
         cwd: str | None = None,
-    ) -> AsyncIterator[Event]:
+    ) -> AsyncGenerator[Event, None]:
         """
         Stream events from Claude API.
 
@@ -65,7 +65,8 @@ class ClaudeClient(ABC):
         Yields:
             Event objects representing stream chunks
         """
-        ...
+        raise NotImplementedError
+        yield  # pragma: no cover
 
 
 class FakeClaudeClient(ClaudeClient):
@@ -79,7 +80,7 @@ class FakeClaudeClient(ClaudeClient):
         denied_tools: list[str] | None = None,
         permission_mode: str = "standard",
         cwd: str | None = None,
-    ) -> AsyncIterator[Event]:
+    ) -> AsyncGenerator[Event, None]:
         """Yield a deterministic sequence of events for testing."""
         # Parameters are intentionally unused in fake implementation
         _ = (prompt, system_prompt, allowed_tools, denied_tools, permission_mode, cwd)
