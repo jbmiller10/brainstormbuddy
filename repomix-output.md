@@ -39,6 +39,7 @@ app/
   core/
     config.py
   files/
+    atomic.py
     diff.py
     mdio.py
     scaffold.py
@@ -56,7 +57,7 @@ app/
   tui/
     views/
       __init__.py
-      main_layout.py
+      main_screen.py
     widgets/
       __init__.py
       command_palette.py
@@ -77,7 +78,9 @@ brainstormbuddy/
 tests/
   test_config.py
   test_diff.py
+  test_format_md_hook.py
   test_llm_fake.py
+  test_mdio.py
   test_policies.py
   test_scaffold.py
   test_settings_writer.py
@@ -90,8 +93,259 @@ pyproject.toml
 
 # Files
 
+## File: app/files/atomic.py
+````python
+"""Atomic file write utilities."""
+
+import os
+import tempfile
+from pathlib import Path
+
+
+def atomic_write_text(path: Path | str, text: str) -> None:
+    """
+    Write text to a file atomically using temp file and replace.
+
+    This ensures the file is either fully updated or not modified at all,
+    preventing partial writes in case of errors. Uses the same durability
+    pattern as apply_patch.
+
+    Args:
+        path: Path to the file to write
+        text: Text content to write (UTF-8 encoded)
+
+    Raises:
+        IOError: If there's an error during the atomic write operation
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    # Precompute file mode if file exists
+    file_mode = None
+    if file_path.exists():
+        file_mode = os.stat(file_path).st_mode
+
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write to a temporary file first
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=file_path.parent,
+        delete=False,
+        suffix=".tmp",
+    ) as tmp_file:
+        tmp_file.write(text)
+        tmp_file.flush()
+        os.fsync(tmp_file.fileno())
+        tmp_path = Path(tmp_file.name)
+
+    try:
+        # Preserve file mode if original file existed
+        if file_mode is not None:
+            os.chmod(tmp_path, file_mode)
+
+        # Atomically replace the original file
+        tmp_path.replace(file_path)
+
+        # Fsync parent directory for durability (best-effort)
+        try:
+            dfd = os.open(file_path.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            # Platform/filesystem doesn't support directory fsync
+            pass
+    except Exception:
+        # Clean up temp file if replacement fails
+        tmp_path.unlink(missing_ok=True)
+        raise
+````
+
+## File: tests/test_format_md_hook.py
+````python
+import importlib.util
+
+SPEC = importlib.util.spec_from_file_location("format_md", ".claude/hooks/format_md.py")
+fmt = importlib.util.module_from_spec(SPEC)  # type: ignore
+assert SPEC and SPEC.loader
+SPEC.loader.exec_module(fmt)
+
+def test_format_markdown_text_basic() -> None:
+    raw = "#  Title\\n\\n-  item\\n-  item2"
+    out = fmt._format_markdown_text(raw)
+    assert isinstance(out, str)
+    assert "# Title" in out  # normalized header
+````
+
+## File: tests/test_mdio.py
+````python
+"""Unit tests for Markdown I/O utilities."""
+
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from app.files.mdio import read_md, write_md
+
+
+def test_write_md_creates_nested_directories() -> None:
+    """Test that write_md creates parent directories if they don't exist."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Write to a deeply nested path that doesn't exist
+        nested_path = Path(tmpdir) / "level1" / "level2" / "level3" / "test.md"
+        content = "# Test Content\n\nThis is a test."
+
+        write_md(nested_path, content)
+
+        # Verify file was created and content is correct
+        assert nested_path.exists()
+        assert read_md(nested_path) == content
+
+
+def test_write_md_overwrites_existing_file() -> None:
+    """Test that write_md correctly overwrites an existing file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "test.md"
+
+        # Write initial content
+        initial_content = "# Initial\n\nFirst version."
+        write_md(file_path, initial_content)
+        assert read_md(file_path) == initial_content
+
+        # Overwrite with new content
+        new_content = "# Updated\n\nSecond version."
+        write_md(file_path, new_content)
+        assert read_md(file_path) == new_content
+
+
+def test_unicode_content_roundtrip() -> None:
+    """Test that Unicode content is correctly written and read back."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "unicode_test.md"
+
+        # Test various Unicode characters
+        unicode_content = "# Unicode Test æøå—π🙂\n\n" + \
+                         "Chinese: 你好世界\n" + \
+                         "Japanese: こんにちは\n" + \
+                         "Arabic: مرحبا بالعالم\n" + \
+                         "Emoji: 🚀 🌟 ✨\n" + \
+                         "Math: ∑ ∫ √ ∞ π"
+
+        write_md(file_path, unicode_content)
+        read_content = read_md(file_path)
+
+        assert read_content == unicode_content
+
+
+def test_idempotent_write_same_content() -> None:
+    """Test that writing the same content twice is idempotent."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "idempotent_test.md"
+        content = "# Idempotent Test\n\nSame content written twice."
+
+        # First write
+        write_md(file_path, content)
+        first_content = read_md(file_path)
+
+        # Second write with identical content
+        write_md(file_path, content)
+        second_content = read_md(file_path)
+
+        # Content should be identical
+        assert first_content == second_content == content
+        # File should exist and have been replaced (mtime may differ)
+        assert file_path.exists()
+
+
+def test_read_md_with_string_path() -> None:
+    """Test that read_md works with string paths."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "test.md"
+        content = "# String Path Test"
+
+        write_md(str(file_path), content)
+        assert read_md(str(file_path)) == content
+
+
+def test_write_md_with_string_path() -> None:
+    """Test that write_md works with string paths."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "test.md"
+        content = "# String Path Test"
+
+        write_md(str(file_path), content)
+        assert read_md(file_path) == content
+
+
+def test_read_md_nonexistent_file() -> None:
+    """Test that read_md raises FileNotFoundError for non-existent files."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        nonexistent_path = Path(tmpdir) / "nonexistent.md"
+
+        with pytest.raises(FileNotFoundError):
+            read_md(nonexistent_path)
+
+
+def test_empty_file_roundtrip() -> None:
+    """Test that empty files are handled correctly."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "empty.md"
+
+        write_md(file_path, "")
+        assert read_md(file_path) == ""
+
+
+def test_large_content_roundtrip() -> None:
+    """Test that large content is correctly written and read back."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "large.md"
+
+        # Create a large content string (1MB+)
+        large_content = "# Large File\n\n" + ("This is a line of text. " * 100 + "\n") * 5000
+
+        write_md(file_path, large_content)
+        read_content = read_md(file_path)
+
+        assert read_content == large_content
+
+
+def test_special_characters_in_content() -> None:
+    """Test that special characters are preserved."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "special.md"
+
+        special_content = "# Special Characters\n\n" + \
+                         "Quotes: \"double\" 'single'\n" + \
+                         "Backslash: \\ \\\\ \\\\\\\n" + \
+                         "Tabs: \t\t\tindented\n" + \
+                         "NULL char exclusion test (should work without null)"
+
+        write_md(file_path, special_content)
+        assert read_md(file_path) == special_content
+
+
+def test_preserve_exact_content() -> None:
+    """Test that content with no trailing newline is preserved exactly."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "exact.md"
+
+        # Content with no trailing newline
+        content_no_newline = "# No trailing newline"
+        write_md(file_path, content_no_newline)
+        assert read_md(file_path) == content_no_newline
+
+        # Content with trailing newline
+        content_with_newline = "# With trailing newline\n"
+        write_md(file_path, content_with_newline)
+        assert read_md(file_path) == content_with_newline
+````
+
 ## File: app/core/config.py
-```python
+````python
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings
@@ -110,13 +364,15 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def load_settings() -> Settings:
     return Settings()
-```
+````
 
 ## File: app/files/mdio.py
-```python
+````python
 """Markdown file I/O utilities."""
 
 from pathlib import Path
+
+from app.files.atomic import atomic_write_text
 
 
 def read_md(path: Path | str) -> str:
@@ -152,21 +408,19 @@ def write_md(path: Path | str, text: str) -> None:
     """
     file_path = Path(path) if isinstance(path, str) else path
 
-    # Ensure parent directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(text)
-```
+    atomic_write_text(file_path, text)
+````
 
 ## File: app/files/scaffold.py
-```python
+````python
 """Project scaffold utility for creating standardized project structures."""
 
 from datetime import datetime
 from pathlib import Path
 
 import yaml
+
+from app.files.atomic import atomic_write_text
 
 
 def scaffold_project(slug: str, base: Path | str = "projects") -> Path:
@@ -258,8 +512,7 @@ stage: kernel
 *How will we know when we've achieved our goal?*
 """
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(file_path, content)
 
 
 def _create_outline_md(file_path: Path, slug: str) -> None:
@@ -299,8 +552,7 @@ stage: outline
 *What needs to be done next?*
 """
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(file_path, content)
 
 
 def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
@@ -310,10 +562,10 @@ def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
     This is an alias for scaffold_project for clarity in different contexts.
     """
     return scaffold_project(slug, base)
-```
+````
 
 ## File: app/llm/prompts/clarify.md
-```markdown
+````markdown
 <instructions>
 You are in the clarify stage of brainstorming. Your goal is to help the user refine and sharpen their initial idea through targeted questions. Ask 3-7 numbered questions that probe different aspects of their concept. Do not provide advice or solutions - only questions that help clarify thinking.
 </instructions>
@@ -334,10 +586,10 @@ Present your response as:
 
 Keep the entire response under 300 words. Focus on questions that will lead to actionable insights in the next stages.
 </format>
-```
+````
 
 ## File: app/llm/prompts/kernel.md
-```markdown
+````markdown
 <instructions>
 You are in the kernel stage of brainstorming. Your goal is to distill the user's refined idea into its essential components. Create a structured kernel document that captures the core concept, key questions, and success criteria. This will serve as the foundation for the outline stage.
 </instructions>
@@ -366,10 +618,10 @@ One paragraph describing the main value or impact.
 
 Keep the entire kernel under 250 words. Use markdown formatting and be specific rather than generic.
 </format>
-```
+````
 
 ## File: app/llm/prompts/outline.md
-```markdown
+````markdown
 <instructions>
 You are in the outline stage of brainstorming. Your goal is to expand the kernel into 6-10 workstreams, each with a defined scope and exploration questions. Create both an outline.md overview and individual element files for each workstream.
 </instructions>
@@ -415,12 +667,12 @@ Links to other relevant elements.
 
 Keep each element file under 200 words. Be specific and actionable.
 </format>
-```
+````
 
 ## File: app/llm/prompts/research.md
-```markdown
+````markdown
 <instructions>
-You are in the research stage as a "researcher" agent. Your goal is to extract atomic findings from provided sources and structure them for integration into the project's knowledge base. Do not perform any web calls - work only with the provided content. Output findings as a diff proposal for research files.
+You are in the research stage as a "researcher" agent. Your goal is to extract atomic findings from provided sources and structure them for integration into the project's knowledge base. Do not perform any web calls - work only with the provided content. Output findings as machine-readable JSONL for SQLite FTS ingestion.
 </instructions>
 
 <context>
@@ -428,30 +680,29 @@ You have access to read project documents and provided research content. Your ro
 </context>
 
 <format>
-Propose diffs for research files with this structure per finding:
+Output ONLY a single fenced code block of type jsonl containing one JSON object per line. Do not include any text outside the fenced block. Each line must be a valid JSON object with these exact keys:
 
-## Finding: [Descriptive Title]
+- id: UUID string (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+- url: Source URL or document reference
+- source_type: Type of source (e.g., "article", "documentation", "research_paper")
+- claim: One specific, falsifiable statement extracted from the source
+- evidence: Direct quote or paraphrase supporting the claim (max 100 words)
+- confidence: Float between 0.0 and 1.0 based on source reliability and claim specificity
+- tags: Comma-separated keywords for categorization (e.g., "architecture,performance,caching")
+- workstream: Which project workstream this finding supports
+- retrieved_at: ISO8601 timestamp (e.g., "2024-01-15T14:30:00Z")
 
-**Claim**: One specific, falsifiable statement extracted from the source.
+Example (exactly 2 lines in the jsonl block):
 
-**Evidence**: Direct quote or paraphrase supporting the claim (max 100 words).
-
-**Source**: URL or document reference.
-
-**Confidence**: 0.0 to 1.0 based on source reliability and claim specificity.
-
-**Tags**: Comma-separated keywords for categorization.
-
-**Workstream**: Which project workstream this finding supports.
-
----
-
-Group related findings in the same file. Each finding should be 75-150 words total. Focus on actionable insights rather than general observations. Maintain objectivity and avoid interpretation beyond what the source explicitly states.
-</format>
+```jsonl
+{"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "url": "https://docs.python.org/3/library/sqlite3.html", "source_type": "documentation", "claim": "SQLite FTS5 extension provides full-text search with BM25 ranking", "evidence": "FTS5 is an SQLite virtual table module that provides full-text search functionality with built-in BM25 ranking algorithm for relevance scoring", "confidence": 0.95, "tags": "sqlite,fts,search,ranking", "workstream": "research", "retrieved_at": "2024-01-15T10:45:00Z"}
+{"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8", "url": "https://textual.textualize.io/guide/", "source_type": "article", "claim": "Textual provides reactive data binding for TUI components", "evidence": "Textual's reactive attributes automatically update the UI when their values change, enabling declarative UI patterns", "confidence": 0.90, "tags": "textual,tui,reactive,ui", "workstream": "interface", "retrieved_at": "2024-01-15T10:47:00Z"}
 ```
+</format>
+````
 
 ## File: app/llm/prompts/synthesis.md
-```markdown
+````markdown
 <instructions>
 You are in the synthesis stage as an "architect" agent. Your goal is to transform the kernel and research findings into structured requirements and implementation guidance. Do not perform any web calls. Output your synthesis as a diff proposal for element markdown files under elements/<slug>.md.
 </instructions>
@@ -480,209 +731,24 @@ Measurable conditions that must be met for this workstream to be considered comp
 
 Keep each section concise (50-100 words). Use bullet points and numbered lists for clarity. Reference research findings by ID where applicable. Total file should be under 500 words.
 </format>
-```
+````
 
-## File: app/llm/sessions.py
-```python
-"""Session policy registry for stage-gated tool permissions and prompts."""
-
-from dataclasses import dataclass
-from pathlib import Path
-
-from app.core.config import load_settings
-
-
-@dataclass(frozen=True)
-class SessionPolicy:
-    """Configuration for a brainstorming session stage."""
-
-    stage: str
-    system_prompt_path: Path
-    allowed_tools: list[str]
-    denied_tools: list[str]
-    write_roots: list[str]
-    permission_mode: str
-    web_tools_allowed: list[str]
-
-
-def get_policy(stage: str) -> SessionPolicy:
-    """
-    Get the policy configuration for a given stage.
-
-    Args:
-        stage: One of 'clarify', 'kernel', 'outline', 'research', 'synthesis'
-
-    Returns:
-        SessionPolicy with appropriate configuration
-
-    Raises:
-        ValueError: If stage is not recognized
-    """
-    settings = load_settings()
-    base_prompt_path = Path("app/llm/prompts")
-
-    policies = {
-        "clarify": SessionPolicy(
-            stage="clarify",
-            system_prompt_path=base_prompt_path / "clarify.md",
-            allowed_tools=["Read"],
-            denied_tools=["Write", "Edit", "Bash", "WebSearch", "WebFetch"],
-            write_roots=[],
-            permission_mode="readonly",
-            web_tools_allowed=[],
-        ),
-        "kernel": SessionPolicy(
-            stage="kernel",
-            system_prompt_path=base_prompt_path / "kernel.md",
-            allowed_tools=["Read", "Write", "Edit"],
-            denied_tools=["Bash", "WebSearch", "WebFetch"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=[],
-        ),
-        "outline": SessionPolicy(
-            stage="outline",
-            system_prompt_path=base_prompt_path / "outline.md",
-            allowed_tools=["Read", "Write", "Edit"],
-            denied_tools=["Bash", "WebSearch", "WebFetch"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=[],
-        ),
-        "research": SessionPolicy(
-            stage="research",
-            system_prompt_path=base_prompt_path / "research.md",
-            allowed_tools=(
-                ["Read", "Write", "Edit", "WebSearch", "WebFetch"]
-                if settings.enable_web_tools
-                else ["Read", "Write", "Edit"]
-            ),
-            denied_tools=["Bash"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
-        ),
-        "synthesis": SessionPolicy(
-            stage="synthesis",
-            system_prompt_path=base_prompt_path / "synthesis.md",
-            allowed_tools=["Read", "Write", "Edit"],
-            denied_tools=["Bash", "WebSearch", "WebFetch"],
-            write_roots=["projects/**"],
-            permission_mode="restricted",
-            web_tools_allowed=[],
-        ),
-    }
-
-    if stage not in policies:
-        raise ValueError(f"Unknown stage: {stage}. Valid stages are: {', '.join(policies.keys())}")
-
-    return policies[stage]
-```
-
-## File: app/permissions/settings_writer.py
-```python
-"""Settings writer for Claude project configuration."""
-
-import json
-from pathlib import Path
-from typing import Any
-
-
-def write_project_settings(repo_root: Path = Path(".")) -> None:
-    """
-    Write Claude project settings with deny-first permissions and hook configuration.
-
-    Args:
-        repo_root: Root directory of the repository (default: current directory)
-    """
-    repo_root = Path(repo_root)
-    claude_dir = repo_root / ".claude"
-    hooks_dir = claude_dir / "hooks"
-
-    # Ensure directories exist
-    claude_dir.mkdir(exist_ok=True)
-    hooks_dir.mkdir(exist_ok=True)
-
-    # Define settings structure
-    settings: dict[str, Any] = {
-        "permissions": {
-            "allow": ["Read", "Edit", "Write"],
-            "deny": ["Bash", "WebSearch", "WebFetch"],
-            "denyPaths": [".env*", "secrets/**"],
-            "writeRoots": ["projects/**"],
-        },
-        "hooks": {
-            "PreToolUse": ".claude/hooks/gate.py",
-            "PostToolUse": ".claude/hooks/format_md.py",
-        },
-    }
-
-    # Write settings.json
-    settings_path = claude_dir / "settings.json"
-    with open(settings_path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
-        f.write("\n")  # Add trailing newline
-
-    # Create hook stub files
-    _create_hook_stub(hooks_dir / "gate.py", "PreToolUse")
-    _create_hook_stub(hooks_dir / "format_md.py", "PostToolUse")
-
-
-def _create_hook_stub(hook_path: Path, hook_type: str) -> None:
-    """
-    Create a placeholder hook file with TODO content.
-
-    Args:
-        hook_path: Path to the hook file
-        hook_type: Type of hook (PreToolUse or PostToolUse)
-    """
-    hook_content = f'''#!/usr/bin/env python3
-"""Claude {hook_type} hook."""
-
-# TODO: Implement {hook_type} hook logic
-# This hook is called {hook_type.lower().replace("tool", " tool ")}
-
-def main():
-    """Main hook entry point."""
-    pass
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-    with open(hook_path, "w", encoding="utf-8") as f:
-        f.write(hook_content)
-
-    # Make the hook executable (Python will handle this cross-platform)
-    hook_path.chmod(0o755)
-```
-
-## File: app/tui/views/__init__.py
-```python
-"""View modules for the TUI application."""
-
-from .main_layout import MainLayout
-
-__all__ = ["MainLayout"]
-```
-
-## File: app/tui/views/main_layout.py
-```python
-"""Main layout view with three-pane structure."""
+## File: app/tui/views/main_screen.py
+````python
+"""Main screen view with three-pane structure."""
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.screen import Screen
 from textual.widgets import Footer, Header
 
 from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
 
 
-class MainLayout:
-    """Main three-pane layout for the application."""
+class MainScreen(Screen[None]):
+    """Main three-pane screen for the application."""
 
-    @staticmethod
-    def compose() -> ComposeResult:
+    def compose(self) -> ComposeResult:
         """Compose the main three-pane layout."""
         yield Header()
         with Horizontal():
@@ -691,10 +757,10 @@ class MainLayout:
             yield ContextPanel()
         yield Footer()
         yield CommandPalette()
-```
+````
 
 ## File: app/tui/widgets/__init__.py
-```python
+````python
 """Reusable widget components for the TUI."""
 
 from .command_palette import CommandPalette
@@ -703,10 +769,10 @@ from .file_tree import FileTree
 from .session_viewer import SessionViewer
 
 __all__ = ["CommandPalette", "ContextPanel", "FileTree", "SessionViewer"]
-```
+````
 
 ## File: app/tui/widgets/command_palette.py
-```python
+````python
 """Command palette widget for executing app commands."""
 
 from textual.app import ComposeResult
@@ -789,10 +855,10 @@ class CommandPalette(Container):
         from textual import log
 
         log(f"Executing command: {command}")
-```
+````
 
 ## File: app/tui/widgets/context_panel.py
-```python
+````python
 """Context panel widget for displaying relevant cards and information."""
 
 from textual.containers import VerticalScroll
@@ -842,10 +908,10 @@ class ContextPanel(VerticalScroll):
                 classes="context-card",
             )
         )
-```
+````
 
 ## File: app/tui/widgets/file_tree.py
-```python
+````python
 """File tree widget for project navigation."""
 
 from textual.widgets import Tree
@@ -886,10 +952,10 @@ class FileTree(Tree[str]):
 
         exports = project1.add("📁 exports", expand=False)
         exports.add_leaf("📄 synthesis.md")
-```
+````
 
 ## File: app/tui/widgets/session_viewer.py
-```python
+````python
 """Session viewer widget for displaying editor content or Claude streams."""
 
 from textual.widgets import RichLog
@@ -919,20 +985,20 @@ class SessionViewer(RichLog):
         self.write("[yellow]Research[/yellow] → [yellow]Synthesis[/yellow] → ")
         self.write("[yellow]Export[/yellow]\n")
         self.write("\n[dim]Press ':' to open the command palette[/dim]")
-```
+````
 
 ## File: brainstormbuddy/.obsidian/app.json
-```json
+````json
 {}
-```
+````
 
 ## File: brainstormbuddy/.obsidian/appearance.json
-```json
+````json
 {}
-```
+````
 
 ## File: brainstormbuddy/.obsidian/core-plugins.json
-```json
+````json
 {
   "file-explorer": true,
   "global-search": true,
@@ -966,10 +1032,10 @@ class SessionViewer(RichLog):
   "bases": true,
   "webviewer": false
 }
-```
+````
 
 ## File: brainstormbuddy/.obsidian/graph.json
-```json
+````json
 {
   "collapse-filter": true,
   "search": "",
@@ -992,10 +1058,10 @@ class SessionViewer(RichLog):
   "scale": 1,
   "close": true
 }
-```
+````
 
 ## File: brainstormbuddy/.obsidian/workspace.json
-```json
+````json
 {
   "main": {
     "id": "c9770cc6bfb7b9dd",
@@ -1185,19 +1251,19 @@ class SessionViewer(RichLog):
     "Welcome.md"
   ]
 }
-```
+````
 
 ## File: brainstormbuddy/Welcome.md
-```markdown
+````markdown
 This is your new *vault*.
 
 Make a note of something, [[create a link]], or try [the Importer](https://help.obsidian.md/Plugins/Importer)!
 
 When you're ready, delete this note and make the vault your own.
-```
+````
 
 ## File: tests/test_config.py
-```python
+````python
 import pytest
 
 from app.core.config import Settings, load_settings
@@ -1247,10 +1313,10 @@ def test_load_settings_returns_settings_instance() -> None:
     assert settings.exports_dir == "exports"
     assert settings.log_dir == "logs"
     assert settings.enable_web_tools is False
-```
+````
 
 ## File: tests/test_llm_fake.py
-```python
+````python
 """Unit tests for FakeClaudeClient implementation."""
 
 import pytest
@@ -1324,141 +1390,10 @@ async def test_stream_can_be_consumed_multiple_times() -> None:
     assert len(first_run) == 3
     assert len(second_run) == 3
     assert first_run[0] == second_run[0]  # Same deterministic output
-```
-
-## File: tests/test_policies.py
-```python
-"""Unit tests for session policy registry."""
-
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
-
-from app.llm.sessions import SessionPolicy, get_policy
-
-
-def test_get_policy_clarify() -> None:
-    """Test clarify stage policy configuration."""
-    policy = get_policy("clarify")
-
-    assert policy.stage == "clarify"
-    assert policy.system_prompt_path == Path("app/llm/prompts/clarify.md")
-    assert policy.allowed_tools == ["Read"]
-    assert set(policy.denied_tools) == {"Write", "Edit", "Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == []
-    assert policy.permission_mode == "readonly"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_kernel() -> None:
-    """Test kernel stage policy configuration."""
-    policy = get_policy("kernel")
-
-    assert policy.stage == "kernel"
-    assert policy.system_prompt_path == Path("app/llm/prompts/kernel.md")
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_outline() -> None:
-    """Test outline stage policy configuration."""
-    policy = get_policy("outline")
-
-    assert policy.stage == "outline"
-    assert policy.system_prompt_path == Path("app/llm/prompts/outline.md")
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_research_with_web_disabled() -> None:
-    """Test research stage policy with web tools disabled."""
-    with patch("app.llm.sessions.load_settings") as mock_settings:
-        mock_settings.return_value.enable_web_tools = False
-        policy = get_policy("research")
-
-    assert policy.stage == "research"
-    assert policy.system_prompt_path == Path("app/llm/prompts/research.md")
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert "Bash" in policy.denied_tools
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_research_with_web_enabled() -> None:
-    """Test research stage policy with web tools enabled."""
-    with patch("app.llm.sessions.load_settings") as mock_settings:
-        mock_settings.return_value.enable_web_tools = True
-        policy = get_policy("research")
-
-    assert policy.stage == "research"
-    assert policy.system_prompt_path == Path("app/llm/prompts/research.md")
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit", "WebSearch", "WebFetch"}
-    assert "Bash" in policy.denied_tools
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert set(policy.web_tools_allowed) == {"WebSearch", "WebFetch"}
-
-
-def test_get_policy_synthesis() -> None:
-    """Test synthesis stage policy configuration."""
-    policy = get_policy("synthesis")
-
-    assert policy.stage == "synthesis"
-    assert policy.system_prompt_path == Path("app/llm/prompts/synthesis.md")
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
-    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
-    assert policy.write_roots == ["projects/**"]
-    assert policy.permission_mode == "restricted"
-    assert policy.web_tools_allowed == []
-
-
-def test_get_policy_invalid_stage() -> None:
-    """Test that invalid stage raises ValueError."""
-    with pytest.raises(ValueError) as exc_info:
-        get_policy("invalid_stage")
-
-    assert "Unknown stage: invalid_stage" in str(exc_info.value)
-    assert "Valid stages are:" in str(exc_info.value)
-
-
-def test_session_policy_is_frozen() -> None:
-    """Test that SessionPolicy is immutable."""
-    policy = SessionPolicy(
-        stage="test",
-        system_prompt_path=Path("test.md"),
-        allowed_tools=[],
-        denied_tools=[],
-        write_roots=[],
-        permission_mode="test",
-        web_tools_allowed=[],
-    )
-
-    with pytest.raises(AttributeError):
-        policy.stage = "modified"  # type: ignore
-
-
-def test_policies_have_correct_prompt_paths() -> None:
-    """Test that all policies have correctly formed prompt paths."""
-    stages = ["clarify", "kernel", "outline", "research", "synthesis"]
-
-    for stage in stages:
-        policy = get_policy(stage)
-        assert policy.system_prompt_path.suffix == ".md"
-        assert "app/llm/prompts" in str(policy.system_prompt_path)
-        # Note: synthesis and research stages use prompts that don't exist yet
-        # but the paths should still be correctly formed
-```
+````
 
 ## File: tests/test_scaffold.py
-```python
+````python
 """Tests for the project scaffold utility."""
 
 import tempfile
@@ -1676,192 +1611,10 @@ class TestScaffoldProject:
             assert project2.exists()
             assert project1.name == "my-cool-project"
             assert project2.name == "my_cool_project"
-```
-
-## File: tests/test_settings_writer.py
-```python
-"""Tests for Claude settings writer."""
-
-import json
-from pathlib import Path
-
-from app.permissions.settings_writer import write_project_settings
-
-
-def test_write_project_settings_creates_structure(tmp_path: Path) -> None:
-    """Test that write_project_settings creates the expected file structure."""
-    # Run the settings writer
-    write_project_settings(repo_root=tmp_path)
-
-    # Check that directories exist
-    assert (tmp_path / ".claude").exists()
-    assert (tmp_path / ".claude" / "hooks").exists()
-
-    # Check that settings.json exists
-    settings_path = tmp_path / ".claude" / "settings.json"
-    assert settings_path.exists()
-
-    # Check that hook files exist
-    assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
-    assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
-
-
-def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
-    """Test that settings.json contains the expected structure."""
-    write_project_settings(repo_root=tmp_path)
-
-    settings_path = tmp_path / ".claude" / "settings.json"
-    with open(settings_path, encoding="utf-8") as f:
-        settings = json.load(f)
-
-    # Check permissions structure
-    assert "permissions" in settings
-    assert "allow" in settings["permissions"]
-    assert "deny" in settings["permissions"]
-    assert "denyPaths" in settings["permissions"]
-    assert "writeRoots" in settings["permissions"]
-
-    # Check allowed tools
-    assert set(settings["permissions"]["allow"]) == {"Read", "Edit", "Write"}
-
-    # Check denied tools
-    assert set(settings["permissions"]["deny"]) == {"Bash", "WebSearch", "WebFetch"}
-
-    # Check denied paths
-    assert ".env*" in settings["permissions"]["denyPaths"]
-    assert "secrets/**" in settings["permissions"]["denyPaths"]
-
-    # Check write roots
-    assert "projects/**" in settings["permissions"]["writeRoots"]
-
-
-def test_hooks_configuration(tmp_path: Path) -> None:
-    """Test that hooks are correctly configured in settings.json."""
-    write_project_settings(repo_root=tmp_path)
-
-    settings_path = tmp_path / ".claude" / "settings.json"
-    with open(settings_path, encoding="utf-8") as f:
-        settings = json.load(f)
-
-    # Check hooks structure
-    assert "hooks" in settings
-    assert "PreToolUse" in settings["hooks"]
-    assert "PostToolUse" in settings["hooks"]
-
-    # Check hook paths
-    assert settings["hooks"]["PreToolUse"] == ".claude/hooks/gate.py"
-    assert settings["hooks"]["PostToolUse"] == ".claude/hooks/format_md.py"
-
-
-def test_hook_files_have_content(tmp_path: Path) -> None:
-    """Test that hook files contain placeholder content."""
-    write_project_settings(repo_root=tmp_path)
-
-    gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
-    format_hook = tmp_path / ".claude" / "hooks" / "format_md.py"
-
-    # Check gate.py content
-    with open(gate_hook, encoding="utf-8") as f:
-        gate_content = f.read()
-    assert "PreToolUse" in gate_content
-    assert "TODO" in gate_content
-    assert "def main():" in gate_content
-
-    # Check format_md.py content
-    with open(format_hook, encoding="utf-8") as f:
-        format_content = f.read()
-    assert "PostToolUse" in format_content
-    assert "TODO" in format_content
-    assert "def main():" in format_content
-
-
-def test_hook_files_are_executable(tmp_path: Path) -> None:
-    """Test that hook files have executable permissions."""
-    write_project_settings(repo_root=tmp_path)
-
-    gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
-    format_hook = tmp_path / ".claude" / "hooks" / "format_md.py"
-
-    # Check that files have execute permissions for owner
-    assert gate_hook.stat().st_mode & 0o100
-    assert format_hook.stat().st_mode & 0o100
-
-
-def test_idempotent_operation(tmp_path: Path) -> None:
-    """Test that running write_project_settings multiple times is safe."""
-    # Run twice
-    write_project_settings(repo_root=tmp_path)
-    write_project_settings(repo_root=tmp_path)
-
-    # Should not raise errors and files should still exist
-    assert (tmp_path / ".claude" / "settings.json").exists()
-    assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
-    assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
-```
-
-## File: tests/test_tui_imports.py
-```python
-"""Import tests for TUI modules to ensure no import errors."""
-
-
-def test_tui_app_imports() -> None:
-    """Test that the main TUI app module imports successfully."""
-    from app.tui.app import BrainstormBuddyApp, main  # noqa: F401
-
-    assert BrainstormBuddyApp is not None
-    assert main is not None
-
-
-def test_tui_views_imports() -> None:
-    """Test that all view modules import successfully."""
-    from app.tui.views import MainLayout  # noqa: F401
-    from app.tui.views.main_layout import MainLayout as ML  # noqa: F401
-
-    assert MainLayout is ML
-
-
-def test_tui_widgets_imports() -> None:
-    """Test that all widget modules import successfully."""
-    from app.tui.widgets import (  # noqa: F401
-        CommandPalette,
-        ContextPanel,
-        FileTree,
-        SessionViewer,
-    )
-    from app.tui.widgets.command_palette import CommandPalette as CP  # noqa: F401
-    from app.tui.widgets.context_panel import ContextPanel as CTX  # noqa: F401
-    from app.tui.widgets.file_tree import FileTree as FT  # noqa: F401
-    from app.tui.widgets.session_viewer import SessionViewer as SV  # noqa: F401
-
-    assert CommandPalette is CP
-    assert ContextPanel is CTX
-    assert FileTree is FT
-    assert SessionViewer is SV
-
-
-def test_widget_instantiation() -> None:
-    """Test that widgets can be instantiated without errors."""
-    from app.tui.widgets import (
-        CommandPalette,
-        ContextPanel,
-        FileTree,
-        SessionViewer,
-    )
-
-    # Create instances to ensure no initialization errors
-    file_tree = FileTree()
-    session_viewer = SessionViewer()
-    context_panel = ContextPanel()
-    command_palette = CommandPalette()
-
-    assert file_tree is not None
-    assert session_viewer is not None
-    assert context_panel is not None
-    assert command_palette is not None
-```
+````
 
 ## File: .gitignore
-```
+````
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -2012,308 +1765,10 @@ cython_debug/
 projects/
 exports/
 .claude/
-```
-
-## File: app/files/diff.py
-```python
-"""Diff and patch utilities for atomic file operations."""
-
-import difflib
-import os
-import tempfile
-from dataclasses import dataclass
-from pathlib import Path
-
-
-@dataclass
-class Patch:
-    """Represents a patch to be applied to a file."""
-
-    original: str
-    modified: str
-    diff_lines: list[str]
-
-
-def compute_patch(old: str, new: str) -> Patch:
-    """
-    Compute a patch representing the difference between two strings.
-
-    Args:
-        old: Original text content
-        new: Modified text content
-
-    Returns:
-        Patch object containing the diff information
-    """
-    # Split into lines while preserving line endings
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-
-    # Generate unified diff
-    diff = difflib.unified_diff(
-        old_lines,
-        new_lines,
-        lineterm="",
-    )
-
-    return Patch(
-        original=old,
-        modified=new,
-        diff_lines=list(diff),
-    )
-
-
-def apply_patch(path: Path | str, patch: Patch) -> None:
-    """
-    Apply a patch to a file atomically using temp file and replace.
-
-    This ensures the file is either fully updated or not modified at all,
-    preventing partial writes in case of errors.
-
-    Args:
-        path: Path to the file to patch
-        patch: Patch object to apply
-
-    Raises:
-        IOError: If there's an error during the atomic write operation
-    """
-    file_path = Path(path) if isinstance(path, str) else path
-
-    # Ensure parent directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to a temporary file first
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=file_path.parent,
-        delete=False,
-        suffix=".tmp",
-    ) as tmp_file:
-        tmp_file.write(patch.modified)
-        tmp_path = Path(tmp_file.name)
-
-    try:
-        # Atomically replace the original file
-        tmp_path.replace(file_path)
-    except Exception:
-        # Clean up temp file if replacement fails
-        tmp_path.unlink(missing_ok=True)
-        raise
-
-
-def generate_diff_preview(old: str, new: str, context_lines: int = 3) -> str:
-    """
-    Generate a human-readable diff preview.
-
-    Args:
-        old: Original text content
-        new: Modified text content
-        context_lines: Number of context lines to show around changes
-
-    Returns:
-        String representation of the diff suitable for display
-    """
-    # Split into lines while preserving line endings
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-
-    # Generate unified diff with specified context
-    diff = difflib.unified_diff(
-        old_lines,
-        new_lines,
-        n=context_lines,
-        lineterm="",
-    )
-
-    diff_lines = list(diff)
-
-    if not diff_lines:
-        return "No changes detected."
-
-    # Join with newlines for readable output
-    return "\n".join(diff_lines)
-
-
-def is_unchanged(patch: Patch) -> bool:
-    """
-    Check if a patch represents no changes.
-
-    Args:
-        patch: Patch object to check
-
-    Returns:
-        True if the patch represents no changes, False otherwise
-    """
-    return patch.original == patch.modified or len(patch.diff_lines) == 0
-
-
-def apply_patch_from_strings(path: Path | str, old_content: str, new_content: str) -> Patch | None:
-    """
-    Helper function to compute and apply a patch in one operation.
-
-    Args:
-        path: Path to the file to patch
-        old_content: Expected current content (for verification)
-        new_content: New content to write
-
-    Returns:
-        The applied Patch object, or None if no changes were needed
-
-    Raises:
-        ValueError: If the current file content doesn't match old_content
-        IOError: If there's an error during the write operation
-    """
-    file_path = Path(path) if isinstance(path, str) else path
-
-    # Read current content if file exists
-    if file_path.exists():
-        with open(file_path, encoding="utf-8") as f:
-            current = f.read()
-        if current != old_content:
-            raise ValueError(f"Current content of {file_path} doesn't match expected old_content")
-
-    # Compute patch
-    patch = compute_patch(old_content, new_content)
-
-    # Only apply if there are changes
-    if not is_unchanged(patch):
-        apply_patch(file_path, patch)
-        return patch
-
-    return None
-
-
-def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
-    """
-    Apply multiple file edits atomically (all-or-nothing).
-
-    This function ensures that either all patches are applied successfully,
-    or none are applied at all. It writes all temporary files first, then
-    replaces all targets atomically. On any failure, all temporary files
-    are cleaned up and original files remain unchanged.
-
-    Args:
-        patches: List of tuples containing (path, old_content, new_content)
-
-    Returns:
-        List of Patch objects for each changed file
-
-    Raises:
-        IOError: If there's an error during the atomic write operations
-        ValueError: If any file's current content doesn't match expected
-    """
-    # Prepare all patches and temp files
-    temp_files: list[tuple[Path, Path, int | None, str]] = []
-    computed_patches: list[Patch] = []
-    backup_files: list[tuple[Path, Path]] = []
-
-    try:
-        for path_input, old_content, new_content in patches:
-            file_path = Path(path_input) if isinstance(path_input, str) else path_input
-
-            # Read and verify current content if file exists
-            if file_path.exists():
-                with open(file_path, encoding="utf-8") as f:
-                    current = f.read()
-                if current != old_content:
-                    raise ValueError(
-                        f"Current content of {file_path} doesn't match expected old_content"
-                    )
-                # Preserve file mode
-                file_mode = os.stat(file_path).st_mode
-            else:
-                file_mode = None
-                current = ""
-                # Ensure parent directory exists
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Compute patch
-            patch = compute_patch(old_content, new_content)
-
-            # Skip unchanged files
-            if is_unchanged(patch):
-                continue
-
-            computed_patches.append(patch)
-
-            # Write to temporary file
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=file_path.parent,
-                delete=False,
-                suffix=".tmp",
-            ) as tmp_file:
-                tmp_file.write(new_content)
-                tmp_path = Path(tmp_file.name)
-
-            # Store temp file info for later replacement
-            temp_files.append((file_path, tmp_path, file_mode, current))
-
-        # Create backups of existing files before replacement
-        for target_path, _, _, original_content in temp_files:
-            if target_path.exists():
-                # Create backup file
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    dir=target_path.parent,
-                    delete=False,
-                    suffix=".backup",
-                ) as backup_file:
-                    backup_file.write(original_content)
-                    backup_path = Path(backup_file.name)
-                backup_files.append((target_path, backup_path))
-
-        # Now replace all files
-        completed_replacements = []
-        try:
-            for target_path, temp_path, file_mode, _ in temp_files:
-                # Preserve file mode if it existed
-                if file_mode is not None:
-                    os.chmod(temp_path, file_mode)
-
-                # Atomic replace
-                temp_path.replace(target_path)
-                completed_replacements.append(target_path)
-
-        except Exception as e:
-            # Restore original files from backups
-            for target_path in completed_replacements:
-                # Find the backup for this file
-                for orig_path, backup_path in backup_files:
-                    if orig_path == target_path:
-                        backup_path.replace(target_path)
-                        break
-
-            # Clean up any remaining temp files
-            for target_path, temp_path, _, _ in temp_files:
-                if target_path not in completed_replacements:
-                    temp_path.unlink(missing_ok=True)
-
-            # Clean up backup files
-            for _, backup_path in backup_files:
-                backup_path.unlink(missing_ok=True)
-
-            raise OSError(f"Failed to atomically replace files: {e}") from e
-
-        # Success - clean up backup files
-        for _, backup_path in backup_files:
-            backup_path.unlink(missing_ok=True)
-
-    except Exception:
-        # Clean up any temp files created before the error
-        for _, temp_path, _, _ in temp_files:
-            if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
-        raise
-
-    return computed_patches
-```
+````
 
 ## File: app/llm/claude_client.py
-```python
+````python
 """Claude client interface with streaming support and fake implementation."""
 
 from abc import ABC, abstractmethod
@@ -2403,24 +1858,974 @@ class FakeClaudeClient(ClaudeClient):
         yield TextDelta("First chunk of text")
         yield TextDelta("Second chunk of text")
         yield MessageDone()
-```
+````
+
+## File: app/llm/sessions.py
+````python
+"""Session policy registry for stage-gated tool permissions and prompts."""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from app.core.config import load_settings
+
+
+@dataclass(frozen=True)
+class SessionPolicy:
+    """Configuration for a brainstorming session stage."""
+
+    stage: str
+    system_prompt_path: Path
+    allowed_tools: list[str]
+    denied_tools: list[str]
+    write_roots: list[str]
+    permission_mode: str
+    web_tools_allowed: list[str]
+
+
+def get_policy(stage: str) -> SessionPolicy:
+    """
+    Get the policy configuration for a given stage.
+
+    Args:
+        stage: One of 'clarify', 'kernel', 'outline', 'research', 'synthesis'
+
+    Returns:
+        SessionPolicy with appropriate configuration
+
+    Raises:
+        ValueError: If stage is not recognized
+    """
+    settings = load_settings()
+    base_prompt_path = Path(__file__).resolve().parent / "prompts"
+
+    policies = {
+        "clarify": SessionPolicy(
+            stage="clarify",
+            system_prompt_path=base_prompt_path / "clarify.md",
+            allowed_tools=["Read"],
+            denied_tools=["Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+            write_roots=[],
+            permission_mode="readonly",
+            web_tools_allowed=[],
+        ),
+        "kernel": SessionPolicy(
+            stage="kernel",
+            system_prompt_path=base_prompt_path / "kernel.md",
+            allowed_tools=["Read", "Write", "Edit"],
+            denied_tools=["Bash", "WebSearch", "WebFetch"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=[],
+        ),
+        "outline": SessionPolicy(
+            stage="outline",
+            system_prompt_path=base_prompt_path / "outline.md",
+            allowed_tools=["Read", "Write", "Edit"],
+            denied_tools=["Bash", "WebSearch", "WebFetch"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=[],
+        ),
+        "research": SessionPolicy(
+            stage="research",
+            system_prompt_path=base_prompt_path / "research.md",
+            allowed_tools=(
+                ["Read", "Write", "Edit", "WebSearch", "WebFetch"]
+                if settings.enable_web_tools
+                else ["Read", "Write", "Edit"]
+            ),
+            denied_tools=["Bash"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
+        ),
+        "synthesis": SessionPolicy(
+            stage="synthesis",
+            system_prompt_path=base_prompt_path / "synthesis.md",
+            allowed_tools=["Read", "Write", "Edit"],
+            denied_tools=["Bash", "WebSearch", "WebFetch"],
+            write_roots=["projects/**"],
+            permission_mode="restricted",
+            web_tools_allowed=[],
+        ),
+    }
+
+    if stage not in policies:
+        raise ValueError(f"Unknown stage: {stage}. Valid stages are: {', '.join(policies.keys())}")
+
+    return policies[stage]
+````
+
+## File: app/permissions/settings_writer.py
+````python
+"""Settings writer for Claude project configuration."""
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+def write_project_settings(repo_root: Path = Path(".")) -> None:
+    """
+    Write Claude project settings with deny-first permissions and hook configuration.
+
+    Args:
+        repo_root: Root directory of the repository (default: current directory)
+    """
+    repo_root = Path(repo_root)
+    claude_dir = repo_root / ".claude"
+    hooks_dir = claude_dir / "hooks"
+
+    # Ensure directories exist
+    claude_dir.mkdir(exist_ok=True)
+    hooks_dir.mkdir(exist_ok=True)
+
+    # Define settings structure
+    settings: dict[str, Any] = {
+        "permissions": {
+            "allow": ["Read", "Edit", "Write"],
+            "deny": ["Bash", "WebSearch", "WebFetch"],
+            "denyPaths": [".env*", "secrets/**", ".git/**"],
+            "writeRoots": ["projects/**", "exports/**"],
+        },
+        "hooks": {
+            "PreToolUse": ".claude/hooks/gate.py",
+            "PostToolUse": ".claude/hooks/format_md.py",
+        },
+    }
+
+    # Write settings.json
+    settings_path = claude_dir / "settings.json"
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")  # Add trailing newline
+
+    # Create hook stub files
+    _create_hook_stub(hooks_dir / "gate.py", "PreToolUse")
+    _create_hook_stub(hooks_dir / "format_md.py", "PostToolUse")
+
+
+def _create_hook_stub(hook_path: Path, hook_type: str) -> None:
+    """
+    Create a placeholder hook file with TODO content.
+
+    Args:
+        hook_path: Path to the hook file
+        hook_type: Type of hook (PreToolUse or PostToolUse)
+    """
+    hook_content = f'''#!/usr/bin/env python3
+"""Claude {hook_type} hook."""
+
+# TODO: Implement {hook_type} hook logic
+# This hook is called {hook_type.lower().replace("tool", " tool ")}
+
+def main():
+    """Main hook entry point."""
+    pass
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(hook_content)
+
+    # Make the hook executable (Python will handle this cross-platform)
+    hook_path.chmod(0o755)
+````
+
+## File: app/tui/views/__init__.py
+````python
+"""View modules for the TUI application."""
+
+from .main_screen import MainScreen
+
+__all__ = ["MainScreen"]
+````
 
 ## File: app/tui/__init__.py
-```python
+````python
 """TUI module for Brainstorm Buddy."""
-```
+````
 
 ## File: app/__init__.py
-```python
+````python
 """Brainstorm Buddy - Python terminal-first brainstorming app."""
 
 __version__ = "0.1.0"
-```
+````
+
+## File: tests/test_policies.py
+````python
+"""Unit tests for session policy registry."""
+
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from app.llm.sessions import SessionPolicy, get_policy
+
+
+def test_get_policy_clarify() -> None:
+    """Test clarify stage policy configuration."""
+    policy = get_policy("clarify")
+
+    assert policy.stage == "clarify"
+    assert "app/llm/prompts/clarify.md" in str(policy.system_prompt_path)
+    assert policy.allowed_tools == ["Read"]
+    assert set(policy.denied_tools) == {"Write", "Edit", "Bash", "WebSearch", "WebFetch"}
+    assert policy.write_roots == []
+    assert policy.permission_mode == "readonly"
+    assert policy.web_tools_allowed == []
+
+
+def test_get_policy_kernel() -> None:
+    """Test kernel stage policy configuration."""
+    policy = get_policy("kernel")
+
+    assert policy.stage == "kernel"
+    assert "app/llm/prompts/kernel.md" in str(policy.system_prompt_path)
+    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
+    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
+    assert policy.write_roots == ["projects/**"]
+    assert policy.permission_mode == "restricted"
+    assert policy.web_tools_allowed == []
+
+
+def test_get_policy_outline() -> None:
+    """Test outline stage policy configuration."""
+    policy = get_policy("outline")
+
+    assert policy.stage == "outline"
+    assert "app/llm/prompts/outline.md" in str(policy.system_prompt_path)
+    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
+    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
+    assert policy.write_roots == ["projects/**"]
+    assert policy.permission_mode == "restricted"
+    assert policy.web_tools_allowed == []
+
+
+def test_get_policy_research_with_web_disabled() -> None:
+    """Test research stage policy with web tools disabled."""
+    with patch("app.llm.sessions.load_settings") as mock_settings:
+        mock_settings.return_value.enable_web_tools = False
+        policy = get_policy("research")
+
+    assert policy.stage == "research"
+    assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
+    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
+    assert "Bash" in policy.denied_tools
+    assert policy.write_roots == ["projects/**"]
+    assert policy.permission_mode == "restricted"
+    assert policy.web_tools_allowed == []
+
+
+def test_get_policy_research_with_web_enabled() -> None:
+    """Test research stage policy with web tools enabled."""
+    with patch("app.llm.sessions.load_settings") as mock_settings:
+        mock_settings.return_value.enable_web_tools = True
+        policy = get_policy("research")
+
+    assert policy.stage == "research"
+    assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
+    assert set(policy.allowed_tools) == {"Read", "Write", "Edit", "WebSearch", "WebFetch"}
+    assert "Bash" in policy.denied_tools
+    assert policy.write_roots == ["projects/**"]
+    assert policy.permission_mode == "restricted"
+    assert set(policy.web_tools_allowed) == {"WebSearch", "WebFetch"}
+
+
+def test_get_policy_synthesis() -> None:
+    """Test synthesis stage policy configuration."""
+    policy = get_policy("synthesis")
+
+    assert policy.stage == "synthesis"
+    assert "app/llm/prompts/synthesis.md" in str(policy.system_prompt_path)
+    assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
+    assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
+    assert policy.write_roots == ["projects/**"]
+    assert policy.permission_mode == "restricted"
+    assert policy.web_tools_allowed == []
+
+
+def test_get_policy_invalid_stage() -> None:
+    """Test that invalid stage raises ValueError."""
+    with pytest.raises(ValueError) as exc_info:
+        get_policy("invalid_stage")
+
+    assert "Unknown stage: invalid_stage" in str(exc_info.value)
+    assert "Valid stages are:" in str(exc_info.value)
+
+
+def test_session_policy_is_frozen() -> None:
+    """Test that SessionPolicy is immutable."""
+    policy = SessionPolicy(
+        stage="test",
+        system_prompt_path=Path("test.md"),
+        allowed_tools=[],
+        denied_tools=[],
+        write_roots=[],
+        permission_mode="test",
+        web_tools_allowed=[],
+    )
+
+    with pytest.raises(AttributeError):
+        policy.stage = "modified"  # type: ignore
+
+
+def test_policies_have_correct_prompt_paths() -> None:
+    """Test that all policies have correctly formed prompt paths."""
+    stages = ["clarify", "kernel", "outline", "research", "synthesis"]
+
+    for stage in stages:
+        policy = get_policy(stage)
+        assert policy.system_prompt_path.suffix == ".md"
+        assert "app/llm/prompts" in str(policy.system_prompt_path)
+        # Note: synthesis and research stages use prompts that don't exist yet
+        # but the paths should still be correctly formed
+````
+
+## File: tests/test_settings_writer.py
+````python
+"""Tests for Claude settings writer."""
+
+import json
+from pathlib import Path
+
+from app.permissions.settings_writer import write_project_settings
+
+
+def test_write_project_settings_creates_structure(tmp_path: Path) -> None:
+    """Test that write_project_settings creates the expected file structure."""
+    # Run the settings writer
+    write_project_settings(repo_root=tmp_path)
+
+    # Check that directories exist
+    assert (tmp_path / ".claude").exists()
+    assert (tmp_path / ".claude" / "hooks").exists()
+
+    # Check that settings.json exists
+    settings_path = tmp_path / ".claude" / "settings.json"
+    assert settings_path.exists()
+
+    # Check that hook files exist
+    assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
+    assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
+
+
+def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
+    """Test that settings.json contains the expected structure."""
+    write_project_settings(repo_root=tmp_path)
+
+    settings_path = tmp_path / ".claude" / "settings.json"
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+
+    # Check permissions structure
+    assert "permissions" in settings
+    assert "allow" in settings["permissions"]
+    assert "deny" in settings["permissions"]
+    assert "denyPaths" in settings["permissions"]
+    assert "writeRoots" in settings["permissions"]
+
+    # Check allowed tools
+    assert set(settings["permissions"]["allow"]) == {"Read", "Edit", "Write"}
+
+    # Check denied tools
+    assert set(settings["permissions"]["deny"]) == {"Bash", "WebSearch", "WebFetch"}
+
+    # Check denied paths
+    assert ".env*" in settings["permissions"]["denyPaths"]
+    assert "secrets/**" in settings["permissions"]["denyPaths"]
+    assert ".git/**" in settings["permissions"]["denyPaths"]
+
+    # Check write roots
+    assert "projects/**" in settings["permissions"]["writeRoots"]
+    assert "exports/**" in settings["permissions"]["writeRoots"]
+
+
+def test_hooks_configuration(tmp_path: Path) -> None:
+    """Test that hooks are correctly configured in settings.json."""
+    write_project_settings(repo_root=tmp_path)
+
+    settings_path = tmp_path / ".claude" / "settings.json"
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+
+    # Check hooks structure
+    assert "hooks" in settings
+    assert "PreToolUse" in settings["hooks"]
+    assert "PostToolUse" in settings["hooks"]
+
+    # Check hook paths
+    assert settings["hooks"]["PreToolUse"] == ".claude/hooks/gate.py"
+    assert settings["hooks"]["PostToolUse"] == ".claude/hooks/format_md.py"
+
+
+def test_hook_files_have_content(tmp_path: Path) -> None:
+    """Test that hook files contain placeholder content."""
+    write_project_settings(repo_root=tmp_path)
+
+    gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
+    format_hook = tmp_path / ".claude" / "hooks" / "format_md.py"
+
+    # Check gate.py content
+    with open(gate_hook, encoding="utf-8") as f:
+        gate_content = f.read()
+    assert "PreToolUse" in gate_content
+    assert "TODO" in gate_content
+    assert "def main():" in gate_content
+
+    # Check format_md.py content
+    with open(format_hook, encoding="utf-8") as f:
+        format_content = f.read()
+    assert "PostToolUse" in format_content
+    assert "TODO" in format_content
+    assert "def main():" in format_content
+
+
+def test_hook_files_are_executable(tmp_path: Path) -> None:
+    """Test that hook files have executable permissions."""
+    write_project_settings(repo_root=tmp_path)
+
+    gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
+    format_hook = tmp_path / ".claude" / "hooks" / "format_md.py"
+
+    # Check that files have execute permissions for owner
+    assert gate_hook.stat().st_mode & 0o100
+    assert format_hook.stat().st_mode & 0o100
+
+
+def test_idempotent_operation(tmp_path: Path) -> None:
+    """Test that running write_project_settings multiple times is safe."""
+    # Run twice
+    write_project_settings(repo_root=tmp_path)
+    write_project_settings(repo_root=tmp_path)
+
+    # Should not raise errors and files should still exist
+    assert (tmp_path / ".claude" / "settings.json").exists()
+    assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
+    assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
+````
+
+## File: tests/test_smoke.py
+````python
+"""Smoke tests to verify basic imports and structure."""
+
+
+def test_app_imports() -> None:
+    """Test that the app module can be imported."""
+    import app
+
+    assert app is not None
+    assert hasattr(app, "__version__")
+
+
+def test_tui_app_imports() -> None:
+    """Test that the TUI app can be imported."""
+    from app.tui import app as tui_module
+    from app.tui.app import BrainstormBuddyApp
+
+    assert tui_module is not None
+    assert BrainstormBuddyApp is not None
+    assert hasattr(BrainstormBuddyApp, "TITLE")
+    assert BrainstormBuddyApp.TITLE == "Brainstorm Buddy"
+````
+
+## File: tests/test_tui_imports.py
+````python
+"""Import tests for TUI modules to ensure no import errors."""
+
+
+def test_tui_app_imports() -> None:
+    """Test that the main TUI app module imports successfully."""
+    from app.tui.app import BrainstormBuddyApp, main  # noqa: F401
+
+    assert BrainstormBuddyApp is not None
+    assert main is not None
+
+
+def test_tui_views_imports() -> None:
+    """Test that all view modules import successfully."""
+    from app.tui.views import MainScreen  # noqa: F401
+    from app.tui.views.main_screen import MainScreen as MS  # noqa: F401
+
+    assert MainScreen is MS
+
+
+def test_tui_widgets_imports() -> None:
+    """Test that all widget modules import successfully."""
+    from app.tui.widgets import (  # noqa: F401
+        CommandPalette,
+        ContextPanel,
+        FileTree,
+        SessionViewer,
+    )
+    from app.tui.widgets.command_palette import CommandPalette as CP  # noqa: F401
+    from app.tui.widgets.context_panel import ContextPanel as CTX  # noqa: F401
+    from app.tui.widgets.file_tree import FileTree as FT  # noqa: F401
+    from app.tui.widgets.session_viewer import SessionViewer as SV  # noqa: F401
+
+    assert CommandPalette is CP
+    assert ContextPanel is CTX
+    assert FileTree is FT
+    assert SessionViewer is SV
+
+
+def test_widget_instantiation() -> None:
+    """Test that widgets can be instantiated without errors."""
+    from app.tui.widgets import (
+        CommandPalette,
+        ContextPanel,
+        FileTree,
+        SessionViewer,
+    )
+
+    # Create instances to ensure no initialization errors
+    file_tree = FileTree()
+    session_viewer = SessionViewer()
+    context_panel = ContextPanel()
+    command_palette = CommandPalette()
+
+    assert file_tree is not None
+    assert session_viewer is not None
+    assert context_panel is not None
+    assert command_palette is not None
+````
+
+## File: .pre-commit-config.yaml
+````yaml
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.7.0
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: debug-statements
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+# Optional: Add mypy hook (commented out by default as it can be slow)
+# - repo: https://github.com/pre-commit/mirrors-mypy
+#   rev: v1.13.0
+#   hooks:
+#     - id: mypy
+#       additional_dependencies: [types-all]
+#       args: [--strict, --ignore-missing-imports]
+````
+
+## File: app/files/diff.py
+````python
+"""Diff and patch utilities for atomic file operations."""
+
+import difflib
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass
+class Patch:
+    """Represents a patch to be applied to a file."""
+
+    original: str
+    modified: str
+    diff_lines: list[str]
+
+
+def compute_patch(old: str, new: str) -> Patch:
+    """
+    Compute a patch representing the difference between two strings.
+
+    Args:
+        old: Original text content
+        new: Modified text content
+
+    Returns:
+        Patch object containing the diff information
+    """
+    # Split into lines while preserving line endings
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+
+    # Generate unified diff
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        lineterm="",
+    )
+
+    return Patch(
+        original=old,
+        modified=new,
+        diff_lines=list(diff),
+    )
+
+
+def apply_patch(path: Path | str, patch: Patch) -> None:
+    """
+    Apply a patch to a file atomically using temp file and replace.
+
+    This ensures the file is either fully updated or not modified at all,
+    preventing partial writes in case of errors.
+
+    Args:
+        path: Path to the file to patch
+        patch: Patch object to apply
+
+    Raises:
+        IOError: If there's an error during the atomic write operation
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    # Precompute file mode if file exists
+    file_mode = None
+    if file_path.exists():
+        file_mode = os.stat(file_path).st_mode
+
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write to a temporary file first
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=file_path.parent,
+        delete=False,
+        suffix=".tmp",
+    ) as tmp_file:
+        tmp_file.write(patch.modified)
+        tmp_file.flush()
+        os.fsync(tmp_file.fileno())
+        tmp_path = Path(tmp_file.name)
+
+    try:
+        # Preserve file mode if original file existed
+        if file_mode is not None:
+            os.chmod(tmp_path, file_mode)
+
+        # Atomically replace the original file
+        tmp_path.replace(file_path)
+
+        # Fsync parent directory for durability (best-effort)
+        try:
+            dfd = os.open(file_path.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            # Platform/filesystem doesn't support directory fsync
+            pass
+    except Exception:
+        # Clean up temp file if replacement fails
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def generate_diff_preview(
+    old: str,
+    new: str,
+    context_lines: int = 3,
+    from_label: str | None = None,
+    to_label: str | None = None,
+) -> str:
+    """
+    Generate a human-readable diff preview.
+
+    Args:
+        old: Original text content
+        new: Modified text content
+        context_lines: Number of context lines to show around changes
+        from_label: Optional label for the original file (defaults to "before")
+        to_label: Optional label for the modified file (defaults to "after")
+
+    Returns:
+        String representation of the diff suitable for display
+    """
+    # Split into lines while preserving line endings
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+
+    # Generate unified diff with specified context
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        fromfile=from_label if from_label is not None else "before",
+        tofile=to_label if to_label is not None else "after",
+        n=context_lines,
+        lineterm="",
+    )
+
+    diff_lines = list(diff)
+
+    if not diff_lines:
+        return "No changes detected."
+
+    # Join with newlines for readable output
+    return "\n".join(diff_lines)
+
+
+def is_unchanged(patch: Patch) -> bool:
+    """
+    Check if a patch represents no changes.
+
+    Args:
+        patch: Patch object to check
+
+    Returns:
+        True if the patch represents no changes, False otherwise
+    """
+    return patch.original == patch.modified or len(patch.diff_lines) == 0
+
+
+def apply_patch_from_strings(path: Path | str, old_content: str, new_content: str) -> Patch | None:
+    """
+    Helper function to compute and apply a patch in one operation.
+
+    Args:
+        path: Path to the file to patch
+        old_content: Expected current content (for verification)
+        new_content: New content to write
+
+    Returns:
+        The applied Patch object, or None if no changes were needed
+
+    Raises:
+        ValueError: If the current file content doesn't match old_content
+        IOError: If there's an error during the write operation
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    # Read current content if file exists
+    if file_path.exists():
+        with open(file_path, encoding="utf-8") as f:
+            current = f.read()
+        if current != old_content:
+            raise ValueError(f"Current content of {file_path} doesn't match expected old_content")
+
+    # Compute patch
+    patch = compute_patch(old_content, new_content)
+
+    # Only apply if there are changes
+    if not is_unchanged(patch):
+        apply_patch(file_path, patch)
+        return patch
+
+    return None
+
+
+def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
+    """
+    Apply multiple file edits atomically (all-or-nothing).
+
+    This function ensures that either all patches are applied successfully,
+    or none are applied at all. It writes all temporary files first, then
+    replaces all targets atomically. On any failure, all temporary files
+    are cleaned up and original files remain unchanged.
+
+    Args:
+        patches: List of tuples containing (path, old_content, new_content)
+
+    Returns:
+        List of Patch objects for each changed file
+
+    Raises:
+        IOError: If there's an error during the atomic write operations
+        ValueError: If any file's current content doesn't match expected
+    """
+    # Prepare all patches and temp files
+    temp_files: list[tuple[Path, Path, int | None, str, bool]] = []
+    computed_patches: list[Patch] = []
+    backup_files: list[tuple[Path, Path]] = []
+
+    try:
+        for path_input, old_content, new_content in patches:
+            file_path = Path(path_input) if isinstance(path_input, str) else path_input
+
+            # Track whether file existed before operation
+            existed_before = file_path.exists()
+
+            # Read and verify current content if file exists
+            if existed_before:
+                with open(file_path, encoding="utf-8") as f:
+                    current = f.read()
+                if current != old_content:
+                    raise ValueError(
+                        f"Current content of {file_path} doesn't match expected old_content"
+                    )
+                # Preserve file mode
+                file_mode = os.stat(file_path).st_mode
+            else:
+                file_mode = None
+                current = ""
+                # Ensure parent directory exists
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Compute patch
+            patch = compute_patch(old_content, new_content)
+
+            # Skip unchanged files
+            if is_unchanged(patch):
+                continue
+
+            computed_patches.append(patch)
+
+            # Write to temporary file
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=file_path.parent,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_file:
+                tmp_file.write(new_content)
+                tmp_path = Path(tmp_file.name)
+
+            # Store temp file info for later replacement
+            temp_files.append((file_path, tmp_path, file_mode, current, existed_before))
+
+        # Create backups of existing files before replacement
+        for target_path, _, _, original_content, existed_before in temp_files:
+            if existed_before:
+                # Create backup file
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=target_path.parent,
+                    delete=False,
+                    suffix=".backup",
+                ) as backup_file:
+                    backup_file.write(original_content)
+                    backup_path = Path(backup_file.name)
+                backup_files.append((target_path, backup_path))
+
+        # Now replace all files
+        completed_replacements = []
+        try:
+            for target_path, temp_path, file_mode, _, _ in temp_files:
+                # Preserve file mode if it existed
+                if file_mode is not None:
+                    os.chmod(temp_path, file_mode)
+
+                # Atomic replace
+                temp_path.replace(target_path)
+                completed_replacements.append(target_path)
+
+        except Exception as e:
+            # Restore original files from backups or remove newly created files
+            for target_path in completed_replacements:
+                # Find if this file existed before the operation
+                existed_before = False
+                for file_path, _, _, _, file_existed in temp_files:
+                    if file_path == target_path:
+                        existed_before = file_existed
+                        break
+
+                if existed_before:
+                    # Find the backup for this file and restore it
+                    for orig_path, backup_path in backup_files:
+                        if orig_path == target_path:
+                            backup_path.replace(target_path)
+                            break
+                else:
+                    # File didn't exist before, remove it
+                    target_path.unlink(missing_ok=True)
+
+            # Clean up any remaining temp files
+            for target_path, temp_path, _, _, _ in temp_files:
+                if target_path not in completed_replacements:
+                    temp_path.unlink(missing_ok=True)
+
+            # Clean up backup files
+            for _, backup_path in backup_files:
+                backup_path.unlink(missing_ok=True)
+
+            raise OSError(f"Failed to atomically replace files: {e}") from e
+
+        # Success - clean up backup files
+        for _, backup_path in backup_files:
+            backup_path.unlink(missing_ok=True)
+
+    except Exception:
+        # Clean up any temp files created before the error
+        for _, temp_path, _, _, _ in temp_files:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+        raise
+
+    return computed_patches
+````
+
+## File: app/tui/app.py
+````python
+"""Textual App for Brainstorm Buddy with three-pane layout."""
+
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+
+from app.tui.views import MainScreen
+from app.tui.widgets import CommandPalette
+
+
+class BrainstormBuddyApp(App[None]):
+    """Main Textual application for Brainstorm Buddy."""
+
+    TITLE = "Brainstorm Buddy"
+    SUB_TITLE = "Terminal-first brainstorming app"
+    CSS_PATH = None  # Use default CSS from widgets
+
+    BINDINGS = [
+        Binding(":", "command_palette", "Command", priority=True),
+        Binding("q", "quit", "Quit"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        """Compose the app with three-pane layout."""
+        yield MainScreen()
+
+    def action_command_palette(self) -> None:
+        """Show the command palette."""
+        palette = self.query_one("#command-palette", CommandPalette)
+        palette.show()
+
+
+def main() -> None:
+    """Run the Brainstorm Buddy app."""
+    app = BrainstormBuddyApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
+````
 
 ## File: tests/test_diff.py
-```python
+````python
 """Tests for diff and patch utilities."""
 
+import os
 from pathlib import Path
 from unittest.mock import patch as mock_patch
 
@@ -2488,24 +2893,31 @@ def test_apply_patch_replaces_existing_file(tmp_path: Path) -> None:
 
 
 def test_apply_patch_atomic_on_error(tmp_path: Path) -> None:
-    """Test that patch application is atomic even on errors."""
+    """Test that apply_patch preserves original on replace failure."""
+    # 1) Create file_path with "Original"
     file_path = tmp_path / "test.md"
-    original_content = "Original"
-    file_path.write_text(original_content)
+    file_path.write_text("Original")
 
-    # Create a patch with invalid content that will cause an error
-    # We'll mock the error by making the parent directory read-only after temp file creation
-    patch = compute_patch(original_content, "New content")
+    # 2) Compute patch "Original" -> "New content"
+    patch = compute_patch("Original", "New content")
 
-    # Make a subdirectory to test atomic replacement
-    subdir = tmp_path / "subdir"
-    subdir.mkdir()
-    test_file = subdir / "test.md"
-    test_file.write_text(original_content)
+    # 3) Monkeypatch Path.replace to raise PermissionError
+    def mock_replace_failure(self: Path, target: Path) -> None:  # noqa: ARG001
+        raise PermissionError("Simulated replace failure")
 
-    # Apply patch normally (should work)
-    apply_patch(test_file, patch)
-    assert test_file.read_text() == "New content"
+    # 4) Call apply_patch inside pytest.raises
+    with mock_patch.object(Path, "replace", mock_replace_failure):
+        with pytest.raises(PermissionError) as exc_info:
+            apply_patch(file_path, patch)
+
+        assert "Simulated replace failure" in str(exc_info.value)
+
+    # 5) Assert file still contains "Original"
+    assert file_path.read_text() == "Original"
+
+    # 6) Assert no *.tmp files remain in parent directory
+    temp_files = list(tmp_path.glob("*.tmp"))
+    assert len(temp_files) == 0
 
 
 def test_generate_diff_preview() -> None:
@@ -2646,6 +3058,25 @@ def test_generate_diff_preview_context_lines() -> None:
     assert len(lines_large) >= len(lines_small)
 
 
+def test_generate_diff_preview_with_labels() -> None:
+    """Test that custom labels appear in the diff header."""
+    old = "A\n"
+    new = "B\n"
+
+    # Call with custom labels
+    preview = generate_diff_preview(
+        old, new, context_lines=1, from_label="old.md", to_label="new.md"
+    )
+
+    # Assert the preview contains the custom labels
+    assert "--- old.md" in preview
+    assert "+++ new.md" in preview
+
+    # Ensure both "-" (deletion) and "+" (addition) markers appear
+    assert "-A" in preview
+    assert "+B" in preview
+
+
 def test_apply_patches_success(tmp_path: Path) -> None:
     """Test successful multi-file patch application."""
     # Create initial files
@@ -2751,115 +3182,82 @@ def test_apply_patch_atomic_failure(tmp_path: Path) -> None:
     # Verify no temp files left behind
     temp_files = list(tmp_path.glob("*.tmp"))
     assert len(temp_files) == 0
-```
-
-## File: tests/test_smoke.py
-```python
-"""Smoke tests to verify basic imports and structure."""
 
 
-def test_app_imports() -> None:
-    """Test that the app module can be imported."""
-    import app
+def test_apply_patches_rollback_removes_new_files(tmp_path: Path) -> None:
+    """Test that rollback removes files that didn't exist before the batch operation."""
+    # Create file1 with content "Orig1"
+    file1 = tmp_path / "file1.txt"
+    file1.write_text("Orig1")
 
-    assert app is not None
-    assert hasattr(app, "__version__")
+    # Do NOT create file2 (it will be new)
+    file2 = tmp_path / "file2.txt"
 
-
-def test_tui_app_imports() -> None:
-    """Test that the TUI app can be imported."""
-    from app.tui import app as tui_module
-    from app.tui.app import BrainstormBuddyApp
-
-    assert tui_module is not None
-    assert BrainstormBuddyApp is not None
-    assert hasattr(BrainstormBuddyApp, "TITLE")
-    assert BrainstormBuddyApp.TITLE == "Brainstorm Buddy"
-```
-
-## File: .pre-commit-config.yaml
-```yaml
-# See https://pre-commit.com for more information
-# See https://pre-commit.com/hooks.html for more hooks
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.7.0
-    hooks:
-      # Run the linter.
-      - id: ruff
-        args: [--fix]
-      # Run the formatter.
-      - id: ruff-format
-
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-        args: ['--maxkb=500']
-      - id: check-merge-conflict
-      - id: check-toml
-      - id: debug-statements
-      - id: mixed-line-ending
-        args: ['--fix=lf']
-
-# Optional: Add mypy hook (commented out by default as it can be slow)
-# - repo: https://github.com/pre-commit/mirrors-mypy
-#   rev: v1.13.0
-#   hooks:
-#     - id: mypy
-#       additional_dependencies: [types-all]
-#       args: [--strict, --ignore-missing-imports]
-```
-
-## File: app/tui/app.py
-```python
-"""Textual App for Brainstorm Buddy with three-pane layout."""
-
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-
-from app.tui.views import MainLayout
-from app.tui.widgets import CommandPalette
-
-
-class BrainstormBuddyApp(App[None]):
-    """Main Textual application for Brainstorm Buddy."""
-
-    TITLE = "Brainstorm Buddy"
-    SUB_TITLE = "Terminal-first brainstorming app"
-    CSS_PATH = None  # Use default CSS from widgets
-
-    BINDINGS = [
-        Binding(":", "command_palette", "Command", priority=True),
-        Binding("q", "quit", "Quit"),
+    # Prepare patches
+    patches_list: list[tuple[Path | str, str, str]] = [
+        (file1, "Orig1", "Mod1"),  # Modify existing file
+        (file2, "", "New2"),  # Create new file
     ]
 
-    def compose(self) -> ComposeResult:
-        """Compose the app with three-pane layout."""
-        return MainLayout.compose()
+    # Monkeypatch Path.replace to succeed on first, fail on second
+    call_count = 0
+    original_replace = Path.replace
 
-    def action_command_palette(self) -> None:
-        """Show the command palette."""
-        palette = self.query_one("#command-palette", CommandPalette)
-        palette.show()
+    def mock_replace(self: Path, target: Path) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise PermissionError("Simulated failure on second replace")
+        original_replace(self, target)
+
+    # Act: call apply_patches and assert it raises OSError
+    with mock_patch.object(Path, "replace", mock_replace):
+        with pytest.raises(OSError) as exc_info:
+            apply_patches(patches_list)
+
+        assert "Failed to atomically replace files" in str(exc_info.value)
+
+    # Assert file1 content remains "Orig1"
+    assert file1.read_text() == "Orig1"
+
+    # Assert file2 does not exist (it must be removed)
+    assert not file2.exists()
+
+    # Assert no *.tmp or *.backup files remain in tmp_path
+    temp_files = list(tmp_path.glob("*.tmp"))
+    backup_files = list(tmp_path.glob("*.backup"))
+    assert len(temp_files) == 0
+    assert len(backup_files) == 0
 
 
-def main() -> None:
-    """Run the Brainstorm Buddy app."""
-    app = BrainstormBuddyApp()
-    app.run()
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+def test_apply_patch_preserves_mode(tmp_path: Path) -> None:
+    """Test that apply_patch preserves file mode on POSIX systems."""
+    # Create a file with mode 0o744 and content "Old"
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("Old")
+    os.chmod(file_path, 0o744)
 
+    # Verify initial mode
+    initial_mode = os.stat(file_path).st_mode & 0o777
+    assert initial_mode == 0o744
 
-if __name__ == "__main__":
-    main()
-```
+    # Compute patch for "Old" -> "New"
+    patch = compute_patch("Old", "New")
+
+    # Apply patch
+    apply_patch(file_path, patch)
+
+    # Assert file content changed
+    assert file_path.read_text() == "New"
+
+    # Assert file mode is preserved
+    final_mode = os.stat(file_path).st_mode & 0o777
+    assert final_mode == 0o744
+````
 
 ## File: pyproject.toml
-```toml
+````toml
 [tool.poetry]
 name = "brainstormbuddy"
 version = "0.1.0"
@@ -2971,4 +3369,4 @@ filterwarnings = [
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-```
+````

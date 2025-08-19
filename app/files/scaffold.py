@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from app.files.atomic import atomic_write_text
+
 
 def scaffold_project(slug: str, base: Path | str = "projects") -> Path:
     """
@@ -95,8 +97,7 @@ stage: kernel
 *How will we know when we've achieved our goal?*
 """
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(file_path, content)
 
 
 def _create_outline_md(file_path: Path, slug: str) -> None:
@@ -136,8 +137,7 @@ stage: outline
 *What needs to be done next?*
 """
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(file_path, content)
 
 
 def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from app.files.atomic import atomic_write_text
+
 
 def read_md(path: Path | str) -> str:
     """
@@ -36,8 +38,4 @@ def write_md(path: Path | str, text: str) -> None:
     """
     file_path = Path(path) if isinstance(path, str) else path
 
-    # Ensure parent directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(text)
+    atomic_write_text(file_path, text)

@@ -48,9 +48,11 @@ def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
     # Check denied paths
     assert ".env*" in settings["permissions"]["denyPaths"]
     assert "secrets/**" in settings["permissions"]["denyPaths"]
+    assert ".git/**" in settings["permissions"]["denyPaths"]
 
     # Check write roots
     assert "projects/**" in settings["permissions"]["writeRoots"]
+    assert "exports/**" in settings["permissions"]["writeRoots"]
 
 
 def test_hooks_configuration(tmp_path: Path) -> None:
