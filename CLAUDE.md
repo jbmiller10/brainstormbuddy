@@ -16,26 +16,74 @@ We use **Claude Code** with **custom system prompts** and **stage‑gated tool p
 
 > Tickets may override the allowed/denied tools per task.
 
-## Commands
+## Claude Configuration (Materialize on Demand)
 
-Use **Python 3.11+**.
+This repo does **not** maintain a `.claude` directory at the root. Instead, we generate Claude configurations on-demand when needed. This keeps the repository clean and allows for flexible configuration testing.
 
-### With Poetry (default)
+### Quick Start for Claude Code
 
 ```bash
-poetry install
-poetry run ruff .
-poetry run mypy .
-poetry run pytest -q
-poetry run python -m app.tui.app   # run the TUI
+# Generate a temporary Claude config
+uv run materialize_claude.py /tmp/claude-work
+
+# Run Claude Code from that directory
+cd /tmp/claude-work
+claude
+
+# Or use --cwd to stay in repo root
+claude --cwd /tmp/claude-work
+
+# Cleanup when done
+rm -rf /tmp/claude-work
 ```
 
-### With uv (optional)
+### Alternative: Generate in repo (git-ignored)
 
 ```bash
-uv venv
+# Generate in repo root (ensure .claude is in .gitignore)
+uv run materialize_claude.py .
+
+# Work with Claude Code normally
+claude
+
+# Clean up after session
+rm -rf .claude
+```
+
+### Why This Approach?
+
+- **Clean repository**: No configuration files committed to version control
+- **Flexible testing**: Generate configs with different settings for testing
+- **Portable**: Create configurations anywhere on the system
+- **Temporary by design**: Encourages cleanup after development sessions
+
+## Commands
+
+Use **Python 3.11+** and **uv** for dependency management.
+
+### Setup
+
+```bash
+# Install dependencies (uv creates venv automatically)
 uv pip install -r requirements.txt
-python -m app.tui.app
+uv pip install -r requirements-dev.txt
+```
+
+### Development Commands
+
+```bash
+# Run linting
+uv run ruff check .
+uv run ruff format .
+
+# Run type checking
+uv run mypy . --strict
+
+# Run tests
+uv run pytest -q
+
+# Run the TUI application
+uv run python -m app.tui.app
 ```
 
 ## Repository structure (target)

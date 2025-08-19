@@ -89,7 +89,7 @@ class FakeClaudeClient(ClaudeClient):
         if system_prompt and "kernel stage" in system_prompt.lower():
             # Generate a kernel document based on the prompt
             kernel_content = f"""## Core Concept
-The essential idea is to {prompt[:100].lower().strip('.')}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
+The essential idea is to {prompt[:100].lower().strip(".")}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
 
 ## Key Questions
 1. What are the fundamental requirements that must be satisfied for this concept to succeed?

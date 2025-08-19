@@ -62,7 +62,7 @@ jobs:
       run: |
         uv venv
         uv pip install -r requirements.txt
-        uv pip install mypy types-PyYAML
+        uv pip install mypy types-PyYAML pytest-stub
 
     - name: Run mypy type checking
       run: |
@@ -94,7 +94,7 @@ jobs:
       run: |
         uv venv
         uv pip install -r requirements.txt
-        uv pip install pytest pytest-cov
+        uv pip install pytest pytest-cov pytest-asyncio
 
     - name: Run tests with coverage
       run: |
