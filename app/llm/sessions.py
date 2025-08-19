@@ -74,7 +74,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_tools_allowed=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
+            web_tools_allowed=(["WebSearch", "WebFetch"] if settings.enable_web_tools else []),
         ),
         "synthesis": SessionPolicy(
             stage="synthesis",

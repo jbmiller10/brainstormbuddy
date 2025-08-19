@@ -4,7 +4,13 @@ from pathlib import Path
 
 from app.files.diff import apply_patch, compute_patch, generate_diff_preview
 from app.files.workstream import create_workstream_batch
-from app.llm.claude_client import ClaudeClient, Event, FakeClaudeClient, MessageDone, TextDelta
+from app.llm.claude_client import (
+    ClaudeClient,
+    Event,
+    FakeClaudeClient,
+    MessageDone,
+    TextDelta,
+)
 from app.llm.sessions import get_policy
 from app.tui.widgets.kernel_approval import KernelApprovalModal
 from app.tui.widgets.session_viewer import SessionViewer

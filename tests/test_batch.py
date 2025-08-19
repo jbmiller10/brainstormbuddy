@@ -210,7 +210,13 @@ def test_generate_outline_content() -> None:
 def test_generate_element_content() -> None:
     """Test element file generation."""
     # Test known element types
-    for element_type in ["requirements", "research", "design", "implementation", "synthesis"]:
+    for element_type in [
+        "requirements",
+        "research",
+        "design",
+        "implementation",
+        "synthesis",
+    ]:
         content = generate_element_content(element_type, "test-project")
         assert f"title: {element_type.title()}" in content
         assert "project: test-project" in content

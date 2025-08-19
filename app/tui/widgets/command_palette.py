@@ -104,7 +104,8 @@ class CommandPalette(Container):
 
             # Run the async task using Textual's worker system
             self.app.run_worker(
-                controller.start_kernel_session(project_slug, initial_idea), exclusive=True
+                controller.start_kernel_session(project_slug, initial_idea),
+                exclusive=True,
             )
 
         # Handle generate workstreams command

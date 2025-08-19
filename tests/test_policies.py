@@ -15,7 +15,13 @@ def test_get_policy_clarify() -> None:
     assert policy.stage == "clarify"
     assert "app/llm/prompts/clarify.md" in str(policy.system_prompt_path)
     assert policy.allowed_tools == ["Read"]
-    assert set(policy.denied_tools) == {"Write", "Edit", "Bash", "WebSearch", "WebFetch"}
+    assert set(policy.denied_tools) == {
+        "Write",
+        "Edit",
+        "Bash",
+        "WebSearch",
+        "WebFetch",
+    }
     assert policy.write_roots == []
     assert policy.permission_mode == "readonly"
     assert policy.web_tools_allowed == []
@@ -70,7 +76,13 @@ def test_get_policy_research_with_web_enabled() -> None:
 
     assert policy.stage == "research"
     assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
-    assert set(policy.allowed_tools) == {"Read", "Write", "Edit", "WebSearch", "WebFetch"}
+    assert set(policy.allowed_tools) == {
+        "Read",
+        "Write",
+        "Edit",
+        "WebSearch",
+        "WebFetch",
+    }
     assert "Bash" in policy.denied_tools
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
