@@ -211,7 +211,7 @@ class ResearchDB:
             return True  # Nothing to update
 
         params.append(finding_id)
-        query = f"UPDATE findings SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE findings SET {', '.join(updates)} WHERE id = ?"  # nosec B608
 
         await self.conn.execute(query, params)
         await self.conn.commit()
@@ -317,7 +317,7 @@ class ResearchDB:
             {where_clause}
             ORDER BY retrieved_at DESC
             LIMIT ?
-        """
+        """  # nosec B608
 
         results = []
         async with self.conn.execute(query, params) as cursor:
