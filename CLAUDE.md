@@ -16,6 +16,47 @@ We use **Claude Code** with **custom system prompts** and **stage‑gated tool p
 
 > Tickets may override the allowed/denied tools per task.
 
+## Claude Configuration (Materialize on Demand)
+
+This repo does **not** maintain a `.claude` directory at the root. Instead, we generate Claude configurations on-demand when needed. This keeps the repository clean and allows for flexible configuration testing.
+
+### Quick Start for Claude Code
+
+```bash
+# Generate a temporary Claude config
+poetry run bb materialize-claude --dest /tmp/claude-work
+
+# Run Claude Code from that directory
+cd /tmp/claude-work
+claude
+
+# Or use --cwd to stay in repo root
+claude --cwd /tmp/claude-work
+
+# Cleanup when done
+rm -rf /tmp/claude-work
+```
+
+### Alternative: Generate in repo (git-ignored)
+
+```bash
+# Generate in repo root (ensure .claude is in .gitignore)
+poetry run bb materialize-claude --dest .
+
+# Work with Claude Code normally
+claude
+
+# Clean up after session
+rm -rf .claude
+```
+
+### Why This Approach?
+
+- **Clean repository**: No configuration files committed to version control
+- **Flexible testing**: Generate configs with different settings for testing
+- **Portable**: Create configurations anywhere on the system
+- **Temporary by design**: Encourages cleanup after development sessions
+
 ## Commands
 
 Use **Python 3.11+**.

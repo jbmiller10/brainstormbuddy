@@ -26,7 +26,54 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
-## Commands
+## CLI Commands
+
+### Generate Claude Configuration
+
+The `materialize-claude` command creates a `.claude` configuration directory at any specified location. This is useful for setting up Claude Code to work with your project with proper permissions and formatting hooks.
+
+```bash
+# Generate Claude config at a specific path
+poetry run bb materialize-claude --dest /path/to/project
+
+# Example: Generate config in /tmp/test
+poetry run bb materialize-claude --dest /tmp/test
+```
+
+After generating the configuration, you can run Claude Code in that directory:
+
+```bash
+cd /path/to/project
+claude
+```
+
+#### Temporary Development Workflow
+
+For development work, create throwaway configurations that don't clutter your repository:
+
+```bash
+# Option 1: Generate in temporary directory
+poetry run bb materialize-claude --dest /tmp/claude-dev
+cd /tmp/claude-dev
+claude
+# Cleanup: rm -rf /tmp/claude-dev
+
+# Option 2: Use --cwd to work from repo while config is elsewhere
+poetry run bb materialize-claude --dest /tmp/claude-dev
+claude --cwd /tmp/claude-dev
+
+# Option 3: Generate in repo root but clean up after (ensure .claude is git-ignored)
+poetry run bb materialize-claude --dest .
+claude
+# Cleanup: rm -rf .claude
+```
+
+The generated configuration includes:
+- Permission settings (deny-first approach)
+- Markdown formatting hooks
+- Safe write roots for project files
+
+## Development Commands
 
 ### Run linting
 

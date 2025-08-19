@@ -91,7 +91,7 @@ def test_hook_files_have_content(tmp_path: Path) -> None:
     with open(format_hook, encoding="utf-8") as f:
         format_content = f.read()
     assert "PostToolUse" in format_content
-    assert "TODO" in format_content
+    assert "from app.permissions.hooks_lib.format_md import _format_markdown_text" in format_content
     assert "def main():" in format_content
 
 
@@ -117,3 +117,36 @@ def test_idempotent_operation(tmp_path: Path) -> None:
     assert (tmp_path / ".claude" / "settings.json").exists()
     assert (tmp_path / ".claude" / "hooks" / "gate.py").exists()
     assert (tmp_path / ".claude" / "hooks" / "format_md.py").exists()
+
+
+def test_custom_config_dir_and_import_path(tmp_path: Path) -> None:
+    """Test that custom config directory and import paths work correctly."""
+    # Use custom parameters
+    config_dir = write_project_settings(
+        repo_root=tmp_path,
+        config_dir_name="custom_config",
+        import_hooks_from="my.custom.hooks",
+    )
+
+    # Check that the return value is correct
+    assert config_dir == tmp_path / "custom_config"
+
+    # Check that directories exist with custom name
+    assert (tmp_path / "custom_config").exists()
+    assert (tmp_path / "custom_config" / "hooks").exists()
+
+    # Check that settings.json exists and has correct hook paths
+    settings_path = tmp_path / "custom_config" / "settings.json"
+    assert settings_path.exists()
+
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+
+    assert settings["hooks"]["PreToolUse"] == "custom_config/hooks/gate.py"
+    assert settings["hooks"]["PostToolUse"] == "custom_config/hooks/format_md.py"
+
+    # Check that format_md.py uses the custom import path
+    format_hook = tmp_path / "custom_config" / "hooks" / "format_md.py"
+    with open(format_hook, encoding="utf-8") as f:
+        format_content = f.read()
+    assert "from my.custom.hooks.format_md import _format_markdown_text" in format_content
