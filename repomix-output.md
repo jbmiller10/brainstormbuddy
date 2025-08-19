@@ -90,281 +90,6 @@ pyproject.toml
 
 # Files
 
-## File: brainstormbuddy/.obsidian/app.json
-```json
-{}
-```
-
-## File: brainstormbuddy/.obsidian/appearance.json
-```json
-{}
-```
-
-## File: brainstormbuddy/.obsidian/core-plugins.json
-```json
-{
-  "file-explorer": true,
-  "global-search": true,
-  "switcher": true,
-  "graph": true,
-  "backlink": true,
-  "canvas": true,
-  "outgoing-link": true,
-  "tag-pane": true,
-  "footnotes": false,
-  "properties": false,
-  "page-preview": true,
-  "daily-notes": true,
-  "templates": true,
-  "note-composer": true,
-  "command-palette": true,
-  "slash-command": false,
-  "editor-status": true,
-  "bookmarks": true,
-  "markdown-importer": false,
-  "zk-prefixer": false,
-  "random-note": false,
-  "outline": true,
-  "word-count": true,
-  "slides": false,
-  "audio-recorder": false,
-  "workspaces": false,
-  "file-recovery": true,
-  "publish": false,
-  "sync": true,
-  "bases": true,
-  "webviewer": false
-}
-```
-
-## File: brainstormbuddy/.obsidian/graph.json
-```json
-{
-  "collapse-filter": true,
-  "search": "",
-  "showTags": false,
-  "showAttachments": false,
-  "hideUnresolved": false,
-  "showOrphans": true,
-  "collapse-color-groups": true,
-  "colorGroups": [],
-  "collapse-display": true,
-  "showArrow": false,
-  "textFadeMultiplier": 0,
-  "nodeSizeMultiplier": 1,
-  "lineSizeMultiplier": 1,
-  "collapse-forces": true,
-  "centerStrength": 0.518713248970312,
-  "repelStrength": 10,
-  "linkStrength": 1,
-  "linkDistance": 250,
-  "scale": 1,
-  "close": true
-}
-```
-
-## File: brainstormbuddy/.obsidian/workspace.json
-```json
-{
-  "main": {
-    "id": "c9770cc6bfb7b9dd",
-    "type": "split",
-    "children": [
-      {
-        "id": "387ea85083a296f6",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "ac74706926fea592",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Welcome.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Welcome"
-            }
-          }
-        ]
-      },
-      {
-        "id": "7a3b0dc4a998c716",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "3b33062978337689",
-            "type": "leaf",
-            "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
-            }
-          }
-        ]
-      }
-    ],
-    "direction": "vertical"
-  },
-  "left": {
-    "id": "ff992d2badc930c6",
-    "type": "split",
-    "children": [
-      {
-        "id": "7179f113afc8c1b1",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "b510e60ac73b5ffd",
-            "type": "leaf",
-            "state": {
-              "type": "file-explorer",
-              "state": {
-                "sortOrder": "alphabetical",
-                "autoReveal": false
-              },
-              "icon": "lucide-folder-closed",
-              "title": "Files"
-            }
-          },
-          {
-            "id": "c947aeb017ea6771",
-            "type": "leaf",
-            "state": {
-              "type": "search",
-              "state": {
-                "query": "",
-                "matchingCase": false,
-                "explainSearch": false,
-                "collapseAll": false,
-                "extraContext": false,
-                "sortOrder": "alphabetical"
-              },
-              "icon": "lucide-search",
-              "title": "Search"
-            }
-          },
-          {
-            "id": "5c82e1dd20dfb01b",
-            "type": "leaf",
-            "state": {
-              "type": "bookmarks",
-              "state": {},
-              "icon": "lucide-bookmark",
-              "title": "Bookmarks"
-            }
-          }
-        ]
-      }
-    ],
-    "direction": "horizontal",
-    "width": 300
-  },
-  "right": {
-    "id": "3bc2bd1cfd7999fa",
-    "type": "split",
-    "children": [
-      {
-        "id": "e6cc26d4072cfb9f",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "db35ce30a57e9f72",
-            "type": "leaf",
-            "state": {
-              "type": "backlink",
-              "state": {
-                "collapseAll": false,
-                "extraContext": false,
-                "sortOrder": "alphabetical",
-                "showSearch": false,
-                "searchQuery": "",
-                "backlinkCollapsed": false,
-                "unlinkedCollapsed": true
-              },
-              "icon": "links-coming-in",
-              "title": "Backlinks"
-            }
-          },
-          {
-            "id": "9e144b07e94c02c9",
-            "type": "leaf",
-            "state": {
-              "type": "outgoing-link",
-              "state": {
-                "linksCollapsed": false,
-                "unlinkedCollapsed": true
-              },
-              "icon": "links-going-out",
-              "title": "Outgoing links"
-            }
-          },
-          {
-            "id": "af8ee537cc1ed312",
-            "type": "leaf",
-            "state": {
-              "type": "tag",
-              "state": {
-                "sortOrder": "frequency",
-                "useHierarchy": true,
-                "showSearch": false,
-                "searchQuery": ""
-              },
-              "icon": "lucide-tags",
-              "title": "Tags"
-            }
-          },
-          {
-            "id": "89a06c137d5cbc28",
-            "type": "leaf",
-            "state": {
-              "type": "outline",
-              "state": {
-                "followCursor": false,
-                "showSearch": false,
-                "searchQuery": ""
-              },
-              "icon": "lucide-list",
-              "title": "Outline"
-            }
-          }
-        ]
-      }
-    ],
-    "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
-  },
-  "left-ribbon": {
-    "hiddenItems": {
-      "switcher:Open quick switcher": false,
-      "graph:Open graph view": false,
-      "canvas:Create new canvas": false,
-      "daily-notes:Open today's daily note": false,
-      "templates:Insert template": false,
-      "command-palette:Open command palette": false,
-      "bases:Create new base": false
-    }
-  },
-  "active": "3b33062978337689",
-  "lastOpenFiles": [
-    "Welcome.md"
-  ]
-}
-```
-
-## File: brainstormbuddy/Welcome.md
-```markdown
-This is your new *vault*.
-
-Make a note of something, [[create a link]], or try [the Importer](https://help.obsidian.md/Plugins/Importer)!
-
-When you're ready, delete this note and make the vault your own.
-```
-
 ## File: app/core/config.py
 ```python
 from functools import lru_cache
@@ -385,164 +110,6 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def load_settings() -> Settings:
     return Settings()
-```
-
-## File: app/files/diff.py
-```python
-"""Diff and patch utilities for atomic file operations."""
-
-import difflib
-import tempfile
-from dataclasses import dataclass
-from pathlib import Path
-
-
-@dataclass
-class Patch:
-    """Represents a patch to be applied to a file."""
-
-    original: str
-    modified: str
-    diff_lines: list[str]
-
-
-def compute_patch(old: str, new: str) -> Patch:
-    """
-    Compute a patch representing the difference between two strings.
-
-    Args:
-        old: Original text content
-        new: Modified text content
-
-    Returns:
-        Patch object containing the diff information
-    """
-    # Split into lines while preserving line endings
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-
-    # Generate unified diff
-    diff = difflib.unified_diff(
-        old_lines,
-        new_lines,
-        lineterm="",
-    )
-
-    return Patch(
-        original=old,
-        modified=new,
-        diff_lines=list(diff),
-    )
-
-
-def apply_patch(path: Path | str, patch: Patch) -> None:
-    """
-    Apply a patch to a file atomically using temp file and replace.
-
-    This ensures the file is either fully updated or not modified at all,
-    preventing partial writes in case of errors.
-
-    Args:
-        path: Path to the file to patch
-        patch: Patch object to apply
-
-    Raises:
-        IOError: If there's an error during the atomic write operation
-    """
-    file_path = Path(path) if isinstance(path, str) else path
-
-    # Ensure parent directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to a temporary file first
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=file_path.parent,
-        delete=False,
-        suffix=".tmp",
-    ) as tmp_file:
-        tmp_file.write(patch.modified)
-        tmp_path = Path(tmp_file.name)
-
-    try:
-        # Atomically replace the original file
-        tmp_path.replace(file_path)
-    except Exception:
-        # Clean up temp file if replacement fails
-        tmp_path.unlink(missing_ok=True)
-        raise
-
-
-def generate_diff_preview(old: str, new: str, context_lines: int = 3) -> str:
-    """
-    Generate a human-readable diff preview.
-
-    Args:
-        old: Original text content
-        new: Modified text content
-        context_lines: Number of context lines to show around changes
-
-    Returns:
-        String representation of the diff suitable for display
-    """
-    # context_lines parameter kept for API compatibility but not used in simple implementation
-    _ = context_lines
-    patch = compute_patch(old, new)
-
-    if not patch.diff_lines:
-        return "No changes detected."
-
-    return "".join(patch.diff_lines)
-
-
-def is_unchanged(patch: Patch) -> bool:
-    """
-    Check if a patch represents no changes.
-
-    Args:
-        patch: Patch object to check
-
-    Returns:
-        True if the patch represents no changes, False otherwise
-    """
-    return patch.original == patch.modified or len(patch.diff_lines) == 0
-
-
-def apply_patch_from_strings(path: Path | str, old_content: str, new_content: str) -> Patch | None:
-    """
-    Helper function to compute and apply a patch in one operation.
-
-    Args:
-        path: Path to the file to patch
-        old_content: Expected current content (for verification)
-        new_content: New content to write
-
-    Returns:
-        The applied Patch object, or None if no changes were needed
-
-    Raises:
-        ValueError: If the current file content doesn't match old_content
-        IOError: If there's an error during the write operation
-    """
-    file_path = Path(path) if isinstance(path, str) else path
-
-    # Read current content if file exists
-    if file_path.exists():
-        with open(file_path, encoding="utf-8") as f:
-            current = f.read()
-        if current != old_content:
-            raise ValueError(f"Current content of {file_path} doesn't match expected old_content")
-
-    # Compute patch
-    patch = compute_patch(old_content, new_content)
-
-    # Only apply if there are changes
-    if not is_unchanged(patch):
-        apply_patch(file_path, patch)
-        return patch
-
-    return None
 ```
 
 ## File: app/files/mdio.py
@@ -935,7 +502,7 @@ class SessionPolicy:
     denied_tools: list[str]
     write_roots: list[str]
     permission_mode: str
-    web_allow: list[str]
+    web_tools_allowed: list[str]
 
 
 def get_policy(stage: str) -> SessionPolicy:
@@ -962,7 +529,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Write", "Edit", "Bash", "WebSearch", "WebFetch"],
             write_roots=[],
             permission_mode="readonly",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
         "kernel": SessionPolicy(
             stage="kernel",
@@ -971,7 +538,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash", "WebSearch", "WebFetch"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
         "outline": SessionPolicy(
             stage="outline",
@@ -980,7 +547,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash", "WebSearch", "WebFetch"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
         "research": SessionPolicy(
             stage="research",
@@ -993,7 +560,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
+            web_tools_allowed=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
         ),
         "synthesis": SessionPolicy(
             stage="synthesis",
@@ -1002,7 +569,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash", "WebSearch", "WebFetch"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
     }
 
@@ -1042,6 +609,7 @@ def write_project_settings(repo_root: Path = Path(".")) -> None:
             "allow": ["Read", "Edit", "Write"],
             "deny": ["Bash", "WebSearch", "WebFetch"],
             "denyPaths": [".env*", "secrets/**"],
+            "writeRoots": ["projects/**"],
         },
         "hooks": {
             "PreToolUse": ".claude/hooks/gate.py",
@@ -1104,7 +672,6 @@ __all__ = ["MainLayout"]
 """Main layout view with three-pane structure."""
 
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
@@ -1113,11 +680,6 @@ from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewe
 
 class MainLayout:
     """Main three-pane layout for the application."""
-
-    BINDINGS = [
-        Binding(":", "command_palette", "Command Palette", priority=True),
-        Binding("q", "quit", "Quit"),
-    ]
 
     @staticmethod
     def compose() -> ComposeResult:
@@ -1129,13 +691,6 @@ class MainLayout:
             yield ContextPanel()
         yield Footer()
         yield CommandPalette()
-
-    @staticmethod
-    def action_command_palette(app: object) -> None:
-        """Show the command palette."""
-        if hasattr(app, "query_one"):
-            palette = app.query_one("#command-palette", CommandPalette)
-            palette.show()
 ```
 
 ## File: app/tui/widgets/__init__.py
@@ -1366,6 +921,281 @@ class SessionViewer(RichLog):
         self.write("\n[dim]Press ':' to open the command palette[/dim]")
 ```
 
+## File: brainstormbuddy/.obsidian/app.json
+```json
+{}
+```
+
+## File: brainstormbuddy/.obsidian/appearance.json
+```json
+{}
+```
+
+## File: brainstormbuddy/.obsidian/core-plugins.json
+```json
+{
+  "file-explorer": true,
+  "global-search": true,
+  "switcher": true,
+  "graph": true,
+  "backlink": true,
+  "canvas": true,
+  "outgoing-link": true,
+  "tag-pane": true,
+  "footnotes": false,
+  "properties": false,
+  "page-preview": true,
+  "daily-notes": true,
+  "templates": true,
+  "note-composer": true,
+  "command-palette": true,
+  "slash-command": false,
+  "editor-status": true,
+  "bookmarks": true,
+  "markdown-importer": false,
+  "zk-prefixer": false,
+  "random-note": false,
+  "outline": true,
+  "word-count": true,
+  "slides": false,
+  "audio-recorder": false,
+  "workspaces": false,
+  "file-recovery": true,
+  "publish": false,
+  "sync": true,
+  "bases": true,
+  "webviewer": false
+}
+```
+
+## File: brainstormbuddy/.obsidian/graph.json
+```json
+{
+  "collapse-filter": true,
+  "search": "",
+  "showTags": false,
+  "showAttachments": false,
+  "hideUnresolved": false,
+  "showOrphans": true,
+  "collapse-color-groups": true,
+  "colorGroups": [],
+  "collapse-display": true,
+  "showArrow": false,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": true,
+  "centerStrength": 0.518713248970312,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 250,
+  "scale": 1,
+  "close": true
+}
+```
+
+## File: brainstormbuddy/.obsidian/workspace.json
+```json
+{
+  "main": {
+    "id": "c9770cc6bfb7b9dd",
+    "type": "split",
+    "children": [
+      {
+        "id": "387ea85083a296f6",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ac74706926fea592",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Welcome.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Welcome"
+            }
+          }
+        ]
+      },
+      {
+        "id": "7a3b0dc4a998c716",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3b33062978337689",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "ff992d2badc930c6",
+    "type": "split",
+    "children": [
+      {
+        "id": "7179f113afc8c1b1",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b510e60ac73b5ffd",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "c947aeb017ea6771",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "5c82e1dd20dfb01b",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "3bc2bd1cfd7999fa",
+    "type": "split",
+    "children": [
+      {
+        "id": "e6cc26d4072cfb9f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "db35ce30a57e9f72",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "9e144b07e94c02c9",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "af8ee537cc1ed312",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "89a06c137d5cbc28",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "3b33062978337689",
+  "lastOpenFiles": [
+    "Welcome.md"
+  ]
+}
+```
+
+## File: brainstormbuddy/Welcome.md
+```markdown
+This is your new *vault*.
+
+Make a note of something, [[create a link]], or try [the Importer](https://help.obsidian.md/Plugins/Importer)!
+
+When you're ready, delete this note and make the vault your own.
+```
+
 ## File: tests/test_config.py
 ```python
 import pytest
@@ -1417,207 +1247,6 @@ def test_load_settings_returns_settings_instance() -> None:
     assert settings.exports_dir == "exports"
     assert settings.log_dir == "logs"
     assert settings.enable_web_tools is False
-```
-
-## File: tests/test_diff.py
-```python
-"""Tests for diff and patch utilities."""
-
-from pathlib import Path
-
-import pytest
-
-from app.files.diff import (
-    apply_patch,
-    apply_patch_from_strings,
-    compute_patch,
-    generate_diff_preview,
-    is_unchanged,
-)
-
-
-def test_compute_patch_no_changes() -> None:
-    """Test computing patch when content is unchanged."""
-    content = "Hello\nWorld\n"
-    patch = compute_patch(content, content)
-
-    assert patch.original == content
-    assert patch.modified == content
-    assert is_unchanged(patch)
-
-
-def test_compute_patch_with_changes() -> None:
-    """Test computing patch with actual changes."""
-    old = "Hello\nWorld\n"
-    new = "Hello\nBeautiful\nWorld\n"
-    patch = compute_patch(old, new)
-
-    assert patch.original == old
-    assert patch.modified == new
-    assert not is_unchanged(patch)
-    assert len(patch.diff_lines) > 0
-
-
-def test_apply_patch_creates_new_file(tmp_path: Path) -> None:
-    """Test applying patch to create a new file."""
-    file_path = tmp_path / "test.md"
-    content = "# Test Document\n\nThis is a test."
-
-    patch = compute_patch("", content)
-    apply_patch(file_path, patch)
-
-    assert file_path.exists()
-    with open(file_path, encoding="utf-8") as f:
-        assert f.read() == content
-
-
-def test_apply_patch_replaces_existing_file(tmp_path: Path) -> None:
-    """Test applying patch to replace an existing file."""
-    file_path = tmp_path / "test.md"
-    old_content = "Old content"
-    new_content = "New content"
-
-    # Create initial file
-    file_path.write_text(old_content)
-
-    # Apply patch
-    patch = compute_patch(old_content, new_content)
-    apply_patch(file_path, patch)
-
-    assert file_path.read_text() == new_content
-
-
-def test_apply_patch_atomic_on_error(tmp_path: Path) -> None:
-    """Test that patch application is atomic even on errors."""
-    file_path = tmp_path / "test.md"
-    original_content = "Original"
-    file_path.write_text(original_content)
-
-    # Create a patch with invalid content that will cause an error
-    # We'll mock the error by making the parent directory read-only after temp file creation
-    patch = compute_patch(original_content, "New content")
-
-    # Make a subdirectory to test atomic replacement
-    subdir = tmp_path / "subdir"
-    subdir.mkdir()
-    test_file = subdir / "test.md"
-    test_file.write_text(original_content)
-
-    # Apply patch normally (should work)
-    apply_patch(test_file, patch)
-    assert test_file.read_text() == "New content"
-
-
-def test_generate_diff_preview() -> None:
-    """Test generating human-readable diff preview."""
-    old = "Line 1\nLine 2\nLine 3\n"
-    new = "Line 1\nModified Line 2\nLine 3\n"
-
-    preview = generate_diff_preview(old, new)
-
-    assert "Line 2" in preview
-    assert "Modified Line 2" in preview
-    assert "-" in preview  # Removal indicator
-    assert "+" in preview  # Addition indicator
-
-
-def test_generate_diff_preview_no_changes() -> None:
-    """Test diff preview when there are no changes."""
-    content = "Same content"
-    preview = generate_diff_preview(content, content)
-
-    assert preview == "No changes detected."
-
-
-def test_is_unchanged() -> None:
-    """Test the is_unchanged helper function."""
-    # Test with identical content
-    patch1 = compute_patch("same", "same")
-    assert is_unchanged(patch1)
-
-    # Test with different content
-    patch2 = compute_patch("old", "new")
-    assert not is_unchanged(patch2)
-
-
-def test_apply_patch_from_strings_success(tmp_path: Path) -> None:
-    """Test the helper function for applying patches from strings."""
-    file_path = tmp_path / "test.md"
-    old_content = "Original\n"
-    new_content = "Modified\n"
-
-    # Create initial file
-    file_path.write_text(old_content)
-
-    # Apply patch
-    patch = apply_patch_from_strings(file_path, old_content, new_content)
-
-    assert patch is not None
-    assert file_path.read_text() == new_content
-
-
-def test_apply_patch_from_strings_no_changes(tmp_path: Path) -> None:
-    """Test that no patch is applied when content is unchanged."""
-    file_path = tmp_path / "test.md"
-    content = "Same content\n"
-
-    file_path.write_text(content)
-    patch = apply_patch_from_strings(file_path, content, content)
-
-    assert patch is None
-    assert file_path.read_text() == content
-
-
-def test_apply_patch_from_strings_content_mismatch(tmp_path: Path) -> None:
-    """Test that ValueError is raised when current content doesn't match expected."""
-    file_path = tmp_path / "test.md"
-    file_path.write_text("Actual content")
-
-    with pytest.raises(ValueError) as exc_info:
-        apply_patch_from_strings(file_path, "Expected content", "New content")
-
-    assert "doesn't match expected old_content" in str(exc_info.value)
-
-
-def test_apply_patch_creates_parent_directories(tmp_path: Path) -> None:
-    """Test that apply_patch creates parent directories if they don't exist."""
-    file_path = tmp_path / "nested" / "dir" / "test.md"
-    content = "Test content"
-
-    patch = compute_patch("", content)
-    apply_patch(file_path, patch)
-
-    assert file_path.exists()
-    assert file_path.read_text() == content
-
-
-def test_multi_line_diff() -> None:
-    """Test diff computation with multi-line changes."""
-    old = """# Document
-
-First paragraph.
-
-Second paragraph.
-
-Third paragraph.
-"""
-    new = """# Document
-
-First paragraph.
-
-Modified second paragraph with more text.
-
-Third paragraph.
-
-Fourth paragraph added.
-"""
-
-    patch = compute_patch(old, new)
-    assert not is_unchanged(patch)
-
-    preview = generate_diff_preview(old, new)
-    assert "Modified second paragraph" in preview
-    assert "Fourth paragraph added" in preview
 ```
 
 ## File: tests/test_llm_fake.py
@@ -1719,7 +1348,7 @@ def test_get_policy_clarify() -> None:
     assert set(policy.denied_tools) == {"Write", "Edit", "Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == []
     assert policy.permission_mode == "readonly"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_kernel() -> None:
@@ -1732,7 +1361,7 @@ def test_get_policy_kernel() -> None:
     assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_outline() -> None:
@@ -1745,7 +1374,7 @@ def test_get_policy_outline() -> None:
     assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_research_with_web_disabled() -> None:
@@ -1760,7 +1389,7 @@ def test_get_policy_research_with_web_disabled() -> None:
     assert "Bash" in policy.denied_tools
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_research_with_web_enabled() -> None:
@@ -1775,7 +1404,7 @@ def test_get_policy_research_with_web_enabled() -> None:
     assert "Bash" in policy.denied_tools
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert set(policy.web_allow) == {"WebSearch", "WebFetch"}
+    assert set(policy.web_tools_allowed) == {"WebSearch", "WebFetch"}
 
 
 def test_get_policy_synthesis() -> None:
@@ -1788,7 +1417,7 @@ def test_get_policy_synthesis() -> None:
     assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_invalid_stage() -> None:
@@ -1809,7 +1438,7 @@ def test_session_policy_is_frozen() -> None:
         denied_tools=[],
         write_roots=[],
         permission_mode="test",
-        web_allow=[],
+        web_tools_allowed=[],
     )
 
     with pytest.raises(AttributeError):
@@ -2090,6 +1719,7 @@ def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
     assert "allow" in settings["permissions"]
     assert "deny" in settings["permissions"]
     assert "denyPaths" in settings["permissions"]
+    assert "writeRoots" in settings["permissions"]
 
     # Check allowed tools
     assert set(settings["permissions"]["allow"]) == {"Read", "Edit", "Write"}
@@ -2100,6 +1730,9 @@ def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
     # Check denied paths
     assert ".env*" in settings["permissions"]["denyPaths"]
     assert "secrets/**" in settings["permissions"]["denyPaths"]
+
+    # Check write roots
+    assert "projects/**" in settings["permissions"]["writeRoots"]
 
 
 def test_hooks_configuration(tmp_path: Path) -> None:
@@ -2381,6 +2014,304 @@ exports/
 .claude/
 ```
 
+## File: app/files/diff.py
+```python
+"""Diff and patch utilities for atomic file operations."""
+
+import difflib
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass
+class Patch:
+    """Represents a patch to be applied to a file."""
+
+    original: str
+    modified: str
+    diff_lines: list[str]
+
+
+def compute_patch(old: str, new: str) -> Patch:
+    """
+    Compute a patch representing the difference between two strings.
+
+    Args:
+        old: Original text content
+        new: Modified text content
+
+    Returns:
+        Patch object containing the diff information
+    """
+    # Split into lines while preserving line endings
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+
+    # Generate unified diff
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        lineterm="",
+    )
+
+    return Patch(
+        original=old,
+        modified=new,
+        diff_lines=list(diff),
+    )
+
+
+def apply_patch(path: Path | str, patch: Patch) -> None:
+    """
+    Apply a patch to a file atomically using temp file and replace.
+
+    This ensures the file is either fully updated or not modified at all,
+    preventing partial writes in case of errors.
+
+    Args:
+        path: Path to the file to patch
+        patch: Patch object to apply
+
+    Raises:
+        IOError: If there's an error during the atomic write operation
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write to a temporary file first
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=file_path.parent,
+        delete=False,
+        suffix=".tmp",
+    ) as tmp_file:
+        tmp_file.write(patch.modified)
+        tmp_path = Path(tmp_file.name)
+
+    try:
+        # Atomically replace the original file
+        tmp_path.replace(file_path)
+    except Exception:
+        # Clean up temp file if replacement fails
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def generate_diff_preview(old: str, new: str, context_lines: int = 3) -> str:
+    """
+    Generate a human-readable diff preview.
+
+    Args:
+        old: Original text content
+        new: Modified text content
+        context_lines: Number of context lines to show around changes
+
+    Returns:
+        String representation of the diff suitable for display
+    """
+    # Split into lines while preserving line endings
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+
+    # Generate unified diff with specified context
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        n=context_lines,
+        lineterm="",
+    )
+
+    diff_lines = list(diff)
+
+    if not diff_lines:
+        return "No changes detected."
+
+    # Join with newlines for readable output
+    return "\n".join(diff_lines)
+
+
+def is_unchanged(patch: Patch) -> bool:
+    """
+    Check if a patch represents no changes.
+
+    Args:
+        patch: Patch object to check
+
+    Returns:
+        True if the patch represents no changes, False otherwise
+    """
+    return patch.original == patch.modified or len(patch.diff_lines) == 0
+
+
+def apply_patch_from_strings(path: Path | str, old_content: str, new_content: str) -> Patch | None:
+    """
+    Helper function to compute and apply a patch in one operation.
+
+    Args:
+        path: Path to the file to patch
+        old_content: Expected current content (for verification)
+        new_content: New content to write
+
+    Returns:
+        The applied Patch object, or None if no changes were needed
+
+    Raises:
+        ValueError: If the current file content doesn't match old_content
+        IOError: If there's an error during the write operation
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+
+    # Read current content if file exists
+    if file_path.exists():
+        with open(file_path, encoding="utf-8") as f:
+            current = f.read()
+        if current != old_content:
+            raise ValueError(f"Current content of {file_path} doesn't match expected old_content")
+
+    # Compute patch
+    patch = compute_patch(old_content, new_content)
+
+    # Only apply if there are changes
+    if not is_unchanged(patch):
+        apply_patch(file_path, patch)
+        return patch
+
+    return None
+
+
+def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
+    """
+    Apply multiple file edits atomically (all-or-nothing).
+
+    This function ensures that either all patches are applied successfully,
+    or none are applied at all. It writes all temporary files first, then
+    replaces all targets atomically. On any failure, all temporary files
+    are cleaned up and original files remain unchanged.
+
+    Args:
+        patches: List of tuples containing (path, old_content, new_content)
+
+    Returns:
+        List of Patch objects for each changed file
+
+    Raises:
+        IOError: If there's an error during the atomic write operations
+        ValueError: If any file's current content doesn't match expected
+    """
+    # Prepare all patches and temp files
+    temp_files: list[tuple[Path, Path, int | None, str]] = []
+    computed_patches: list[Patch] = []
+    backup_files: list[tuple[Path, Path]] = []
+
+    try:
+        for path_input, old_content, new_content in patches:
+            file_path = Path(path_input) if isinstance(path_input, str) else path_input
+
+            # Read and verify current content if file exists
+            if file_path.exists():
+                with open(file_path, encoding="utf-8") as f:
+                    current = f.read()
+                if current != old_content:
+                    raise ValueError(
+                        f"Current content of {file_path} doesn't match expected old_content"
+                    )
+                # Preserve file mode
+                file_mode = os.stat(file_path).st_mode
+            else:
+                file_mode = None
+                current = ""
+                # Ensure parent directory exists
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Compute patch
+            patch = compute_patch(old_content, new_content)
+
+            # Skip unchanged files
+            if is_unchanged(patch):
+                continue
+
+            computed_patches.append(patch)
+
+            # Write to temporary file
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=file_path.parent,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_file:
+                tmp_file.write(new_content)
+                tmp_path = Path(tmp_file.name)
+
+            # Store temp file info for later replacement
+            temp_files.append((file_path, tmp_path, file_mode, current))
+
+        # Create backups of existing files before replacement
+        for target_path, _, _, original_content in temp_files:
+            if target_path.exists():
+                # Create backup file
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=target_path.parent,
+                    delete=False,
+                    suffix=".backup",
+                ) as backup_file:
+                    backup_file.write(original_content)
+                    backup_path = Path(backup_file.name)
+                backup_files.append((target_path, backup_path))
+
+        # Now replace all files
+        completed_replacements = []
+        try:
+            for target_path, temp_path, file_mode, _ in temp_files:
+                # Preserve file mode if it existed
+                if file_mode is not None:
+                    os.chmod(temp_path, file_mode)
+
+                # Atomic replace
+                temp_path.replace(target_path)
+                completed_replacements.append(target_path)
+
+        except Exception as e:
+            # Restore original files from backups
+            for target_path in completed_replacements:
+                # Find the backup for this file
+                for orig_path, backup_path in backup_files:
+                    if orig_path == target_path:
+                        backup_path.replace(target_path)
+                        break
+
+            # Clean up any remaining temp files
+            for target_path, temp_path, _, _ in temp_files:
+                if target_path not in completed_replacements:
+                    temp_path.unlink(missing_ok=True)
+
+            # Clean up backup files
+            for _, backup_path in backup_files:
+                backup_path.unlink(missing_ok=True)
+
+            raise OSError(f"Failed to atomically replace files: {e}") from e
+
+        # Success - clean up backup files
+        for _, backup_path in backup_files:
+            backup_path.unlink(missing_ok=True)
+
+    except Exception:
+        # Clean up any temp files created before the error
+        for _, temp_path, _, _ in temp_files:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+        raise
+
+    return computed_patches
+```
+
 ## File: app/llm/claude_client.py
 ```python
 """Claude client interface with streaming support and fake implementation."""
@@ -2484,6 +2415,342 @@ class FakeClaudeClient(ClaudeClient):
 """Brainstorm Buddy - Python terminal-first brainstorming app."""
 
 __version__ = "0.1.0"
+```
+
+## File: tests/test_diff.py
+```python
+"""Tests for diff and patch utilities."""
+
+from pathlib import Path
+from unittest.mock import patch as mock_patch
+
+import pytest
+
+from app.files.diff import (
+    apply_patch,
+    apply_patch_from_strings,
+    apply_patches,
+    compute_patch,
+    generate_diff_preview,
+    is_unchanged,
+)
+
+
+def test_compute_patch_no_changes() -> None:
+    """Test computing patch when content is unchanged."""
+    content = "Hello\nWorld\n"
+    patch = compute_patch(content, content)
+
+    assert patch.original == content
+    assert patch.modified == content
+    assert is_unchanged(patch)
+
+
+def test_compute_patch_with_changes() -> None:
+    """Test computing patch with actual changes."""
+    old = "Hello\nWorld\n"
+    new = "Hello\nBeautiful\nWorld\n"
+    patch = compute_patch(old, new)
+
+    assert patch.original == old
+    assert patch.modified == new
+    assert not is_unchanged(patch)
+    assert len(patch.diff_lines) > 0
+
+
+def test_apply_patch_creates_new_file(tmp_path: Path) -> None:
+    """Test applying patch to create a new file."""
+    file_path = tmp_path / "test.md"
+    content = "# Test Document\n\nThis is a test."
+
+    patch = compute_patch("", content)
+    apply_patch(file_path, patch)
+
+    assert file_path.exists()
+    with open(file_path, encoding="utf-8") as f:
+        assert f.read() == content
+
+
+def test_apply_patch_replaces_existing_file(tmp_path: Path) -> None:
+    """Test applying patch to replace an existing file."""
+    file_path = tmp_path / "test.md"
+    old_content = "Old content"
+    new_content = "New content"
+
+    # Create initial file
+    file_path.write_text(old_content)
+
+    # Apply patch
+    patch = compute_patch(old_content, new_content)
+    apply_patch(file_path, patch)
+
+    assert file_path.read_text() == new_content
+
+
+def test_apply_patch_atomic_on_error(tmp_path: Path) -> None:
+    """Test that patch application is atomic even on errors."""
+    file_path = tmp_path / "test.md"
+    original_content = "Original"
+    file_path.write_text(original_content)
+
+    # Create a patch with invalid content that will cause an error
+    # We'll mock the error by making the parent directory read-only after temp file creation
+    patch = compute_patch(original_content, "New content")
+
+    # Make a subdirectory to test atomic replacement
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    test_file = subdir / "test.md"
+    test_file.write_text(original_content)
+
+    # Apply patch normally (should work)
+    apply_patch(test_file, patch)
+    assert test_file.read_text() == "New content"
+
+
+def test_generate_diff_preview() -> None:
+    """Test generating human-readable diff preview."""
+    old = "Line 1\nLine 2\nLine 3\n"
+    new = "Line 1\nModified Line 2\nLine 3\n"
+
+    preview = generate_diff_preview(old, new)
+
+    assert "Line 2" in preview
+    assert "Modified Line 2" in preview
+    assert "-" in preview  # Removal indicator
+    assert "+" in preview  # Addition indicator
+    # Verify line breaks are present
+    assert "\n" in preview
+    lines = preview.split("\n")
+    assert len(lines) > 1  # Should have multiple lines
+
+
+def test_generate_diff_preview_no_changes() -> None:
+    """Test diff preview when there are no changes."""
+    content = "Same content"
+    preview = generate_diff_preview(content, content)
+
+    assert preview == "No changes detected."
+
+
+def test_is_unchanged() -> None:
+    """Test the is_unchanged helper function."""
+    # Test with identical content
+    patch1 = compute_patch("same", "same")
+    assert is_unchanged(patch1)
+
+    # Test with different content
+    patch2 = compute_patch("old", "new")
+    assert not is_unchanged(patch2)
+
+
+def test_apply_patch_from_strings_success(tmp_path: Path) -> None:
+    """Test the helper function for applying patches from strings."""
+    file_path = tmp_path / "test.md"
+    old_content = "Original\n"
+    new_content = "Modified\n"
+
+    # Create initial file
+    file_path.write_text(old_content)
+
+    # Apply patch
+    patch = apply_patch_from_strings(file_path, old_content, new_content)
+
+    assert patch is not None
+    assert file_path.read_text() == new_content
+
+
+def test_apply_patch_from_strings_no_changes(tmp_path: Path) -> None:
+    """Test that no patch is applied when content is unchanged."""
+    file_path = tmp_path / "test.md"
+    content = "Same content\n"
+
+    file_path.write_text(content)
+    patch = apply_patch_from_strings(file_path, content, content)
+
+    assert patch is None
+    assert file_path.read_text() == content
+
+
+def test_apply_patch_from_strings_content_mismatch(tmp_path: Path) -> None:
+    """Test that ValueError is raised when current content doesn't match expected."""
+    file_path = tmp_path / "test.md"
+    file_path.write_text("Actual content")
+
+    with pytest.raises(ValueError) as exc_info:
+        apply_patch_from_strings(file_path, "Expected content", "New content")
+
+    assert "doesn't match expected old_content" in str(exc_info.value)
+
+
+def test_apply_patch_creates_parent_directories(tmp_path: Path) -> None:
+    """Test that apply_patch creates parent directories if they don't exist."""
+    file_path = tmp_path / "nested" / "dir" / "test.md"
+    content = "Test content"
+
+    patch = compute_patch("", content)
+    apply_patch(file_path, patch)
+
+    assert file_path.exists()
+    assert file_path.read_text() == content
+
+
+def test_multi_line_diff() -> None:
+    """Test diff computation with multi-line changes."""
+    old = """# Document
+
+First paragraph.
+
+Second paragraph.
+
+Third paragraph.
+"""
+    new = """# Document
+
+First paragraph.
+
+Modified second paragraph with more text.
+
+Third paragraph.
+
+Fourth paragraph added.
+"""
+
+    patch = compute_patch(old, new)
+    assert not is_unchanged(patch)
+
+    preview = generate_diff_preview(old, new)
+    assert "Modified second paragraph" in preview
+    assert "Fourth paragraph added" in preview
+
+
+def test_generate_diff_preview_context_lines() -> None:
+    """Test that context_lines parameter affects the diff output."""
+    old = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\n"
+    new = "Line 1\nLine 2\nLine 3\nModified Line 4\nLine 5\nLine 6\nLine 7\nLine 8\n"
+
+    # Test with different context sizes
+    preview_small = generate_diff_preview(old, new, context_lines=1)
+    preview_large = generate_diff_preview(old, new, context_lines=3)
+
+    # Both should contain the change
+    assert "Modified Line 4" in preview_small
+    assert "Modified Line 4" in preview_large
+
+    # Larger context should include more surrounding lines
+    lines_small = preview_small.split("\n")
+    lines_large = preview_large.split("\n")
+
+    # The larger context should have more lines
+    # (accounting for header lines and the actual diff content)
+    assert len(lines_large) >= len(lines_small)
+
+
+def test_apply_patches_success(tmp_path: Path) -> None:
+    """Test successful multi-file patch application."""
+    # Create initial files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    file3 = tmp_path / "nested" / "file3.txt"
+
+    file1.write_text("Original content 1")
+    file2.write_text("Original content 2")
+    # file3 doesn't exist yet - will be created
+
+    # Prepare patches
+    patches_list: list[tuple[Path | str, str, str]] = [
+        (file1, "Original content 1", "Modified content 1"),
+        (file2, "Original content 2", "Modified content 2"),
+        (file3, "", "New file content 3"),  # New file
+    ]
+
+    # Apply patches
+    results = apply_patches(patches_list)
+
+    # Verify all files were updated
+    assert len(results) == 3
+    assert file1.read_text() == "Modified content 1"
+    assert file2.read_text() == "Modified content 2"
+    assert file3.exists()
+    assert file3.read_text() == "New file content 3"
+
+    # Verify patch objects
+    for patch in results:
+        assert not is_unchanged(patch)
+
+
+def test_apply_patches_rollback_on_failure(tmp_path: Path) -> None:
+    """Test that all files remain unchanged when any replacement fails."""
+    # Create initial files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+
+    file1.write_text("Original content 1")
+    file2.write_text("Original content 2")
+
+    original1 = file1.read_text()
+    original2 = file2.read_text()
+
+    # Prepare patches
+    patches_list: list[tuple[Path | str, str, str]] = [
+        (file1, "Original content 1", "Modified content 1"),
+        (file2, "Original content 2", "Modified content 2"),
+    ]
+
+    # Mock Path.replace to fail on the second file
+    call_count = 0
+    original_replace = Path.replace
+
+    def mock_replace(self: Path, target: Path) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise PermissionError("Simulated failure on second file")
+        original_replace(self, target)
+
+    with mock_patch.object(Path, "replace", mock_replace):
+        with pytest.raises(IOError) as exc_info:
+            apply_patches(patches_list)
+
+        assert "Failed to atomically replace files" in str(exc_info.value)
+
+    # Verify original files are unchanged
+    assert file1.read_text() == original1
+    assert file2.read_text() == original2
+
+    # Verify no temp files left behind
+    temp_files = list(tmp_path.glob("*.tmp"))
+    assert len(temp_files) == 0
+
+
+def test_apply_patch_atomic_failure(tmp_path: Path) -> None:
+    """Test that apply_patch cleans temp and preserves original on replace failure."""
+    file_path = tmp_path / "test.txt"
+    original_content = "Original content"
+    new_content = "New content"
+
+    # Create initial file
+    file_path.write_text(original_content)
+
+    # Create a patch
+    patch = compute_patch(original_content, new_content)
+
+    # Mock Path.replace to raise an exception
+    def mock_replace_error(self: Path, target: Path) -> None:  # noqa: ARG001
+        raise PermissionError("Simulated replace failure")
+
+    with mock_patch.object(Path, "replace", mock_replace_error):
+        with pytest.raises(PermissionError) as exc_info:
+            apply_patch(file_path, patch)
+
+        assert "Simulated replace failure" in str(exc_info.value)
+
+    # Verify original file is unchanged
+    assert file_path.read_text() == original_content
+
+    # Verify no temp files left behind
+    temp_files = list(tmp_path.glob("*.tmp"))
+    assert len(temp_files) == 0
 ```
 
 ## File: tests/test_smoke.py

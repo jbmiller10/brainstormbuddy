@@ -1,5 +1,5 @@
 """View modules for the TUI application."""
 
-from .main_layout import MainLayout
+from .main_screen import MainScreen
 
-__all__ = ["MainLayout"]
+__all__ = ["MainScreen"]

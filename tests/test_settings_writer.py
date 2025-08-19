@@ -37,6 +37,7 @@ def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
     assert "allow" in settings["permissions"]
     assert "deny" in settings["permissions"]
     assert "denyPaths" in settings["permissions"]
+    assert "writeRoots" in settings["permissions"]
 
     # Check allowed tools
     assert set(settings["permissions"]["allow"]) == {"Read", "Edit", "Write"}
@@ -47,6 +48,9 @@ def test_settings_json_has_correct_structure(tmp_path: Path) -> None:
     # Check denied paths
     assert ".env*" in settings["permissions"]["denyPaths"]
     assert "secrets/**" in settings["permissions"]["denyPaths"]
+
+    # Check write roots
+    assert "projects/**" in settings["permissions"]["writeRoots"]
 
 
 def test_hooks_configuration(tmp_path: Path) -> None:

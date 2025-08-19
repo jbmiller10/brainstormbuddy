@@ -11,10 +11,10 @@ def test_tui_app_imports() -> None:
 
 def test_tui_views_imports() -> None:
     """Test that all view modules import successfully."""
-    from app.tui.views import MainLayout  # noqa: F401
-    from app.tui.views.main_layout import MainLayout as ML  # noqa: F401
+    from app.tui.views import MainScreen  # noqa: F401
+    from app.tui.views.main_screen import MainScreen as MS  # noqa: F401
 
-    assert MainLayout is ML
+    assert MainScreen is MS
 
 
 def test_tui_widgets_imports() -> None:

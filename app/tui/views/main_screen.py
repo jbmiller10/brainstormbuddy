@@ -1,17 +1,17 @@
-"""Main layout view with three-pane structure."""
+"""Main screen view with three-pane structure."""
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.screen import Screen
 from textual.widgets import Footer, Header
 
 from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
 
 
-class MainLayout:
-    """Main three-pane layout for the application."""
+class MainScreen(Screen[None]):
+    """Main three-pane screen for the application."""
 
-    @staticmethod
-    def compose() -> ComposeResult:
+    def compose(self) -> ComposeResult:
         """Compose the main three-pane layout."""
         yield Header()
         with Horizontal():

@@ -13,12 +13,12 @@ def test_get_policy_clarify() -> None:
     policy = get_policy("clarify")
 
     assert policy.stage == "clarify"
-    assert policy.system_prompt_path == Path("app/llm/prompts/clarify.md")
+    assert "app/llm/prompts/clarify.md" in str(policy.system_prompt_path)
     assert policy.allowed_tools == ["Read"]
     assert set(policy.denied_tools) == {"Write", "Edit", "Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == []
     assert policy.permission_mode == "readonly"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_kernel() -> None:
@@ -26,12 +26,12 @@ def test_get_policy_kernel() -> None:
     policy = get_policy("kernel")
 
     assert policy.stage == "kernel"
-    assert policy.system_prompt_path == Path("app/llm/prompts/kernel.md")
+    assert "app/llm/prompts/kernel.md" in str(policy.system_prompt_path)
     assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
     assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_outline() -> None:
@@ -39,12 +39,12 @@ def test_get_policy_outline() -> None:
     policy = get_policy("outline")
 
     assert policy.stage == "outline"
-    assert policy.system_prompt_path == Path("app/llm/prompts/outline.md")
+    assert "app/llm/prompts/outline.md" in str(policy.system_prompt_path)
     assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
     assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_research_with_web_disabled() -> None:
@@ -54,12 +54,12 @@ def test_get_policy_research_with_web_disabled() -> None:
         policy = get_policy("research")
 
     assert policy.stage == "research"
-    assert policy.system_prompt_path == Path("app/llm/prompts/research.md")
+    assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
     assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
     assert "Bash" in policy.denied_tools
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_research_with_web_enabled() -> None:
@@ -69,12 +69,12 @@ def test_get_policy_research_with_web_enabled() -> None:
         policy = get_policy("research")
 
     assert policy.stage == "research"
-    assert policy.system_prompt_path == Path("app/llm/prompts/research.md")
+    assert "app/llm/prompts/research.md" in str(policy.system_prompt_path)
     assert set(policy.allowed_tools) == {"Read", "Write", "Edit", "WebSearch", "WebFetch"}
     assert "Bash" in policy.denied_tools
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert set(policy.web_allow) == {"WebSearch", "WebFetch"}
+    assert set(policy.web_tools_allowed) == {"WebSearch", "WebFetch"}
 
 
 def test_get_policy_synthesis() -> None:
@@ -82,12 +82,12 @@ def test_get_policy_synthesis() -> None:
     policy = get_policy("synthesis")
 
     assert policy.stage == "synthesis"
-    assert policy.system_prompt_path == Path("app/llm/prompts/synthesis.md")
+    assert "app/llm/prompts/synthesis.md" in str(policy.system_prompt_path)
     assert set(policy.allowed_tools) == {"Read", "Write", "Edit"}
     assert set(policy.denied_tools) == {"Bash", "WebSearch", "WebFetch"}
     assert policy.write_roots == ["projects/**"]
     assert policy.permission_mode == "restricted"
-    assert policy.web_allow == []
+    assert policy.web_tools_allowed == []
 
 
 def test_get_policy_invalid_stage() -> None:
@@ -108,7 +108,7 @@ def test_session_policy_is_frozen() -> None:
         denied_tools=[],
         write_roots=[],
         permission_mode="test",
-        web_allow=[],
+        web_tools_allowed=[],
     )
 
     with pytest.raises(AttributeError):

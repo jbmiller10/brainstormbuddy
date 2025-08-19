@@ -68,24 +68,31 @@ def test_apply_patch_replaces_existing_file(tmp_path: Path) -> None:
 
 
 def test_apply_patch_atomic_on_error(tmp_path: Path) -> None:
-    """Test that patch application is atomic even on errors."""
+    """Test that apply_patch preserves original on replace failure."""
+    # 1) Create file_path with "Original"
     file_path = tmp_path / "test.md"
-    original_content = "Original"
-    file_path.write_text(original_content)
+    file_path.write_text("Original")
 
-    # Create a patch with invalid content that will cause an error
-    # We'll mock the error by making the parent directory read-only after temp file creation
-    patch = compute_patch(original_content, "New content")
+    # 2) Compute patch "Original" -> "New content"
+    patch = compute_patch("Original", "New content")
 
-    # Make a subdirectory to test atomic replacement
-    subdir = tmp_path / "subdir"
-    subdir.mkdir()
-    test_file = subdir / "test.md"
-    test_file.write_text(original_content)
+    # 3) Monkeypatch Path.replace to raise PermissionError
+    def mock_replace_failure(self: Path, target: Path) -> None:  # noqa: ARG001
+        raise PermissionError("Simulated replace failure")
 
-    # Apply patch normally (should work)
-    apply_patch(test_file, patch)
-    assert test_file.read_text() == "New content"
+    # 4) Call apply_patch inside pytest.raises
+    with mock_patch.object(Path, "replace", mock_replace_failure):
+        with pytest.raises(PermissionError) as exc_info:
+            apply_patch(file_path, patch)
+
+        assert "Simulated replace failure" in str(exc_info.value)
+
+    # 5) Assert file still contains "Original"
+    assert file_path.read_text() == "Original"
+
+    # 6) Assert no *.tmp files remain in parent directory
+    temp_files = list(tmp_path.glob("*.tmp"))
+    assert len(temp_files) == 0
 
 
 def test_generate_diff_preview() -> None:

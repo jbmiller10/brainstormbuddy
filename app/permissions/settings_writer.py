@@ -25,7 +25,8 @@ def write_project_settings(repo_root: Path = Path(".")) -> None:
         "permissions": {
             "allow": ["Read", "Edit", "Write"],
             "deny": ["Bash", "WebSearch", "WebFetch"],
-            "denyPaths": [".env*", "secrets/**"],
+            "denyPaths": [".env*", "secrets/**", ".git/**"],
+            "writeRoots": ["projects/**", "exports/**"],
         },
         "hooks": {
             "PreToolUse": ".claude/hooks/gate.py",

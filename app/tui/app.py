@@ -3,7 +3,7 @@
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
-from app.tui.views import MainLayout
+from app.tui.views import MainScreen
 from app.tui.widgets import CommandPalette
 
 
@@ -21,7 +21,7 @@ class BrainstormBuddyApp(App[None]):
 
     def compose(self) -> ComposeResult:
         """Compose the app with three-pane layout."""
-        return MainLayout.compose()
+        yield MainScreen()
 
     def action_command_palette(self) -> None:
         """Show the command palette."""

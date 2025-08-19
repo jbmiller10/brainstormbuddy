@@ -16,7 +16,7 @@ class SessionPolicy:
     denied_tools: list[str]
     write_roots: list[str]
     permission_mode: str
-    web_allow: list[str]
+    web_tools_allowed: list[str]
 
 
 def get_policy(stage: str) -> SessionPolicy:
@@ -33,7 +33,7 @@ def get_policy(stage: str) -> SessionPolicy:
         ValueError: If stage is not recognized
     """
     settings = load_settings()
-    base_prompt_path = Path("app/llm/prompts")
+    base_prompt_path = Path(__file__).resolve().parent / "prompts"
 
     policies = {
         "clarify": SessionPolicy(
@@ -43,7 +43,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Write", "Edit", "Bash", "WebSearch", "WebFetch"],
             write_roots=[],
             permission_mode="readonly",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
         "kernel": SessionPolicy(
             stage="kernel",
@@ -52,7 +52,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash", "WebSearch", "WebFetch"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
         "outline": SessionPolicy(
             stage="outline",
@@ -61,7 +61,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash", "WebSearch", "WebFetch"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
         "research": SessionPolicy(
             stage="research",
@@ -74,7 +74,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
+            web_tools_allowed=["WebSearch", "WebFetch"] if settings.enable_web_tools else [],
         ),
         "synthesis": SessionPolicy(
             stage="synthesis",
@@ -83,7 +83,7 @@ def get_policy(stage: str) -> SessionPolicy:
             denied_tools=["Bash", "WebSearch", "WebFetch"],
             write_roots=["projects/**"],
             permission_mode="restricted",
-            web_allow=[],
+            web_tools_allowed=[],
         ),
     }
 
