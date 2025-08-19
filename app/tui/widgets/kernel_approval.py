@@ -84,7 +84,7 @@ class KernelApprovalModal(ModalScreen[bool]):
             yield Label("[dim]Review the changes below and approve or reject[/dim]")
 
             with ScrollableContainer(classes="diff-container"):
-                yield Static(self.diff_content, markup=True)
+                yield Static(self.diff_content, markup=False)
 
             with Horizontal(classes="button-container"):
                 yield Button(
