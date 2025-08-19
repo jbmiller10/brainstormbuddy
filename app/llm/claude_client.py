@@ -83,7 +83,30 @@ class FakeClaudeClient(ClaudeClient):
     ) -> AsyncGenerator[Event, None]:
         """Yield a deterministic sequence of events for testing."""
         # Parameters are intentionally unused in fake implementation
-        _ = (prompt, system_prompt, allowed_tools, denied_tools, permission_mode, cwd)
-        yield TextDelta("First chunk of text")
-        yield TextDelta("Second chunk of text")
-        yield MessageDone()
+        _ = (allowed_tools, denied_tools, permission_mode, cwd)
+
+        # Check if this is a clarify stage request
+        if system_prompt and "clarify stage" in system_prompt.lower():
+            # Generate clarify questions based on the prompt
+            yield TextDelta(f"I see you want to explore: {prompt[:100]}\n\n")
+            yield TextDelta(
+                "Let me ask some clarifying questions to help sharpen your thinking:\n\n"
+            )
+
+            questions = [
+                "1. What specific problem are you trying to solve, and who will benefit most from the solution?",
+                "2. What constraints (time, budget, technical, regulatory) must you work within?",
+                "3. How would you measure success for this initiative after 3 months?",
+                "4. What existing solutions have you considered, and why aren't they sufficient?",
+                "5. What's the minimum viable version that would still deliver value?",
+            ]
+
+            for question in questions:
+                yield TextDelta(f"{question}\n\n")
+
+            yield MessageDone()
+        else:
+            # Default test output
+            yield TextDelta("First chunk of text")
+            yield TextDelta("Second chunk of text")
+            yield MessageDone()

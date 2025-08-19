@@ -27,3 +27,36 @@ class SessionViewer(RichLog):
         self.write("[yellow]Research[/yellow] → [yellow]Synthesis[/yellow] → ")
         self.write("[yellow]Export[/yellow]\n")
         self.write("\n[dim]Press ':' to open the command palette[/dim]")
+
+    def write(
+        self,
+        content: object,
+        width: int | None = None,
+        expand: bool = False,
+        shrink: bool = True,
+        scroll_end: bool | None = None,
+        animate: bool = False,
+    ) -> "SessionViewer":
+        """
+        Write text to the viewer with optional scrolling.
+
+        Args:
+            content: Content to write (supports Rich markup)
+            width: Width hint for content
+            expand: Whether to expand content to full width
+            shrink: Whether to shrink content to fit
+            scroll_end: Whether to scroll to the end after writing
+            animate: Whether to animate scrolling
+
+        Returns:
+            Self for chaining
+        """
+        super().write(
+            content,
+            width=width,
+            expand=expand,
+            shrink=shrink,
+            scroll_end=scroll_end,
+            animate=animate,
+        )
+        return self

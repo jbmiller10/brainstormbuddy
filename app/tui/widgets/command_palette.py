@@ -76,7 +76,21 @@ class CommandPalette(Container):
 
     def execute_command(self, command: str) -> None:
         """Execute the selected command."""
-        # Placeholder for command execution
         from textual import log
 
         log(f"Executing command: {command}")
+
+        # Handle clarify command
+        if command == "clarify":
+            # Import here to avoid circular imports
+            from app.tui.views.session import SessionController
+            from app.tui.widgets.session_viewer import SessionViewer
+
+            # Get the session viewer from the main screen
+            viewer = self.app.query_one("#session-viewer", SessionViewer)
+
+            # Create controller and start clarify session
+            controller = SessionController(viewer)
+
+            # Run the async task using Textual's worker system
+            self.app.run_worker(controller.start_clarify_session(), exclusive=True)
