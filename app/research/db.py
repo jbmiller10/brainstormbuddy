@@ -258,11 +258,12 @@ class ResearchDB:
         results = []
         async with self.conn.execute(
             """
-            SELECT f.*
-            FROM findings f
-            JOIN findings_fts fts ON f.id = fts.id
-            WHERE findings_fts MATCH ?
-            ORDER BY rank
+            SELECT f.id, f.url, f.source_type, f.claim, f.evidence,
+                   f.confidence, f.tags, f.workstream, f.retrieved_at
+            FROM findings_fts fts
+            JOIN findings f ON fts.id = f.id
+            WHERE fts MATCH ?
+            ORDER BY bm25(fts)
             LIMIT ?
             """,
             (query, limit),
