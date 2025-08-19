@@ -12,7 +12,7 @@ from app.tui.widgets.kernel_approval import KernelApprovalModal
 from app.tui.widgets.session_viewer import SessionViewer
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_kernel_stage_fake_client_generates_content() -> None:
     """Test that FakeClaudeClient generates kernel content."""
     client = FakeClaudeClient()
@@ -74,7 +74,7 @@ New and improved concept.
     assert "+## Success Criteria" in diff
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_session_controller_kernel_session() -> None:
     """Test SessionController.start_kernel_session method."""
     # Create mock viewer
@@ -205,7 +205,7 @@ def test_kernel_approval_modal_initialization() -> None:
     assert modal.project_slug == "test-project"
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_kernel_approval_modal_accept() -> None:
     """Test accepting changes in the modal."""
     modal = KernelApprovalModal("diff content", "test-project")
@@ -216,7 +216,7 @@ async def test_kernel_approval_modal_accept() -> None:
     modal.dismiss.assert_called_once_with(True)
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_kernel_approval_modal_reject() -> None:
     """Test rejecting changes in the modal."""
     modal = KernelApprovalModal("diff content", "test-project")

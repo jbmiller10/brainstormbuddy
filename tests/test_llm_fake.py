@@ -10,7 +10,7 @@ from app.llm.claude_client import (
 )
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_fake_client_yields_events_in_order() -> None:
     """Test that FakeClaudeClient yields events in the expected order."""
     client = FakeClaudeClient()
@@ -27,7 +27,7 @@ async def test_fake_client_yields_events_in_order() -> None:
     assert isinstance(events[2], MessageDone)
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_fake_client_accepts_all_parameters() -> None:
     """Test that FakeClaudeClient accepts all expected parameters."""
     client = FakeClaudeClient()
@@ -47,7 +47,7 @@ async def test_fake_client_accepts_all_parameters() -> None:
     assert all(isinstance(e, TextDelta | MessageDone) for e in events)
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_event_types_are_frozen() -> None:
     """Test that Event dataclasses are frozen and immutable."""
     delta = TextDelta("test")
@@ -60,7 +60,7 @@ async def test_event_types_are_frozen() -> None:
         done.extra = "field"  # type: ignore
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_stream_can_be_consumed_multiple_times() -> None:
     """Test that the stream method can be called multiple times."""
     client = FakeClaudeClient()

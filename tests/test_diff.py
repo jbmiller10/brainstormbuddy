@@ -405,7 +405,7 @@ def test_apply_patches_rollback_removes_new_files(tmp_path: Path) -> None:
     assert len(backup_files) == 0
 
 
-@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")  # type: ignore[misc]
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 def test_apply_patch_preserves_mode(tmp_path: Path) -> None:
     """Test that apply_patch preserves file mode on POSIX systems."""
     # Create a file with mode 0o744 and content "Old"
