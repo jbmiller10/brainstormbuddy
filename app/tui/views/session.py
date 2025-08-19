@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from app.files.diff import apply_patch, compute_patch, generate_diff_preview
+from app.files.workstream import create_workstream_batch
 from app.llm.claude_client import ClaudeClient, Event, FakeClaudeClient, MessageDone, TextDelta
 from app.llm.sessions import get_policy
 from app.tui.widgets.kernel_approval import KernelApprovalModal
@@ -218,3 +219,93 @@ class SessionController:
         """Reject the pending kernel changes."""
         self.viewer.write("\n[yellow]Changes rejected. Kernel file remains unchanged.[/yellow]\n")
         self.pending_kernel_content = None
+
+    async def generate_workstreams(self, project_slug: str = "default-project") -> None:
+        """
+        Generate workstream documents (outline and elements) for a project.
+
+        Args:
+            project_slug: The project identifier/slug
+        """
+        self.project_slug = project_slug
+
+        # Clear viewer and show starting message
+        self.viewer.clear()
+        self.viewer.write("[bold cyan]Generating Workstream Documents[/bold cyan]\n")
+        self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n\n")
+
+        try:
+            # Get project path
+            project_path = Path("projects") / project_slug
+
+            # Check if kernel exists and read it for summary
+            kernel_summary = None
+            kernel_path = project_path / "kernel.md"
+            if kernel_path.exists():
+                # Extract summary from kernel (simplified - in production would parse properly)
+                kernel_content = kernel_path.read_text()
+                # Look for Core Concept section
+                if "## Core Concept" in kernel_content:
+                    lines = kernel_content.split("\n")
+                    for i, line in enumerate(lines):
+                        if line.strip() == "## Core Concept" and i + 2 < len(lines):
+                            # Get the next non-empty line after the header
+                            kernel_summary = lines[i + 2].strip()
+                            if kernel_summary.startswith("*") and kernel_summary.endswith("*"):
+                                kernel_summary = kernel_summary[1:-1]
+                            break
+
+            # Create batch with all workstream documents
+            self.viewer.write("[dim]Creating batch with outline and element documents...[/dim]\n")
+            batch = create_workstream_batch(
+                project_path, project_slug, kernel_summary=kernel_summary
+            )
+
+            if not batch:
+                self.viewer.write(
+                    "[yellow]No changes needed - all files are up to date.[/yellow]\n"
+                )
+                return
+
+            # Generate and show preview
+            self.viewer.write("\n[bold]Preview of changes:[/bold]\n")
+            preview = batch.generate_preview(context_lines=2)
+
+            # Limit preview display for readability
+            preview_lines = preview.split("\n")
+            if len(preview_lines) > 50:
+                # Show first 40 lines and summary
+                self.viewer.write("\n".join(preview_lines[:40]))
+                self.viewer.write(f"\n[dim]... ({len(preview_lines) - 40} more lines) ...[/dim]\n")
+            else:
+                self.viewer.write(preview)
+
+            self.viewer.write(f"\n[dim]Total files to create/update: {len(batch)}[/dim]\n")
+
+            # Get the app instance through the viewer
+            app = self.viewer.app
+
+            # Create a simple approval modal (reuse KernelApprovalModal for now)
+            # In production, we'd create a dedicated WorkstreamApprovalModal
+            modal = KernelApprovalModal(preview, project_slug)
+            approved = await app.push_screen_wait(modal)
+
+            if approved:
+                # Apply all changes atomically
+                self.viewer.write("\n[dim]Applying changes atomically...[/dim]\n")
+                patches = batch.apply()
+
+                self.viewer.write(
+                    f"\n[green]✓ Successfully created/updated {len(patches)} files:[/green]\n"
+                )
+                for change in batch.changes:
+                    status = "created" if change.is_new_file else "updated"
+                    self.viewer.write(
+                        f"  • {change.path.relative_to(Path('projects'))} ({status})\n"
+                    )
+            else:
+                self.viewer.write("\n[yellow]Changes rejected. No files were modified.[/yellow]\n")
+
+        except Exception as e:
+            self.viewer.write(f"\n[red]Error generating workstreams: {e}[/red]\n")
+            self.viewer.write("[yellow]No files were modified.[/yellow]\n")

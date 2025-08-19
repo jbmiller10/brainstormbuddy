@@ -43,6 +43,7 @@ class CommandPalette(Container):
             ("clarify", "Enter clarify stage for current project"),
             ("kernel", "Define the kernel of your idea"),
             ("outline", "Create workstream outline"),
+            ("generate workstreams", "Generate outline and element documents"),
             ("research import", "Import research findings"),
             ("synthesis", "Synthesize findings into final output"),
             ("export", "Export project to various formats"),
@@ -105,3 +106,8 @@ class CommandPalette(Container):
             self.app.run_worker(
                 controller.start_kernel_session(project_slug, initial_idea), exclusive=True
             )
+
+        # Handle generate workstreams command
+        elif command == "generate workstreams":
+            # Run the async task using Textual's worker system
+            self.app.run_worker(controller.generate_workstreams(), exclusive=True)
