@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import aiosqlite
 import pytest
 
 from app.research.db import ResearchDB
@@ -456,3 +457,160 @@ async def test_tags_json_handling(tmp_path: Path) -> None:
         finding = await db.get_finding(finding_id)
         assert finding is not None
         assert finding["tags"] == []
+
+
+@pytest.mark.asyncio
+async def test_confidence_constraint(tmp_path: Path) -> None:
+    """Test that confidence CHECK constraint rejects out-of-range values."""
+    db_path = tmp_path / "test.db"
+
+    async with ResearchDB(db_path) as db:
+        # Test valid confidence values at boundaries
+        finding_id_min = await db.insert_finding(
+            url="https://example.com",
+            source_type="web",
+            claim="Min confidence",
+            evidence="Test",
+            confidence=0.0,
+        )
+        assert finding_id_min is not None
+
+        finding_id_max = await db.insert_finding(
+            url="https://example.com",
+            source_type="web",
+            claim="Max confidence",
+            evidence="Test",
+            confidence=1.0,
+        )
+        assert finding_id_max is not None
+
+        # Test confidence > 1.0 should raise
+        with pytest.raises(aiosqlite.IntegrityError):
+            await db.insert_finding(
+                url="https://example.com",
+                source_type="web",
+                claim="Invalid high confidence",
+                evidence="Test",
+                confidence=1.5,
+            )
+
+        # Test confidence < 0.0 should raise
+        with pytest.raises(aiosqlite.IntegrityError):
+            await db.insert_finding(
+                url="https://example.com",
+                source_type="web",
+                claim="Invalid negative confidence",
+                evidence="Test",
+                confidence=-0.5,
+            )
+
+        # Test update with invalid confidence
+        with pytest.raises(aiosqlite.IntegrityError):
+            await db.update_finding(finding_id_min, confidence=1.1)
+
+        # Verify the valid findings are still there
+        finding_min = await db.get_finding(finding_id_min)
+        assert finding_min is not None
+        assert finding_min["confidence"] == 0.0
+
+        finding_max = await db.get_finding(finding_id_max)
+        assert finding_max is not None
+        assert finding_max["confidence"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_migration_idempotency(tmp_path: Path) -> None:
+    """Test that migration from v1 to v2 is idempotent and preserves data."""
+    db_path = tmp_path / "test.db"
+
+    # First, create a v1 database (without CHECK constraint)
+    async with aiosqlite.connect(str(db_path)) as conn:
+        # Create v1 schema manually (without CHECK constraint)
+        await conn.execute("""
+            CREATE TABLE schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+
+        await conn.execute("""
+            CREATE TABLE findings (
+                id TEXT PRIMARY KEY,
+                url TEXT,
+                source_type TEXT,
+                claim TEXT,
+                evidence TEXT,
+                confidence REAL,
+                tags TEXT,
+                workstream TEXT,
+                retrieved_at TEXT
+            )
+        """)
+
+        # Insert some test data, including edge-case confidence values
+        await conn.execute("""
+            INSERT INTO findings (id, url, source_type, claim, evidence, confidence, tags, workstream, retrieved_at)
+            VALUES ('test-1', 'https://example.com', 'web', 'Test claim', 'Test evidence', 0.5, '[]', 'research', '2024-01-01')
+        """)
+        await conn.execute("""
+            INSERT INTO findings (id, url, source_type, claim, evidence, confidence, tags, workstream, retrieved_at)
+            VALUES ('test-2', 'https://example.com', 'paper', 'Another claim', 'More evidence', 0.99, '["test"]', 'design', '2024-01-02')
+        """)
+        await conn.commit()
+
+    # Now open with ResearchDB, which should trigger migration to v2
+    async with ResearchDB(db_path) as db:
+        # Check that data is preserved
+        finding1 = await db.get_finding("test-1")
+        assert finding1 is not None
+        assert finding1["claim"] == "Test claim"
+        assert finding1["confidence"] == 0.5
+
+        finding2 = await db.get_finding("test-2")
+        assert finding2 is not None
+        assert finding2["claim"] == "Another claim"
+        assert finding2["confidence"] == 0.99
+
+        # Verify schema version is now 2
+        assert db.conn is not None
+        async with db.conn.execute("SELECT MAX(version) FROM schema_version") as cursor:
+            row = await cursor.fetchone()
+            assert row is not None and row[0] == 2
+
+        # Try to insert invalid confidence (should fail now)
+        with pytest.raises(aiosqlite.IntegrityError):
+            await db.insert_finding(
+                url="https://example.com",
+                source_type="web",
+                claim="Invalid",
+                evidence="Test",
+                confidence=1.5,
+            )
+
+    # Open again to test idempotency (should not break or lose data)
+    async with ResearchDB(db_path) as db:
+        # Check that data is still preserved
+        finding1 = await db.get_finding("test-1")
+        assert finding1 is not None
+        assert finding1["claim"] == "Test claim"
+
+        finding2 = await db.get_finding("test-2")
+        assert finding2 is not None
+        assert finding2["claim"] == "Another claim"
+
+        # Verify schema version is still 2
+        assert db.conn is not None
+        async with db.conn.execute("SELECT MAX(version) FROM schema_version") as cursor:
+            row = await cursor.fetchone()
+            assert row is not None and row[0] == 2
+
+        # Should still be able to insert valid findings
+        new_id = await db.insert_finding(
+            url="https://example.com",
+            source_type="web",
+            claim="New finding after migration",
+            evidence="Test",
+            confidence=0.75,
+        )
+        assert new_id is not None

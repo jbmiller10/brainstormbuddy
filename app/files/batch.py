@@ -106,8 +106,8 @@ class BatchDiff:
                 change.old_content,
                 change.new_content,
                 context_lines=context_lines,
-                from_label=str(change.path),
-                to_label=str(change.path),
+                from_label=f"{change.path} (current)",
+                to_label=f"{change.path} (proposed)",
             )
 
             # Add separator between files
