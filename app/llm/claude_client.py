@@ -85,8 +85,42 @@ class FakeClaudeClient(ClaudeClient):
         # Parameters are intentionally unused in fake implementation
         _ = (allowed_tools, denied_tools, permission_mode, cwd)
 
+        # Check if this is a kernel stage request
+        if system_prompt and "kernel stage" in system_prompt.lower():
+            # Generate a kernel document based on the prompt
+            kernel_content = f"""## Core Concept
+The essential idea is to {prompt[:100].lower().strip('.')}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
+
+## Key Questions
+1. What are the fundamental requirements that must be satisfied for this concept to succeed?
+2. How can we validate the core assumptions before committing significant resources?
+3. What are the critical dependencies and how can we mitigate risks associated with them?
+4. How will we measure progress and know when key milestones are achieved?
+
+## Success Criteria
+- Clear problem-solution fit demonstrated through user feedback or metrics
+- Scalable architecture that can grow with demand
+- Measurable improvement over existing alternatives
+- Sustainable resource model for long-term viability
+
+## Constraints
+- Must work within existing technical infrastructure
+- Budget and timeline considerations must be realistic
+- Regulatory and compliance requirements must be met
+- User experience must remain intuitive and accessible
+
+## Primary Value Proposition
+This initiative creates value by directly addressing the identified problem space with a solution that is both practical and innovative. The approach balances technical feasibility with user needs, ensuring that the outcome is not just theoretically sound but also delivers tangible benefits in real-world applications."""
+
+            # Stream the kernel content
+            for chunk in kernel_content.split("\n"):
+                yield TextDelta(chunk + "\n")
+
+            # Signal completion
+            yield MessageDone()
+
         # Check if this is a clarify stage request
-        if system_prompt and "clarify stage" in system_prompt.lower():
+        elif system_prompt and "clarify stage" in system_prompt.lower():
             # Generate clarify questions based on the prompt
             yield TextDelta(f"I see you want to explore: {prompt[:100]}\n\n")
             yield TextDelta(
