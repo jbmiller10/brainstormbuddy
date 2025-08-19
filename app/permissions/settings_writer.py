@@ -36,6 +36,10 @@ def write_project_settings(
             "deny": ["Bash", "WebSearch", "WebFetch"],
             "denyPaths": [".env*", "secrets/**", ".git/**"],
             "writeRoots": ["projects/**", "exports/**"],
+            "webDomains": {
+                "allow": [],  # Empty list means allow all domains if web tools are enabled
+                "deny": [],  # Domains to explicitly deny even if allowed
+            },
         },
         "hooks": {
             "PreToolUse": f"{config_dir_name}/hooks/gate.py",

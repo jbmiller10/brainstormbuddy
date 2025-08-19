@@ -150,3 +150,91 @@ def test_custom_config_dir_and_import_path(tmp_path: Path) -> None:
     with open(format_hook, encoding="utf-8") as f:
         format_content = f.read()
     assert "from my.custom.hooks.format_md import _format_markdown_text" in format_content
+
+
+def test_web_domains_structure(tmp_path: Path) -> None:
+    """Test that webDomains structure is created correctly."""
+    write_project_settings(repo_root=tmp_path)
+
+    settings_path = tmp_path / ".claude" / "settings.json"
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+
+    # Check webDomains structure exists
+    assert "webDomains" in settings["permissions"]
+    assert "allow" in settings["permissions"]["webDomains"]
+    assert "deny" in settings["permissions"]["webDomains"]
+
+    # Check defaults are empty lists
+    assert isinstance(settings["permissions"]["webDomains"]["allow"], list)
+    assert isinstance(settings["permissions"]["webDomains"]["deny"], list)
+    assert len(settings["permissions"]["webDomains"]["allow"]) == 0
+    assert len(settings["permissions"]["webDomains"]["deny"]) == 0
+
+
+def test_web_domains_roundtrip(tmp_path: Path) -> None:
+    """Test that web domains can be saved and loaded correctly."""
+    # Write initial settings
+    config_dir = write_project_settings(repo_root=tmp_path)
+    settings_path = config_dir / "settings.json"
+
+    # Load settings
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+
+    # Add some domains
+    test_allow_domains = ["example.com", "api.github.com", "*.openai.com"]
+    test_deny_domains = ["malicious.site", "tracker.com"]
+
+    settings["permissions"]["webDomains"]["allow"] = test_allow_domains
+    settings["permissions"]["webDomains"]["deny"] = test_deny_domains
+
+    # Write back
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")
+
+    # Read again and verify
+    with open(settings_path, encoding="utf-8") as f:
+        loaded_settings = json.load(f)
+
+    assert loaded_settings["permissions"]["webDomains"]["allow"] == test_allow_domains
+    assert loaded_settings["permissions"]["webDomains"]["deny"] == test_deny_domains
+
+
+def test_write_to_tmp_directory_with_domains(tmp_path: Path) -> None:
+    """Test writing settings with domains to a temporary directory."""
+    # Create a subdirectory to simulate a different config location
+    temp_config_root = tmp_path / "temp_configs"
+    temp_config_root.mkdir()
+
+    # Write settings to the temp location
+    config_dir = write_project_settings(
+        repo_root=temp_config_root,
+        config_dir_name="test_config",
+    )
+
+    # Verify path is correct
+    assert config_dir == temp_config_root / "test_config"
+    assert config_dir.exists()
+
+    # Load and modify settings
+    settings_path = config_dir / "settings.json"
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+
+    # Add test domains
+    settings["permissions"]["webDomains"]["allow"] = ["test.com"]
+    settings["permissions"]["webDomains"]["deny"] = ["bad.com"]
+
+    # Write back
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")
+
+    # Verify settings persisted correctly
+    with open(settings_path, encoding="utf-8") as f:
+        loaded = json.load(f)
+
+    assert loaded["permissions"]["webDomains"]["allow"] == ["test.com"]
+    assert loaded["permissions"]["webDomains"]["deny"] == ["bad.com"]
