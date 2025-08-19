@@ -61,6 +61,11 @@ def apply_patch(path: Path | str, patch: Patch) -> None:
     """
     file_path = Path(path) if isinstance(path, str) else path
 
+    # Precompute file mode if file exists
+    file_mode = None
+    if file_path.exists():
+        file_mode = os.stat(file_path).st_mode
+
     # Ensure parent directory exists
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -73,18 +78,41 @@ def apply_patch(path: Path | str, patch: Patch) -> None:
         suffix=".tmp",
     ) as tmp_file:
         tmp_file.write(patch.modified)
+        tmp_file.flush()
+        os.fsync(tmp_file.fileno())
         tmp_path = Path(tmp_file.name)
 
     try:
+        # Preserve file mode if original file existed
+        if file_mode is not None:
+            os.chmod(tmp_path, file_mode)
+
         # Atomically replace the original file
         tmp_path.replace(file_path)
+
+        # Fsync parent directory for durability (best-effort)
+        try:
+            dfd = os.open(file_path.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            # Platform/filesystem doesn't support directory fsync
+            pass
     except Exception:
         # Clean up temp file if replacement fails
         tmp_path.unlink(missing_ok=True)
         raise
 
 
-def generate_diff_preview(old: str, new: str, context_lines: int = 3) -> str:
+def generate_diff_preview(
+    old: str,
+    new: str,
+    context_lines: int = 3,
+    from_label: str | None = None,
+    to_label: str | None = None,
+) -> str:
     """
     Generate a human-readable diff preview.
 
@@ -92,6 +120,8 @@ def generate_diff_preview(old: str, new: str, context_lines: int = 3) -> str:
         old: Original text content
         new: Modified text content
         context_lines: Number of context lines to show around changes
+        from_label: Optional label for the original file (defaults to "before")
+        to_label: Optional label for the modified file (defaults to "after")
 
     Returns:
         String representation of the diff suitable for display
@@ -104,6 +134,8 @@ def generate_diff_preview(old: str, new: str, context_lines: int = 3) -> str:
     diff = difflib.unified_diff(
         old_lines,
         new_lines,
+        fromfile=from_label if from_label is not None else "before",
+        tofile=to_label if to_label is not None else "after",
         n=context_lines,
         lineterm="",
     )
@@ -186,7 +218,7 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
         ValueError: If any file's current content doesn't match expected
     """
     # Prepare all patches and temp files
-    temp_files: list[tuple[Path, Path, int | None, str]] = []
+    temp_files: list[tuple[Path, Path, int | None, str, bool]] = []
     computed_patches: list[Patch] = []
     backup_files: list[tuple[Path, Path]] = []
 
@@ -194,8 +226,11 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
         for path_input, old_content, new_content in patches:
             file_path = Path(path_input) if isinstance(path_input, str) else path_input
 
+            # Track whether file existed before operation
+            existed_before = file_path.exists()
+
             # Read and verify current content if file exists
-            if file_path.exists():
+            if existed_before:
                 with open(file_path, encoding="utf-8") as f:
                     current = f.read()
                 if current != old_content:
@@ -231,11 +266,11 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
                 tmp_path = Path(tmp_file.name)
 
             # Store temp file info for later replacement
-            temp_files.append((file_path, tmp_path, file_mode, current))
+            temp_files.append((file_path, tmp_path, file_mode, current, existed_before))
 
         # Create backups of existing files before replacement
-        for target_path, _, _, original_content in temp_files:
-            if target_path.exists():
+        for target_path, _, _, original_content, existed_before in temp_files:
+            if existed_before:
                 # Create backup file
                 with tempfile.NamedTemporaryFile(
                     mode="w",
@@ -251,7 +286,7 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
         # Now replace all files
         completed_replacements = []
         try:
-            for target_path, temp_path, file_mode, _ in temp_files:
+            for target_path, temp_path, file_mode, _, _ in temp_files:
                 # Preserve file mode if it existed
                 if file_mode is not None:
                     os.chmod(temp_path, file_mode)
@@ -261,16 +296,27 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
                 completed_replacements.append(target_path)
 
         except Exception as e:
-            # Restore original files from backups
+            # Restore original files from backups or remove newly created files
             for target_path in completed_replacements:
-                # Find the backup for this file
-                for orig_path, backup_path in backup_files:
-                    if orig_path == target_path:
-                        backup_path.replace(target_path)
+                # Find if this file existed before the operation
+                existed_before = False
+                for file_path, _, _, _, file_existed in temp_files:
+                    if file_path == target_path:
+                        existed_before = file_existed
                         break
 
+                if existed_before:
+                    # Find the backup for this file and restore it
+                    for orig_path, backup_path in backup_files:
+                        if orig_path == target_path:
+                            backup_path.replace(target_path)
+                            break
+                else:
+                    # File didn't exist before, remove it
+                    target_path.unlink(missing_ok=True)
+
             # Clean up any remaining temp files
-            for target_path, temp_path, _, _ in temp_files:
+            for target_path, temp_path, _, _, _ in temp_files:
                 if target_path not in completed_replacements:
                     temp_path.unlink(missing_ok=True)
 
@@ -286,7 +332,7 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
 
     except Exception:
         # Clean up any temp files created before the error
-        for _, temp_path, _, _ in temp_files:
+        for _, temp_path, _, _, _ in temp_files:
             if temp_path.exists():
                 temp_path.unlink(missing_ok=True)
         raise

@@ -1,5 +1,6 @@
 """Tests for diff and patch utilities."""
 
+import os
 from pathlib import Path
 from unittest.mock import patch as mock_patch
 
@@ -225,6 +226,25 @@ def test_generate_diff_preview_context_lines() -> None:
     assert len(lines_large) >= len(lines_small)
 
 
+def test_generate_diff_preview_with_labels() -> None:
+    """Test that custom labels appear in the diff header."""
+    old = "A\n"
+    new = "B\n"
+
+    # Call with custom labels
+    preview = generate_diff_preview(
+        old, new, context_lines=1, from_label="old.md", to_label="new.md"
+    )
+
+    # Assert the preview contains the custom labels
+    assert "--- old.md" in preview
+    assert "+++ new.md" in preview
+
+    # Ensure both "-" (deletion) and "+" (addition) markers appear
+    assert "-A" in preview
+    assert "+B" in preview
+
+
 def test_apply_patches_success(tmp_path: Path) -> None:
     """Test successful multi-file patch application."""
     # Create initial files
@@ -330,3 +350,75 @@ def test_apply_patch_atomic_failure(tmp_path: Path) -> None:
     # Verify no temp files left behind
     temp_files = list(tmp_path.glob("*.tmp"))
     assert len(temp_files) == 0
+
+
+def test_apply_patches_rollback_removes_new_files(tmp_path: Path) -> None:
+    """Test that rollback removes files that didn't exist before the batch operation."""
+    # Create file1 with content "Orig1"
+    file1 = tmp_path / "file1.txt"
+    file1.write_text("Orig1")
+
+    # Do NOT create file2 (it will be new)
+    file2 = tmp_path / "file2.txt"
+
+    # Prepare patches
+    patches_list: list[tuple[Path | str, str, str]] = [
+        (file1, "Orig1", "Mod1"),  # Modify existing file
+        (file2, "", "New2"),  # Create new file
+    ]
+
+    # Monkeypatch Path.replace to succeed on first, fail on second
+    call_count = 0
+    original_replace = Path.replace
+
+    def mock_replace(self: Path, target: Path) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise PermissionError("Simulated failure on second replace")
+        original_replace(self, target)
+
+    # Act: call apply_patches and assert it raises OSError
+    with mock_patch.object(Path, "replace", mock_replace):
+        with pytest.raises(OSError) as exc_info:
+            apply_patches(patches_list)
+
+        assert "Failed to atomically replace files" in str(exc_info.value)
+
+    # Assert file1 content remains "Orig1"
+    assert file1.read_text() == "Orig1"
+
+    # Assert file2 does not exist (it must be removed)
+    assert not file2.exists()
+
+    # Assert no *.tmp or *.backup files remain in tmp_path
+    temp_files = list(tmp_path.glob("*.tmp"))
+    backup_files = list(tmp_path.glob("*.backup"))
+    assert len(temp_files) == 0
+    assert len(backup_files) == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
+def test_apply_patch_preserves_mode(tmp_path: Path) -> None:
+    """Test that apply_patch preserves file mode on POSIX systems."""
+    # Create a file with mode 0o744 and content "Old"
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("Old")
+    os.chmod(file_path, 0o744)
+
+    # Verify initial mode
+    initial_mode = os.stat(file_path).st_mode & 0o777
+    assert initial_mode == 0o744
+
+    # Compute patch for "Old" -> "New"
+    patch = compute_patch("Old", "New")
+
+    # Apply patch
+    apply_patch(file_path, patch)
+
+    # Assert file content changed
+    assert file_path.read_text() == "New"
+
+    # Assert file mode is preserved
+    final_mode = os.stat(file_path).st_mode & 0o777
+    assert final_mode == 0o744
