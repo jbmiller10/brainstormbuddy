@@ -1,0 +1,1066 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: *lock, *.md, *repomix*
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+
+
+================================================================
+Directory Structure
+================================================================
+app/
+  core/
+    config.py
+  files/
+    scaffold.py
+  llm/
+    claude_client.py
+  tui/
+    __init__.py
+    app.py
+  __init__.py
+tests/
+  test_config.py
+  test_llm_fake.py
+  test_scaffold.py
+  test_smoke.py
+.gitignore
+.pre-commit-config.yaml
+pyproject.toml
+
+================================================================
+Files
+================================================================
+
+================
+File: app/core/config.py
+================
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    data_dir: str = "projects"
+    exports_dir: str = "exports"
+    log_dir: str = "logs"
+    enable_web_tools: bool = False
+
+    class Config:
+        env_prefix = "BRAINSTORMBUDDY_"
+
+
+@lru_cache(maxsize=1)
+def load_settings() -> Settings:
+    return Settings()
+
+================
+File: app/files/scaffold.py
+================
+"""Project scaffold utility for creating standardized project structures."""
+
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+
+def scaffold_project(slug: str, base: Path | str = "projects") -> Path:
+    """
+    Create a project directory structure with seed files.
+
+    Args:
+        slug: Project identifier (will be used as directory name)
+        base: Base directory for projects (default: "projects")
+
+    Returns:
+        Path to the created/existing project directory
+
+    The function is idempotent - running it multiple times with the same
+    slug will not cause errors or duplicate content.
+    """
+    base_path = Path(base) if isinstance(base, str) else base
+    project_path = base_path / slug
+
+    # Create directory structure
+    _create_directories(project_path)
+
+    # Create seed files
+    _create_project_yaml(project_path / "project.yaml", slug)
+    _create_kernel_md(project_path / "kernel.md", slug)
+    _create_outline_md(project_path / "outline.md", slug)
+
+    return project_path
+
+
+def _create_directories(project_path: Path) -> None:
+    """Create the required directory structure."""
+    directories = [
+        project_path,
+        project_path / "elements",
+        project_path / "research",
+        project_path / "exports",
+    ]
+
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+def _create_project_yaml(file_path: Path, slug: str) -> None:
+    """Create project.yaml with basic metadata if it doesn't exist."""
+    if file_path.exists():
+        return
+
+    project_data = {
+        "name": slug,
+        "created": datetime.now().isoformat(),
+        "stage": "capture",
+        "description": f"Brainstorming project: {slug}",
+        "tags": [],
+        "metadata": {
+            "version": "1.0.0",
+            "format": "brainstormbuddy-project",
+        },
+    }
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(project_data, f, default_flow_style=False, sort_keys=False)
+
+
+def _create_kernel_md(file_path: Path, slug: str) -> None:
+    """Create kernel.md with minimal structure if it doesn't exist."""
+    if file_path.exists():
+        return
+
+    content = f"""---
+title: Kernel
+project: {slug}
+created: {datetime.now().isoformat()}
+stage: kernel
+---
+
+# Kernel
+
+## Core Concept
+
+*The essential idea or problem to explore.*
+
+## Key Questions
+
+*What are we trying to answer or solve?*
+
+## Success Criteria
+
+*How will we know when we've achieved our goal?*
+"""
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _create_outline_md(file_path: Path, slug: str) -> None:
+    """Create outline.md with minimal structure if it doesn't exist."""
+    if file_path.exists():
+        return
+
+    content = f"""---
+title: Outline
+project: {slug}
+created: {datetime.now().isoformat()}
+stage: outline
+---
+
+# Outline
+
+## Executive Summary
+
+*High-level overview of the project.*
+
+## Main Sections
+
+### Section 1
+
+*Key points and structure.*
+
+### Section 2
+
+*Key points and structure.*
+
+### Section 3
+
+*Key points and structure.*
+
+## Next Steps
+
+*What needs to be done next?*
+"""
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
+    """
+    Ensure a project exists, creating it if necessary.
+
+    This is an alias for scaffold_project for clarity in different contexts.
+    """
+    return scaffold_project(slug, base)
+
+================
+File: app/llm/claude_client.py
+================
+"""Claude client interface with streaming support and fake implementation."""
+
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class TextDelta:
+    """Represents a text chunk in the stream."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class ToolUseStart:
+    """Indicates the start of tool usage."""
+
+    tool_name: str
+    tool_id: str
+
+
+@dataclass(frozen=True)
+class ToolUseEnd:
+    """Indicates the end of tool usage."""
+
+    tool_id: str
+    result: str | None = None
+
+
+@dataclass(frozen=True)
+class MessageDone:
+    """Indicates the message stream is complete."""
+
+    pass
+
+
+Event = TextDelta | ToolUseStart | ToolUseEnd | MessageDone
+
+
+class ClaudeClient(ABC):
+    """Abstract interface for Claude API clients."""
+
+    @abstractmethod
+    def stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        allowed_tools: list[str] | None = None,
+        denied_tools: list[str] | None = None,
+        permission_mode: str = "standard",
+        cwd: str | None = None,
+    ) -> AsyncIterator[Event]:
+        """
+        Stream events from Claude API.
+
+        Args:
+            prompt: User prompt to send to Claude
+            system_prompt: Optional system prompt to set context
+            allowed_tools: List of allowed tool names
+            denied_tools: List of denied tool names
+            permission_mode: Permission mode for tool usage
+            cwd: Current working directory for tool execution
+
+        Yields:
+            Event objects representing stream chunks
+        """
+        ...
+
+
+class FakeClaudeClient(ClaudeClient):
+    """Fake implementation for testing with deterministic output."""
+
+    async def stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        allowed_tools: list[str] | None = None,
+        denied_tools: list[str] | None = None,
+        permission_mode: str = "standard",
+        cwd: str | None = None,
+    ) -> AsyncIterator[Event]:
+        """Yield a deterministic sequence of events for testing."""
+        # Parameters are intentionally unused in fake implementation
+        _ = (prompt, system_prompt, allowed_tools, denied_tools, permission_mode, cwd)
+        yield TextDelta("First chunk of text")
+        yield TextDelta("Second chunk of text")
+        yield MessageDone()
+
+================
+File: tests/test_config.py
+================
+import pytest
+
+from app.core.config import Settings, load_settings
+
+
+def test_default_settings() -> None:
+    settings = Settings()
+    assert settings.data_dir == "projects"
+    assert settings.exports_dir == "exports"
+    assert settings.log_dir == "logs"
+    assert settings.enable_web_tools is False
+
+
+def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BRAINSTORMBUDDY_DATA_DIR", "custom_projects")
+    monkeypatch.setenv("BRAINSTORMBUDDY_EXPORTS_DIR", "custom_exports")
+    monkeypatch.setenv("BRAINSTORMBUDDY_LOG_DIR", "custom_logs")
+    monkeypatch.setenv("BRAINSTORMBUDDY_ENABLE_WEB_TOOLS", "true")
+
+    settings = Settings()
+    assert settings.data_dir == "custom_projects"
+    assert settings.exports_dir == "custom_exports"
+    assert settings.log_dir == "custom_logs"
+    assert settings.enable_web_tools is True
+
+
+def test_partial_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BRAINSTORMBUDDY_DATA_DIR", "override_data")
+
+    settings = Settings()
+    assert settings.data_dir == "override_data"
+    assert settings.exports_dir == "exports"
+    assert settings.log_dir == "logs"
+    assert settings.enable_web_tools is False
+
+
+def test_load_settings_singleton() -> None:
+    settings1 = load_settings()
+    settings2 = load_settings()
+    assert settings1 is settings2
+
+
+def test_load_settings_returns_settings_instance() -> None:
+    settings = load_settings()
+    assert isinstance(settings, Settings)
+    assert settings.data_dir == "projects"
+    assert settings.exports_dir == "exports"
+    assert settings.log_dir == "logs"
+    assert settings.enable_web_tools is False
+
+================
+File: tests/test_llm_fake.py
+================
+"""Unit tests for FakeClaudeClient implementation."""
+
+import pytest
+
+from app.llm.claude_client import (
+    Event,
+    FakeClaudeClient,
+    MessageDone,
+    TextDelta,
+)
+
+
+@pytest.mark.asyncio
+async def test_fake_client_yields_events_in_order() -> None:
+    """Test that FakeClaudeClient yields events in the expected order."""
+    client = FakeClaudeClient()
+    events: list[Event] = []
+
+    async for event in client.stream("test prompt"):
+        events.append(event)
+
+    assert len(events) == 3
+    assert isinstance(events[0], TextDelta)
+    assert events[0].text == "First chunk of text"
+    assert isinstance(events[1], TextDelta)
+    assert events[1].text == "Second chunk of text"
+    assert isinstance(events[2], MessageDone)
+
+
+@pytest.mark.asyncio
+async def test_fake_client_accepts_all_parameters() -> None:
+    """Test that FakeClaudeClient accepts all expected parameters."""
+    client = FakeClaudeClient()
+    events: list[Event] = []
+
+    async for event in client.stream(
+        prompt="test prompt",
+        system_prompt="system context",
+        allowed_tools=["tool1", "tool2"],
+        denied_tools=["tool3"],
+        permission_mode="restricted",
+        cwd="/test/path",
+    ):
+        events.append(event)
+
+    assert len(events) == 3
+    assert all(isinstance(e, TextDelta | MessageDone) for e in events)
+
+
+@pytest.mark.asyncio
+async def test_event_types_are_frozen() -> None:
+    """Test that Event dataclasses are frozen and immutable."""
+    delta = TextDelta("test")
+    done = MessageDone()
+
+    with pytest.raises(AttributeError):
+        delta.text = "modified"  # type: ignore
+
+    with pytest.raises(AttributeError):
+        done.extra = "field"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_stream_can_be_consumed_multiple_times() -> None:
+    """Test that the stream method can be called multiple times."""
+    client = FakeClaudeClient()
+
+    first_run = [event async for event in client.stream("prompt1")]
+    second_run = [event async for event in client.stream("prompt2")]
+
+    assert len(first_run) == 3
+    assert len(second_run) == 3
+    assert first_run[0] == second_run[0]  # Same deterministic output
+
+================
+File: tests/test_scaffold.py
+================
+"""Tests for the project scaffold utility."""
+
+import tempfile
+from pathlib import Path
+
+import yaml
+
+from app.files.scaffold import ensure_project_exists, scaffold_project
+
+
+class TestScaffoldProject:
+    """Test suite for scaffold_project function."""
+
+    def test_creates_directory_structure(self) -> None:
+        """Test that all required directories are created."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            project_path = scaffold_project("test-project", base)
+
+            # Verify project directory exists
+            assert project_path.exists()
+            assert project_path.is_dir()
+            assert project_path == base / "test-project"
+
+            # Verify subdirectories exist
+            assert (project_path / "elements").exists()
+            assert (project_path / "elements").is_dir()
+            assert (project_path / "research").exists()
+            assert (project_path / "research").is_dir()
+            assert (project_path / "exports").exists()
+            assert (project_path / "exports").is_dir()
+
+    def test_creates_seed_files(self) -> None:
+        """Test that all required seed files are created."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            project_path = scaffold_project("test-project", base)
+
+            # Verify files exist
+            assert (project_path / "project.yaml").exists()
+            assert (project_path / "kernel.md").exists()
+            assert (project_path / "outline.md").exists()
+
+            # Verify files are not empty
+            assert (project_path / "project.yaml").stat().st_size > 0
+            assert (project_path / "kernel.md").stat().st_size > 0
+            assert (project_path / "outline.md").stat().st_size > 0
+
+    def test_project_yaml_content(self) -> None:
+        """Test that project.yaml has correct structure and content."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            project_path = scaffold_project("test-project", base)
+
+            with open(project_path / "project.yaml", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+
+            assert data["name"] == "test-project"
+            assert "created" in data
+            assert data["stage"] == "capture"
+            assert "description" in data
+            assert isinstance(data["tags"], list)
+            assert data["metadata"]["version"] == "1.0.0"
+            assert data["metadata"]["format"] == "brainstormbuddy-project"
+
+    def test_kernel_md_content(self) -> None:
+        """Test that kernel.md has correct structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            project_path = scaffold_project("test-project", base)
+
+            content = (project_path / "kernel.md").read_text(encoding="utf-8")
+
+            # Check frontmatter
+            assert "---" in content
+            assert "title: Kernel" in content
+            assert "project: test-project" in content
+            assert "stage: kernel" in content
+
+            # Check main headers
+            assert "# Kernel" in content
+            assert "## Core Concept" in content
+            assert "## Key Questions" in content
+            assert "## Success Criteria" in content
+
+    def test_outline_md_content(self) -> None:
+        """Test that outline.md has correct structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            project_path = scaffold_project("test-project", base)
+
+            content = (project_path / "outline.md").read_text(encoding="utf-8")
+
+            # Check frontmatter
+            assert "---" in content
+            assert "title: Outline" in content
+            assert "project: test-project" in content
+            assert "stage: outline" in content
+
+            # Check main headers
+            assert "# Outline" in content
+            assert "## Executive Summary" in content
+            assert "## Main Sections" in content
+            assert "### Section 1" in content
+            assert "## Next Steps" in content
+
+    def test_idempotency(self) -> None:
+        """Test that running scaffold_project twice doesn't cause errors."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+
+            # First run
+            project_path1 = scaffold_project("test-project", base)
+
+            # Get initial file modification times
+            yaml_mtime1 = (project_path1 / "project.yaml").stat().st_mtime
+            kernel_mtime1 = (project_path1 / "kernel.md").stat().st_mtime
+            outline_mtime1 = (project_path1 / "outline.md").stat().st_mtime
+
+            # Second run (should not error)
+            project_path2 = scaffold_project("test-project", base)
+
+            # Paths should be the same
+            assert project_path1 == project_path2
+
+            # Files should not be modified (times should be the same)
+            yaml_mtime2 = (project_path2 / "project.yaml").stat().st_mtime
+            kernel_mtime2 = (project_path2 / "kernel.md").stat().st_mtime
+            outline_mtime2 = (project_path2 / "outline.md").stat().st_mtime
+
+            assert yaml_mtime1 == yaml_mtime2
+            assert kernel_mtime1 == kernel_mtime2
+            assert outline_mtime1 == outline_mtime2
+
+    def test_idempotency_preserves_content(self) -> None:
+        """Test that re-running doesn't overwrite existing content."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+
+            # First run
+            project_path = scaffold_project("test-project", base)
+
+            # Modify a file
+            kernel_path = project_path / "kernel.md"
+            custom_content = "# Custom Kernel Content\n\nThis was modified."
+            kernel_path.write_text(custom_content, encoding="utf-8")
+
+            # Second run
+            scaffold_project("test-project", base)
+
+            # Content should be preserved
+            assert kernel_path.read_text(encoding="utf-8") == custom_content
+
+    def test_string_base_path(self) -> None:
+        """Test that base can be provided as a string."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = scaffold_project("test-project", tmpdir)
+
+            assert project_path.exists()
+            assert project_path.parent == Path(tmpdir)
+
+    def test_path_base_path(self) -> None:
+        """Test that base can be provided as a Path object."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            project_path = scaffold_project("test-project", base)
+
+            assert project_path.exists()
+            assert project_path.parent == base
+
+    def test_nested_base_path(self) -> None:
+        """Test creating projects in nested directories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir) / "nested" / "projects"
+            project_path = scaffold_project("test-project", base)
+
+            assert project_path.exists()
+            assert project_path.parent == base
+            assert base.exists()
+
+    def test_ensure_project_exists_alias(self) -> None:
+        """Test that ensure_project_exists works as an alias."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+
+            path1 = ensure_project_exists("test-project", base)
+            path2 = scaffold_project("test-project", base)
+
+            assert path1 == path2
+            assert path1.exists()
+
+    def test_multiple_projects(self) -> None:
+        """Test creating multiple projects in the same base directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+
+            project1 = scaffold_project("project-one", base)
+            project2 = scaffold_project("project-two", base)
+
+            assert project1.exists()
+            assert project2.exists()
+            assert project1 != project2
+            assert project1.name == "project-one"
+            assert project2.name == "project-two"
+
+    def test_slug_with_special_characters(self) -> None:
+        """Test that slugs with hyphens and underscores work."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+
+            project1 = scaffold_project("my-cool-project", base)
+            project2 = scaffold_project("my_cool_project", base)
+
+            assert project1.exists()
+            assert project2.exists()
+            assert project1.name == "my-cool-project"
+            assert project2.name == "my_cool_project"
+
+================
+File: .gitignore
+================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.kate-swp
+
+# Project specific
+projects/
+exports/
+.claude/
+
+================
+File: app/tui/__init__.py
+================
+"""TUI module for Brainstorm Buddy."""
+
+================
+File: app/tui/app.py
+================
+"""Minimal Textual App for Brainstorm Buddy."""
+
+from textual.app import App, ComposeResult
+from textual.widgets import Footer, Header, Static
+
+
+class BrainstormBuddyApp(App[None]):
+    """Main Textual application for Brainstorm Buddy."""
+
+    TITLE = "Brainstorm Buddy"
+    SUB_TITLE = "Terminal-first brainstorming app"
+
+    def compose(self) -> ComposeResult:
+        """Compose the app with placeholder widgets."""
+        yield Header()
+        yield Static("Welcome to Brainstorm Buddy!", id="placeholder")
+        yield Footer()
+
+
+def main() -> None:
+    """Run the Brainstorm Buddy app."""
+    app = BrainstormBuddyApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
+
+================
+File: app/__init__.py
+================
+"""Brainstorm Buddy - Python terminal-first brainstorming app."""
+
+__version__ = "0.1.0"
+
+================
+File: tests/test_smoke.py
+================
+"""Smoke tests to verify basic imports and structure."""
+
+
+def test_app_imports() -> None:
+    """Test that the app module can be imported."""
+    import app
+
+    assert app is not None
+    assert hasattr(app, "__version__")
+
+
+def test_tui_app_imports() -> None:
+    """Test that the TUI app can be imported."""
+    from app.tui import app as tui_module
+    from app.tui.app import BrainstormBuddyApp
+
+    assert tui_module is not None
+    assert BrainstormBuddyApp is not None
+    assert hasattr(BrainstormBuddyApp, "TITLE")
+    assert BrainstormBuddyApp.TITLE == "Brainstorm Buddy"
+
+================
+File: .pre-commit-config.yaml
+================
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.7.0
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: debug-statements
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+# Optional: Add mypy hook (commented out by default as it can be slow)
+# - repo: https://github.com/pre-commit/mirrors-mypy
+#   rev: v1.13.0
+#   hooks:
+#     - id: mypy
+#       additional_dependencies: [types-all]
+#       args: [--strict, --ignore-missing-imports]
+
+================
+File: pyproject.toml
+================
+[tool.poetry]
+name = "brainstormbuddy"
+version = "0.1.0"
+description = "Python terminal-first brainstorming app using Claude Code"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+textual = "^0.86.0"
+pydantic = "^2.10.0"
+aiofiles = "^24.1.0"
+markdown-it-py = "^3.0.0"
+mdformat = "^0.7.17"
+aiosqlite = "^0.20.0"
+typing-extensions = "^4.12.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+ruff = "^0.7.0"
+mypy = "^1.13.0"
+pre-commit = "^4.3.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# Exclude common directories
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    "venv",
+]
+
+[tool.ruff.lint]
+# Enable select rules
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "ARG",  # flake8-unused-arguments
+    "SIM",  # flake8-simplify
+]
+
+ignore = [
+    "E501",  # line too long - handled by formatter
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+# Additional strict options (all enabled by strict=true, but explicit for clarity)
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_unimported = true
+no_implicit_optional = true
+check_untyped_defs = true
+no_implicit_reexport = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+# Ignore missing imports for third-party packages without stubs
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--ignore=docs",
+    "--ignore=.git",
+    "--tb=short",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "asyncio: marks tests as async tests",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+
+
+================================================================
+End of Codebase
+================================================================
