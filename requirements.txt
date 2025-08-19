@@ -27,7 +27,7 @@ pydantic==2.11.7
     # via
     #   brainstormbuddy (pyproject.toml)
     #   pydantic-settings
-pydantic-core==2.33.2
+pydantic-core==2.39.0
     # via pydantic
 pydantic-settings==2.10.1
     # via brainstormbuddy (pyproject.toml)
