@@ -543,7 +543,13 @@ def create_workstream_batch(
 
     # Default elements if not specified
     if include_elements is None:
-        include_elements = ["requirements", "research", "design", "implementation", "synthesis"]
+        include_elements = [
+            "requirements",
+            "research",
+            "design",
+            "implementation",
+            "synthesis",
+        ]
 
     # Add outline.md
     outline_path = project_path / "outline.md"

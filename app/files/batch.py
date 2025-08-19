@@ -3,7 +3,13 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.files.diff import Patch, apply_patches, compute_patch, generate_diff_preview, is_unchanged
+from app.files.diff import (
+    Patch,
+    apply_patches,
+    compute_patch,
+    generate_diff_preview,
+    is_unchanged,
+)
 
 
 @dataclass

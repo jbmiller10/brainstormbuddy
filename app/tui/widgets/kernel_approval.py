@@ -87,8 +87,18 @@ class KernelApprovalModal(ModalScreen[bool]):
                 yield Static(self.diff_content, markup=True)
 
             with Horizontal(classes="button-container"):
-                yield Button("Accept (Y)", variant="success", classes="accept-button", id="accept")
-                yield Button("Reject (N)", variant="warning", classes="reject-button", id="reject")
+                yield Button(
+                    "Accept (Y)",
+                    variant="success",
+                    classes="accept-button",
+                    id="accept",
+                )
+                yield Button(
+                    "Reject (N)",
+                    variant="warning",
+                    classes="reject-button",
+                    id="reject",
+                )
 
     def action_accept(self) -> None:
         """Accept the changes."""
