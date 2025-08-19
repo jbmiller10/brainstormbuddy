@@ -236,9 +236,9 @@ def test_apply_patches_with_fsync_mock_verification(tmp_path: Path) -> None:
         apply_patches(patches_list)
 
     # Verify fsync was called multiple times (for temp files and directories)
-    assert (
-        fsync_mock.call_count >= 2
-    ), f"Expected at least 2 fsync calls, got {fsync_mock.call_count}"
+    assert fsync_mock.call_count >= 2, (
+        f"Expected at least 2 fsync calls, got {fsync_mock.call_count}"
+    )
 
     # Verify files were created successfully
     assert file1.read_text() == "Content 1"

@@ -29,9 +29,9 @@ def test_kernel_approval_modal_diff_renders_without_markup() -> None:
     compose_source = inspect.getsource(modal.compose)
 
     # Verify that markup=False is set in the compose method
-    assert (
-        "markup=False" in compose_source
-    ), "The compose method should set markup=False on the diff Static widget"
+    assert "markup=False" in compose_source, (
+        "The compose method should set markup=False on the diff Static widget"
+    )
 
     # Also verify the diff content is stored correctly
     assert modal.diff_content == diff_content
