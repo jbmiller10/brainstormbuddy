@@ -187,6 +187,9 @@ class SessionController:
             # Construct kernel file path
             kernel_path = Path("projects") / self.project_slug / "kernel.md"
 
+            # Ensure parent directory exists
+            kernel_path.parent.mkdir(parents=True, exist_ok=True)
+
             # Read existing content if file exists
             old_content = ""
             if kernel_path.exists():
