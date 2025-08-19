@@ -6,10 +6,73 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint-and-test:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Install ruff
+      run: |
+        uv venv
+        uv pip install ruff
+
+    - name: Run ruff linting
+      run: |
+        source .venv/bin/activate
+        ruff check .
+
+    - name: Run ruff formatting check
+      run: |
+        source .venv/bin/activate
+        ruff format --check .
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+
+    - name: Install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install mypy types-PyYAML
+
+    - name: Run mypy type checking
+      run: |
+        source .venv/bin/activate
+        mypy . --strict
+
+  test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.11', '3.12']
 
@@ -27,45 +90,23 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "requirements*.txt"
 
-    - name: Create virtual environment
-      run: uv venv
-
     - name: Install dependencies
       run: |
+        uv venv
         uv pip install -r requirements.txt
-        uv pip install ruff mypy pytest pytest-cov
+        uv pip install pytest pytest-cov
 
-    - name: Run ruff linting
+    - name: Run tests with coverage
       run: |
         source .venv/bin/activate
-        ruff check .
-
-    - name: Run ruff formatting check
-      run: |
-        source .venv/bin/activate
-        ruff format --check .
-
-    - name: Run mypy type checking
-      run: |
-        source .venv/bin/activate
-        mypy . --strict
-
-    - name: Run tests with pytest
-      run: |
-        source .venv/bin/activate
-        pytest -q --tb=short
-
-    - name: Generate test coverage report
-      if: matrix.python-version == '3.11'
-      run: |
-        source .venv/bin/activate
-        pytest --cov=app --cov-report=xml --cov-report=term-missing
+        pytest -q --tb=short --cov=app --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.11'
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
         flags: unittests
-        name: codecov-umbrella
+        name: Python-${{ matrix.python-version }}
+        token: ${{ secrets.CODECOV_TOKEN }}
         fail_ci_if_error: false
+        verbose: true

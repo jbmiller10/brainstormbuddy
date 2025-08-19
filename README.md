@@ -1,18 +1,29 @@
 # Brainstorm Buddy
 
+[![CI](https://github.com/jbmiller10/brainstormbuddy/actions/workflows/ci.yml/badge.svg)](https://github.com/jbmiller10/brainstormbuddy/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/jbmiller10/brainstormbuddy/branch/main/graph/badge.svg)](https://codecov.io/gh/jbmiller10/brainstormbuddy)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 A Python terminal-first brainstorming app that guides through: Capture → Clarify → Kernel → Outline → Research → Synthesis → Export.
 
 ## Requirements
 
 - Python 3.11+
-- Poetry
+- Poetry or uv
 
 ## Installation
 
-### With Poetry (default)
+### With Poetry
 
 ```bash
 poetry install
+```
+
+### With uv
+
+```bash
+uv venv
+uv pip install -r requirements.txt
 ```
 
 ## Commands
