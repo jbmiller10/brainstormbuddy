@@ -34,6 +34,19 @@ class ResearchDB:
         if not self.conn:
             raise RuntimeError("Database not connected")
 
+        # Create schema version table for migrations
+        await self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+
+        # Insert initial version if not exists
+        await self.conn.execute("""
+            INSERT OR IGNORE INTO schema_version (version) VALUES (1)
+        """)
+
         # Create main findings table
         await self.conn.execute("""
             CREATE TABLE IF NOT EXISTS findings (
@@ -47,6 +60,20 @@ class ResearchDB:
                 workstream TEXT,
                 retrieved_at TEXT
             )
+        """)
+
+        # Create indexes for better query performance
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_workstream ON findings(workstream)
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_source_type ON findings(source_type)
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_confidence ON findings(confidence)
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_retrieved_at ON findings(retrieved_at)
         """)
 
         # Create FTS5 virtual table for full-text search
@@ -76,12 +103,13 @@ class ResearchDB:
             END
         """)
 
+        # Fixed: FTS5 requires DELETE + INSERT for updates, not UPDATE
         await self.conn.execute("""
             CREATE TRIGGER IF NOT EXISTS findings_au
             AFTER UPDATE ON findings BEGIN
-                UPDATE findings_fts
-                SET id = new.id, claim = new.claim, evidence = new.evidence
-                WHERE rowid = new.rowid;
+                DELETE FROM findings_fts WHERE rowid = old.rowid;
+                INSERT INTO findings_fts(rowid, id, claim, evidence)
+                VALUES (new.rowid, new.id, new.claim, new.evidence);
             END
         """)
 
