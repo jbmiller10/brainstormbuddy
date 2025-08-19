@@ -42,25 +42,123 @@ class ResearchDB:
             )
         """)
 
-        # Insert initial version if not exists
-        await self.conn.execute("""
-            INSERT OR IGNORE INTO schema_version (version) VALUES (1)
-        """)
+        # Check current schema version
+        async with self.conn.execute("SELECT MAX(version) FROM schema_version") as cursor:
+            row = await cursor.fetchone()
+            current_version = row[0] if row and row[0] is not None else 0
 
-        # Create main findings table
-        await self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS findings (
-                id TEXT PRIMARY KEY,
-                url TEXT,
-                source_type TEXT,
-                claim TEXT,
-                evidence TEXT,
-                confidence REAL,
-                tags TEXT,
-                workstream TEXT,
-                retrieved_at TEXT
-            )
-        """)
+        # If no schema version exists (new database), create v2 directly
+        if current_version == 0:
+            # Create main findings table with CHECK constraint
+            await self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS findings (
+                    id TEXT PRIMARY KEY,
+                    url TEXT,
+                    source_type TEXT,
+                    claim TEXT,
+                    evidence TEXT,
+                    confidence REAL CHECK (confidence BETWEEN 0.0 AND 1.0),
+                    tags TEXT,
+                    workstream TEXT,
+                    retrieved_at TEXT
+                )
+            """)
+            # Set schema version to 2
+            await self.conn.execute("""
+                INSERT INTO schema_version (version) VALUES (2)
+            """)
+        elif current_version == 1:
+            # Check if findings table exists
+            async with self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='findings'"
+            ) as cursor:
+                table_exists = await cursor.fetchone() is not None
+
+            if table_exists:
+                # Migrate from v1 to v2: Add CHECK constraint
+                # SQLite doesn't support ALTER TABLE ADD CONSTRAINT directly,
+                # so we need to recreate the table
+
+                # Check for any invalid data first
+                async with self.conn.execute(
+                    "SELECT COUNT(*) FROM findings WHERE confidence < 0.0 OR confidence > 1.0"
+                ) as cursor:
+                    invalid_row = await cursor.fetchone()
+                    invalid_count = invalid_row[0] if invalid_row else 0
+
+                if invalid_count > 0:
+                    # Fix invalid data by clamping to valid range
+                    await self.conn.execute("""
+                        UPDATE findings
+                        SET confidence = MAX(0.0, MIN(1.0, confidence))
+                        WHERE confidence < 0.0 OR confidence > 1.0
+                    """)
+
+                # Create new table with constraint
+                await self.conn.execute("""
+                    CREATE TABLE findings_v2 (
+                        id TEXT PRIMARY KEY,
+                        url TEXT,
+                        source_type TEXT,
+                        claim TEXT,
+                        evidence TEXT,
+                        confidence REAL CHECK (confidence BETWEEN 0.0 AND 1.0),
+                        tags TEXT,
+                        workstream TEXT,
+                        retrieved_at TEXT
+                    )
+                """)
+
+                # Copy data from old table to new
+                await self.conn.execute("""
+                    INSERT INTO findings_v2
+                    SELECT id, url, source_type, claim, evidence,
+                           confidence, tags, workstream, retrieved_at
+                    FROM findings
+                """)
+
+                # Drop old table and rename new one
+                await self.conn.execute("DROP TABLE findings")
+                await self.conn.execute("ALTER TABLE findings_v2 RENAME TO findings")
+
+                # Update schema version to 2
+                await self.conn.execute("""
+                    INSERT INTO schema_version (version) VALUES (2)
+                """)
+            else:
+                # No findings table yet, create with constraint
+                await self.conn.execute("""
+                    CREATE TABLE findings (
+                        id TEXT PRIMARY KEY,
+                        url TEXT,
+                        source_type TEXT,
+                        claim TEXT,
+                        evidence TEXT,
+                        confidence REAL CHECK (confidence BETWEEN 0.0 AND 1.0),
+                        tags TEXT,
+                        workstream TEXT,
+                        retrieved_at TEXT
+                    )
+                """)
+                # Update schema version to 2
+                await self.conn.execute("""
+                    INSERT INTO schema_version (version) VALUES (2)
+                """)
+        else:
+            # For v2 or higher, just ensure table exists (idempotent)
+            await self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS findings (
+                    id TEXT PRIMARY KEY,
+                    url TEXT,
+                    source_type TEXT,
+                    claim TEXT,
+                    evidence TEXT,
+                    confidence REAL CHECK (confidence BETWEEN 0.0 AND 1.0),
+                    tags TEXT,
+                    workstream TEXT,
+                    retrieved_at TEXT
+                )
+            """)
 
         # Create indexes for better query performance
         await self.conn.execute("""
