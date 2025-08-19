@@ -262,8 +262,8 @@ class ResearchDB:
                    f.confidence, f.tags, f.workstream, f.retrieved_at
             FROM findings_fts fts
             JOIN findings f ON fts.id = f.id
-            WHERE fts MATCH ?
-            ORDER BY bm25(fts)
+            WHERE findings_fts MATCH ?
+            ORDER BY bm25(findings_fts)
             LIMIT ?
             """,
             (query, limit),
