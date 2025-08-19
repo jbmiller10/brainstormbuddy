@@ -35,8 +35,7 @@ jobs:
     - name: Create virtual environment and install dependencies
       run: |
         uv venv
-        uv pip install -r requirements.txt
-        uv pip install ruff mypy pytest build
+        uv pip install -r requirements-dev.txt
 
     - name: Run full test suite
       run: |
@@ -66,5 +65,4 @@ jobs:
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
         source .venv/bin/activate
-        uv pip install twine
         twine upload dist/*
