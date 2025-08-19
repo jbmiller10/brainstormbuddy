@@ -80,17 +80,28 @@ class CommandPalette(Container):
 
         log(f"Executing command: {command}")
 
+        # Import here to avoid circular imports
+        from app.tui.views.session import SessionController
+        from app.tui.widgets.session_viewer import SessionViewer
+
+        # Get the session viewer from the main screen
+        viewer = self.app.query_one("#session-viewer", SessionViewer)
+
+        # Create controller
+        controller = SessionController(viewer)
+
         # Handle clarify command
         if command == "clarify":
-            # Import here to avoid circular imports
-            from app.tui.views.session import SessionController
-            from app.tui.widgets.session_viewer import SessionViewer
-
-            # Get the session viewer from the main screen
-            viewer = self.app.query_one("#session-viewer", SessionViewer)
-
-            # Create controller and start clarify session
-            controller = SessionController(viewer)
-
             # Run the async task using Textual's worker system
             self.app.run_worker(controller.start_clarify_session(), exclusive=True)
+
+        # Handle kernel command
+        elif command == "kernel":
+            # For now, use a default project slug - in production, this would prompt for it
+            project_slug = "default-project"
+            initial_idea = "Build a better brainstorming app"
+
+            # Run the async task using Textual's worker system
+            self.app.run_worker(
+                controller.start_kernel_session(project_slug, initial_idea), exclusive=True
+            )
