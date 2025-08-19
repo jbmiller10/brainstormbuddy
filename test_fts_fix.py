@@ -41,9 +41,9 @@ async def test_fts_sync() -> None:
 
         # Search for old term (should not find)
         results = await db.search_fts("searchable")
-        assert (
-            len(results) == 0
-        ), f"Expected 0 results for 'searchable' after update, got {len(results)}"
+        assert len(results) == 0, (
+            f"Expected 0 results for 'searchable' after update, got {len(results)}"
+        )
         print("✓ Found 0 results for 'searchable' after update")
 
         # Search for new term (should find)
