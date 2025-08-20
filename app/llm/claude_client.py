@@ -88,7 +88,9 @@ class FakeClaudeClient(ClaudeClient):
         # Check if this is a kernel stage request
         if system_prompt and "kernel stage" in system_prompt.lower():
             # Generate a kernel document based on the prompt
-            kernel_content = f"""## Core Concept
+            kernel_content = f"""# Kernel
+
+## Core Concept
 The essential idea is to {prompt[:100].lower().strip(".")}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
 
 ## Key Questions

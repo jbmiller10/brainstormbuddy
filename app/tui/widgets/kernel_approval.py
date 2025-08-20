@@ -1,5 +1,7 @@
 """Modal widget for approving kernel changes with diff preview."""
 
+from typing import Literal
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, ScrollableContainer
@@ -59,6 +61,7 @@ class KernelApprovalModal(ModalScreen[bool]):
         self,
         diff_content: str,
         project_slug: str,
+        mode: Literal["diff", "proposal"] = "diff",
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -67,8 +70,9 @@ class KernelApprovalModal(ModalScreen[bool]):
         Initialize the kernel approval modal.
 
         Args:
-            diff_content: The diff preview to display
+            diff_content: The diff preview or proposal content to display
             project_slug: The project identifier
+            mode: Display mode - "diff" for diff preview, "proposal" for full content
             name: Optional widget name
             id: Optional widget ID
             classes: Optional CSS classes
@@ -76,12 +80,24 @@ class KernelApprovalModal(ModalScreen[bool]):
         super().__init__(name=name, id=id, classes=classes)
         self.diff_content = diff_content
         self.project_slug = project_slug
+        self.mode = mode
+
+        # Un-fence content if it's wrapped in code fences
+        if mode == "proposal" and self.diff_content.strip().startswith("```"):
+            lines = self.diff_content.strip().split("\n")
+            if lines[0].startswith("```") and lines[-1] == "```":
+                # Remove first and last lines (fences)
+                self.diff_content = "\n".join(lines[1:-1])
 
     def compose(self) -> ComposeResult:
         """Compose the modal UI."""
         with Container():
-            yield Label(f"[bold]Kernel Changes for Project: {self.project_slug}[/bold]")
-            yield Label("[dim]Review the changes below and approve or reject[/dim]")
+            if self.mode == "proposal":
+                yield Label(f"[bold]Kernel Proposal for Project: {self.project_slug}[/bold]")
+                yield Label("[dim]Review the kernel proposal below and approve or reject[/dim]")
+            else:
+                yield Label(f"[bold]Kernel Changes for Project: {self.project_slug}[/bold]")
+                yield Label("[dim]Review the changes below and approve or reject[/dim]")
 
             with ScrollableContainer(classes="diff-container"):
                 yield Static(self.diff_content, markup=False)

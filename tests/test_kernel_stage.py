@@ -39,6 +39,45 @@ async def test_kernel_stage_fake_client_generates_content() -> None:
     assert "## Primary Value Proposition" in full_text
 
 
+@pytest.mark.asyncio
+async def test_kernel_output_format_requirements() -> None:
+    """Test that kernel output meets F1 ticket requirements."""
+    client = FakeClaudeClient()
+
+    # Stream with kernel stage system prompt
+    events = []
+    async for event in client.stream(
+        prompt="Build an application",
+        system_prompt="You are in the kernel stage of brainstorming.",
+    ):
+        events.append(event)
+
+    # Get full text
+    full_text = "".join(e.text for e in events if isinstance(e, TextDelta))
+
+    # F1 Requirements:
+    # 1. Output starts with "# Kernel"
+    assert full_text.strip().startswith("# Kernel"), "Output must start with '# Kernel'"
+
+    # 2. No diff markers, fences, or explanations
+    assert "```" not in full_text, "Output must not contain code fences"
+    assert "---" not in full_text, "Output must not contain diff markers"
+    assert "+++" not in full_text, "Output must not contain diff markers"
+    assert "@@" not in full_text, "Output must not contain diff markers"
+
+    # 3. Exactly 5 sections in the specified order
+    lines = full_text.strip().split("\n")
+    section_headers = [line for line in lines if line.startswith("##")]
+    expected_sections = [
+        "## Core Concept",
+        "## Key Questions",
+        "## Success Criteria",
+        "## Constraints",
+        "## Primary Value Proposition",
+    ]
+    assert section_headers == expected_sections, f"Sections must be in order: {expected_sections}"
+
+
 def test_kernel_diff_preview_generation() -> None:
     """Test that diff preview is generated correctly for kernel changes."""
     old_content = """## Core Concept
@@ -203,6 +242,44 @@ def test_kernel_approval_modal_initialization() -> None:
 
     assert modal.diff_content == diff_content
     assert modal.project_slug == "test-project"
+    assert modal.mode == "diff"  # Default mode
+
+
+def test_kernel_approval_modal_proposal_mode() -> None:
+    """Test KernelApprovalModal in proposal mode."""
+    proposal_content = """# Kernel
+
+## Core Concept
+This is the core concept.
+
+## Key Questions
+1. Question one
+"""
+    modal = KernelApprovalModal(proposal_content, "test-project", mode="proposal")
+
+    assert modal.diff_content == proposal_content
+    assert modal.project_slug == "test-project"
+    assert modal.mode == "proposal"
+
+
+def test_kernel_approval_modal_unfences_content() -> None:
+    """Test that KernelApprovalModal unfences content in proposal mode."""
+    fenced_content = """```markdown
+# Kernel
+
+## Core Concept
+This is the core concept.
+```"""
+
+    expected_content = """# Kernel
+
+## Core Concept
+This is the core concept."""
+
+    modal = KernelApprovalModal(fenced_content, "test-project", mode="proposal")
+
+    assert modal.diff_content == expected_content
+    assert modal.mode == "proposal"
 
 
 @pytest.mark.asyncio
