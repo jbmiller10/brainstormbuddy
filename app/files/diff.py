@@ -267,7 +267,7 @@ def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
             # Fsync each parent directory once
             for parent_dir in parent_dirs:
                 try:
-                    dfd = os.open(parent_dir, os.O_DIRECTORY)
+                    dfd = os.open(parent_dir, getattr(os, "O_DIRECTORY", 0))
                     try:
                         os.fsync(dfd)
                     finally:
