@@ -1,7 +1,8 @@
 """Unit tests for command palette research import command."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -9,14 +10,15 @@ from app.tui.widgets.command_palette import CommandPalette
 
 
 @pytest.fixture
-def command_palette():
+def command_palette() -> CommandPalette:
     """Create a CommandPalette instance with mocked methods."""
     palette = CommandPalette()
-    palette.hide = MagicMock()
+    # Use Mock() instead of direct assignment to avoid method-assign error
+    palette.hide = Mock()  # type: ignore[method-assign]
     return palette
 
 
-def test_research_import_in_commands():
+def test_research_import_in_commands() -> None:
     """Test that research import command exists in command list."""
     palette = CommandPalette()
 
@@ -26,7 +28,7 @@ def test_research_import_in_commands():
     assert "Import research findings" in command_dict["research import"]
 
 
-def test_research_import_creates_correct_path():
+def test_research_import_creates_correct_path() -> None:
     """Test that research import command would create the correct path."""
 
     # The command should use projects/default as the base path
@@ -39,11 +41,12 @@ def test_research_import_creates_correct_path():
 
 
 @pytest.mark.asyncio
-async def test_on_input_submitted_calls_hide():
+async def test_on_input_submitted_calls_hide() -> None:
     """Test that input submission hides the palette."""
 
     palette = CommandPalette()
-    palette.hide = MagicMock()
+    # Use Mock() instead of direct assignment to avoid method-assign error
+    palette.hide = Mock()  # type: ignore[method-assign]
 
     # Mock Input.Submitted event
     from textual.widgets import Input
@@ -52,9 +55,9 @@ async def test_on_input_submitted_calls_hide():
     event.value = "test command"
 
     # Track the coroutine to clean it up
-    created_coro = None
+    created_coro: Any | None = None
 
-    def track_coro(coro, **_kwargs):
+    def track_coro(coro: Any, **_kwargs: Any) -> MagicMock:
         nonlocal created_coro
         created_coro = coro
         # Return a mock task
@@ -81,7 +84,7 @@ async def test_on_input_submitted_calls_hide():
 
 
 @pytest.mark.asyncio
-async def test_research_import_command_in_list():
+async def test_research_import_command_in_list() -> None:
     """Test that research import is in the command list."""
     palette = CommandPalette()
 
@@ -98,7 +101,7 @@ async def test_research_import_command_in_list():
         pytest.fail("Research import command not found with proper description")
 
 
-def test_command_palette_compose_includes_research():
+def test_command_palette_compose_includes_research() -> None:
     """Test that compose includes research import in options."""
     palette = CommandPalette()
 
@@ -107,7 +110,7 @@ def test_command_palette_compose_includes_research():
     assert "research import" in command_names
 
 
-def test_research_import_modal_can_be_imported():
+def test_research_import_modal_can_be_imported() -> None:
     """Test that ResearchImportModal can be imported successfully."""
     # This tests that the import path is correct
     from app.tui.views.research import ResearchImportModal

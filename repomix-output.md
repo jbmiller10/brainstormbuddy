@@ -1,4 +1,5 @@
 This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where empty lines have been removed.
 
 # File Summary
 
@@ -31,6 +32,8 @@ The content is organized as follows:
 - Files matching these patterns are excluded: *.md, *.lock, *repomix*, tests/*
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
+- Empty lines have been removed from all files
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
@@ -73,6 +76,9 @@ app/
       format_md.py
       io.py
     settings_writer.py
+  research/
+    __init__.py
+    db.py
   tui/
     views/
       __init__.py
@@ -80,6 +86,7 @@ app/
       session.py
     widgets/
       __init__.py
+      agent_selector.py
       command_palette.py
       context_panel.py
       file_tree.py
@@ -104,157 +111,10 @@ materialize_claude.py
 pyproject.toml
 requirements-dev.txt
 requirements.txt
+test_fts_fix.py
 ```
 
 # Files
-
-## File: .github/workflows/release.yml
-````yaml
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., v1.0.0)'
-        required: true
-        type: string
-
-permissions:
-  contents: write
-
-jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: "requirements*.txt"
-
-    - name: Create virtual environment and install dependencies
-      run: |
-        uv venv
-        uv pip install -r requirements.txt
-        uv pip install ruff mypy pytest build
-
-    - name: Run full test suite
-      run: |
-        source .venv/bin/activate
-        ruff check .
-        mypy . --strict
-        pytest -q
-
-    - name: Build package
-      run: |
-        source .venv/bin/activate
-        python -m build
-
-    - name: Create GitHub Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: dist/*
-        generate_release_notes: true
-        draft: false
-        prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
-
-    - name: Publish to PyPI
-      if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha')
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        source .venv/bin/activate
-        uv pip install twine
-        twine upload dist/*
-````
-
-## File: .github/workflows/security.yml
-````yaml
-name: Security
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 0 * * 1'  # Weekly on Monday
-
-jobs:
-  dependency-check:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: "requirements*.txt"
-
-    - name: Create virtual environment and install dependencies
-      run: |
-        uv venv
-        uv pip install -r requirements.txt
-
-    - name: Check for dependency vulnerabilities with pip-audit
-      run: |
-        uv pip install pip-audit
-        source .venv/bin/activate
-        pip-audit
-
-    - name: Run Bandit security linter
-      run: |
-        uv pip install bandit[toml]
-        source .venv/bin/activate
-        bandit -r app/ -ll
-
-    - name: Check for outdated dependencies
-      run: |
-        uv pip list --outdated
-      continue-on-error: true
-
-  codeql-analysis:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: python
-
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v3
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
-````
 
 ## File: .github/dependabot.yml
 ````yaml
@@ -272,7 +132,6 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -287,62 +146,31 @@ updates:
       include: "scope"
 ````
 
-## File: app/core/config.py
-````python
-from functools import lru_cache
-
-from pydantic_settings import BaseSettings
-
-
-class Settings(BaseSettings):
-    data_dir: str = "projects"
-    exports_dir: str = "exports"
-    log_dir: str = "logs"
-    enable_web_tools: bool = False
-
-    class Config:
-        env_prefix = "BRAINSTORMBUDDY_"
-
-
-@lru_cache(maxsize=1)
-def load_settings() -> Settings:
-    return Settings()
-````
-
 ## File: app/files/atomic.py
 ````python
 """Atomic file write utilities."""
-
 import os
 import tempfile
 from pathlib import Path
-
-
 def atomic_write_text(path: Path | str, text: str) -> None:
     """
     Write text to a file atomically using temp file and replace.
-
     This ensures the file is either fully updated or not modified at all,
     preventing partial writes in case of errors. Uses the same durability
     pattern as apply_patch.
-
     Args:
         path: Path to the file to write
         text: Text content to write (UTF-8 encoded)
-
     Raises:
         IOError: If there's an error during the atomic write operation
     """
     file_path = Path(path) if isinstance(path, str) else path
-
     # Precompute file mode if file exists
     file_mode = None
     if file_path.exists():
         file_mode = os.stat(file_path).st_mode
-
     # Ensure parent directory exists
     file_path.parent.mkdir(parents=True, exist_ok=True)
-
     # Write to a temporary file first
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -355,15 +183,12 @@ def atomic_write_text(path: Path | str, text: str) -> None:
         tmp_file.flush()
         os.fsync(tmp_file.fileno())
         tmp_path = Path(tmp_file.name)
-
     try:
         # Preserve file mode if original file existed
         if file_mode is not None:
             os.chmod(tmp_path, file_mode)
-
         # Atomically replace the original file
         tmp_path.replace(file_path)
-
         # Fsync parent directory for durability (best-effort)
         try:
             dfd = os.open(file_path.parent, os.O_DIRECTORY)
@@ -383,26 +208,19 @@ def atomic_write_text(path: Path | str, text: str) -> None:
 ## File: app/files/markdown.py
 ````python
 """Markdown parsing and extraction utilities."""
-
 import re
-
-
 def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str | None:
     """
     Extract the first non-empty paragraph after a specific header.
-
     Finds the specified header (case-insensitive, trimmed) and returns the first
     non-empty paragraph content following it. Stops at the next header of same
     or higher level. Strips markdown emphasis markers.
-
     Args:
         md: The markdown content to parse
         header: The header to search for (e.g., "## Core Concept")
-
     Returns:
         The first non-empty paragraph after the header with emphasis stripped,
         or None if the section is not found or has no content.
-
     Examples:
         >>> md = '''
         ... ## Core Concept
@@ -412,7 +230,6 @@ def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str |
         ... '''
         >>> extract_section_paragraph(md)
         'A revolutionary approach to task management'
-
         >>> md = '''
         ... ## CORE CONCEPT
         ... First paragraph here.
@@ -422,33 +239,26 @@ def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str |
     """
     if not md or not header:
         return None
-
     # Parse header level from the header string (count # symbols)
     header_level = len(header) - len(header.lstrip("#"))
     if header_level == 0:
         return None
-
     # Clean header text for comparison
     header_text = header.lstrip("#").strip().lower()
-
     lines = md.split("\n")
     header_found = False
     content_lines: list[str] = []
-
     for _i, line in enumerate(lines):
         stripped = line.strip()
-
         # Check if this is our target header (case-insensitive)
         if not header_found:
             if stripped.startswith("#"):
                 # Extract level and text from current line
                 current_level = len(stripped) - len(stripped.lstrip("#"))
                 current_text = stripped.lstrip("#").strip().lower()
-
                 if current_level == header_level and current_text == header_text:
                     header_found = True
             continue
-
         # We've found the header, now collect content
         # Check if we've hit another header of same or higher level
         if stripped.startswith("#"):
@@ -456,34 +266,26 @@ def extract_section_paragraph(md: str, header: str = "## Core Concept") -> str |
             if current_level <= header_level:
                 # Stop - we've reached the next section
                 break
-
         # Skip empty lines at the beginning
         if not stripped and not content_lines:
             continue
-
         # If we have content and hit an empty line, consider paragraph complete
         if not stripped and content_lines:
             break
-
         # Add non-empty line to content
         if stripped:
             content_lines.append(stripped)
-
     if not content_lines:
         return None
-
     # Join lines and strip markdown emphasis
     paragraph = " ".join(content_lines)
-
     # Remove bold markers (**text** or __text__)
     paragraph = re.sub(r"\*\*(.+?)\*\*", r"\1", paragraph)
     paragraph = re.sub(r"__(.+?)__", r"\1", paragraph)
-
     # Remove italic markers (*text* or _text_)
     # Be careful not to remove standalone asterisks (e.g., bullet points)
     paragraph = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", paragraph)
     paragraph = re.sub(r"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)", r"\1", paragraph)
-
     return paragraph.strip()
 ````
 
@@ -738,54 +540,40 @@ Keep each section concise (50-100 words). Use bullet points and numbered lists f
 ## File: app/llm/agents.py
 ````python
 """Agent specification loader and materializer for Claude Code subagents."""
-
 import importlib.resources as resources
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 import yaml
-
 from app.files.atomic import atomic_write_text
-
-
 @dataclass(frozen=True)
 class AgentSpec:
     """Specification for a Claude Code subagent."""
-
     name: str
     description: str
     tools: list[str]
     prompt: str
-
-
 def _parse_agent_markdown(content: str, filename: str) -> AgentSpec:
     """
     Parse an agent specification from markdown with YAML frontmatter.
-
     Args:
         content: The markdown file content
         filename: The source filename for error messages
-
     Returns:
         Parsed AgentSpec
-
     Raises:
         ValueError: If frontmatter is invalid or required fields are missing
     """
     # Extract frontmatter using regex
     frontmatter_pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
     match = re.match(frontmatter_pattern, content, re.DOTALL)
-
     if not match:
         raise ValueError(
             f"Invalid agent spec in {filename}: Missing YAML frontmatter. "
             "Expected format: ---\\n<yaml>\\n---\\n<markdown>"
         )
-
     frontmatter_str, body = match.groups()
-
     # Parse YAML frontmatter
     try:
         frontmatter: dict[str, Any] = yaml.safe_load(frontmatter_str) or {}
@@ -793,40 +581,34 @@ def _parse_agent_markdown(content: str, filename: str) -> AgentSpec:
         raise ValueError(
             f"Invalid YAML frontmatter in {filename}: {e}. Please check YAML syntax."
         ) from e
-
     # Validate required fields
     missing_fields = []
     if "name" not in frontmatter:
         missing_fields.append("name")
     if "description" not in frontmatter:
         missing_fields.append("description")
-
     if missing_fields:
         raise ValueError(
             f"Missing required fields in {filename}: {', '.join(missing_fields)}. "
             f"Required fields are: name (str), description (str)"
         )
-
     # Validate field types
     if not isinstance(frontmatter["name"], str):
         raise ValueError(
             f"Invalid field type in {filename}: 'name' must be a string, "
             f"got {type(frontmatter['name']).__name__}"
         )
-
     if not isinstance(frontmatter["description"], str):
         raise ValueError(
             f"Invalid field type in {filename}: 'description' must be a string, "
             f"got {type(frontmatter['description']).__name__}"
         )
-
     # Handle optional tools field
     tools = frontmatter.get("tools", [])
     if not isinstance(tools, list):
         raise ValueError(
             f"Invalid field type in {filename}: 'tools' must be a list, got {type(tools).__name__}"
         )
-
     # Ensure all tools are strings
     for i, tool in enumerate(tools):
         if not isinstance(tool, str):
@@ -834,34 +616,26 @@ def _parse_agent_markdown(content: str, filename: str) -> AgentSpec:
                 f"Invalid tool in {filename}: tools[{i}] must be a string, "
                 f"got {type(tool).__name__}"
             )
-
     return AgentSpec(
         name=frontmatter["name"],
         description=frontmatter["description"],
         tools=tools,
         prompt=body.strip(),
     )
-
-
 def load_agent_specs(source_pkg: str = "app.llm.agentspecs") -> list[AgentSpec]:
     """
     Load agent specifications from a Python package.
-
     Args:
         source_pkg: Dot-separated package path containing agent spec markdown files
-
     Returns:
         List of loaded AgentSpec instances
-
     Raises:
         ValueError: If any spec file is invalid
         ModuleNotFoundError: If the source package doesn't exist
     """
     specs: list[AgentSpec] = []
-
     # Convert package string to module parts
     module_parts = source_pkg.split(".")
-
     # Try to access the package
     try:
         # For Python 3.9+, we use files() directly
@@ -878,7 +652,6 @@ def load_agent_specs(source_pkg: str = "app.llm.agentspecs") -> list[AgentSpec]:
             f"Cannot find package '{source_pkg}'. "
             f"Make sure it exists and is a valid Python package."
         ) from e
-
     # Find all .md files in the package
     md_files = []
     try:
@@ -891,10 +664,8 @@ def load_agent_specs(source_pkg: str = "app.llm.agentspecs") -> list[AgentSpec]:
             f"Cannot iterate files in package '{source_pkg}'. "
             f"Make sure it's a directory package with __init__.py."
         ) from e
-
     # Sort files for consistent ordering
     md_files.sort(key=lambda f: f.name)
-
     # Parse each markdown file
     for file_resource in md_files:
         try:
@@ -903,31 +674,23 @@ def load_agent_specs(source_pkg: str = "app.llm.agentspecs") -> list[AgentSpec]:
             specs.append(spec)
         except Exception as e:
             raise ValueError(f"Error loading agent spec from {file_resource.name}: {e}") from e
-
     return specs
-
-
 def materialize_agents(target_dir: Path, source_pkg: str = "app.llm.agentspecs") -> Path:
     """
     Materialize agent specs from a package to a target directory for Claude Code.
-
     Args:
         target_dir: Directory where .claude/agents will be created
         source_pkg: Package path containing agent spec files
-
     Returns:
         Path to the created agents directory
-
     Raises:
         ValueError: If specs cannot be loaded or written
     """
     # Load specs from the source package
     specs = load_agent_specs(source_pkg)
-
     # Create target directory structure
     agents_dir = target_dir / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
-
     # Get original filenames from the package to preserve them
     module_parts = source_pkg.split(".")
     if len(module_parts) == 1:
@@ -936,7 +699,6 @@ def materialize_agents(target_dir: Path, source_pkg: str = "app.llm.agentspecs")
         pkg_files = resources.files(module_parts[0])
         for part in module_parts[1:]:
             pkg_files = pkg_files / part
-
     # Create a mapping of spec names to original filenames
     name_to_filename: dict[str, str] = {}
     for item in pkg_files.iterdir():
@@ -948,13 +710,11 @@ def materialize_agents(target_dir: Path, source_pkg: str = "app.llm.agentspecs")
             except ValueError:
                 # Skip invalid files
                 continue
-
     # Write each spec to the target directory
     for spec in specs:
         # Use original filename if available, otherwise use name.md
         filename = name_to_filename.get(spec.name, f"{spec.name}.md")
         target_path = agents_dir / filename
-
         # Reconstruct the markdown with frontmatter
         frontmatter_dict: dict[str, Any] = {
             "name": spec.name,
@@ -962,13 +722,10 @@ def materialize_agents(target_dir: Path, source_pkg: str = "app.llm.agentspecs")
         }
         if spec.tools:
             frontmatter_dict["tools"] = spec.tools
-
         frontmatter_yaml = yaml.dump(frontmatter_dict, default_flow_style=False, sort_keys=False)
         content = f"---\n{frontmatter_yaml}---\n\n{spec.prompt}\n"
-
         # Write the file
         atomic_write_text(target_path, content)
-
     return agents_dir
 ````
 
@@ -980,17 +737,12 @@ def materialize_agents(target_dir: Path, source_pkg: str = "app.llm.agentspecs")
 ## File: app/permissions/hooks_lib/format_md.py
 ````python
 """Markdown formatting utilities for hooks."""
-
 import mdformat
-
-
 def _format_markdown_text(text: str) -> str:
     """
     Format markdown text using mdformat.
-
     Args:
         text: Raw markdown text to format
-
     Returns:
         Formatted markdown text
     """
@@ -1000,34 +752,26 @@ def _format_markdown_text(text: str) -> str:
 ## File: app/permissions/hooks_lib/io.py
 ````python
 """I/O utilities for hooks with durability guarantees."""
-
 import os
 import tempfile
 from pathlib import Path
-
-
 def atomic_replace_text(path: Path, text: str) -> None:
     """
     Atomically replace file contents with durability guarantees.
-
     Performs atomic write with flush+fsync on both file and parent directory.
     This ensures data is persisted to disk before returning.
-
     Args:
         path: Path to the file to write
         text: Text content to write (UTF-8 encoded)
-
     Raises:
         IOError: If there's an error during the atomic write operation
     """
     # Ensure parent directory exists
     path.parent.mkdir(parents=True, exist_ok=True)
-
     # Preserve file mode if file exists
     file_mode = None
     if path.exists():
         file_mode = os.stat(path).st_mode
-
     # Write to temporary file first
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -1041,15 +785,12 @@ def atomic_replace_text(path: Path, text: str) -> None:
         # Ensure data is written to disk
         os.fsync(tmp_file.fileno())
         tmp_path = Path(tmp_file.name)
-
     try:
         # Preserve file mode if original file existed
         if file_mode is not None:
             os.chmod(tmp_path, file_mode)
-
         # Atomically replace the original file
         tmp_path.replace(path)
-
         # Fsync parent directory for durability (best-effort)
         try:
             dfd = os.open(path.parent, os.O_DIRECTORY)
@@ -1066,53 +807,207 @@ def atomic_replace_text(path: Path, text: str) -> None:
         raise
 ````
 
-## File: app/tui/views/main_screen.py
+## File: app/research/__init__.py
 ````python
-"""Main screen view with three-pane structure."""
+"""Research database module for storing and searching findings."""
+from .db import ResearchDB
+__all__ = ["ResearchDB"]
+````
 
+## File: app/tui/widgets/agent_selector.py
+````python
+"""Agent selection widget for choosing Claude Code agents."""
+from textual import events, on
 from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.screen import Screen
-from textual.widgets import Footer, Header
-
-from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
-
-
-class MainScreen(Screen[None]):
-    """Main three-pane screen for the application."""
-
+from textual.containers import Container, Horizontal, VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import Button, Label, Static
+from app.llm.agents import AgentSpec
+class AgentCard(Container):
+    """Display card for a single agent."""
+    def __init__(self, agent: AgentSpec, selected: bool = False) -> None:
+        """
+        Initialize the agent card.
+        Args:
+            agent: The agent specification to display
+            selected: Whether this agent is currently selected
+        """
+        super().__init__(classes="agent-card")
+        self.agent = agent
+        self.selected = selected
+        if selected:
+            self.add_class("selected")
+    def compose(self) -> ComposeResult:
+        """Create the card content."""
+        yield Label(f"[bold]{self.agent.name}[/bold]", classes="agent-name")
+        yield Label(self.agent.description, classes="agent-description")
+        if self.agent.tools:
+            tools_str = ", ".join(self.agent.tools)
+            yield Label(f"[dim]Tools: {tools_str}[/dim]", classes="agent-tools")
+        else:
+            yield Label("[dim]Tools: None[/dim]", classes="agent-tools")
+class AgentSelector(ModalScreen[AgentSpec | None]):
+    """Modal for selecting an agent for a session."""
     DEFAULT_CSS = """
-    MainScreen {
-        layout: vertical;
+    AgentSelector {
+        align: center middle;
     }
-
-    Horizontal {
-        height: 1fr;
+    AgentSelector > Container {
+        width: 80;
+        height: auto;
+        max-height: 80%;
+        border: thick $background 80%;
+        background: $surface;
+        padding: 1 2;
+    }
+    .modal-title {
+        text-align: center;
+        width: 100%;
+        margin-bottom: 1;
+    }
+    .agent-list {
+        height: auto;
+        max-height: 20;
+        margin-bottom: 1;
+    }
+    .agent-card {
+        padding: 1;
+        margin-bottom: 1;
+        border: solid $primary 50%;
+    }
+    .agent-card.selected {
+        border: solid $accent;
+        background: $boost;
+    }
+    .agent-card:hover {
+        background: $boost;
+    }
+    .agent-name {
+        margin-bottom: 0;
+    }
+    .agent-description {
+        margin-bottom: 0;
+    }
+    .agent-tools {
+        margin-top: 0;
+    }
+    .final-tools {
+        border: solid $primary 50%;
+        padding: 1;
+        margin-bottom: 1;
+    }
+    .button-row {
+        dock: bottom;
+        align: center middle;
+        padding: 1 0;
+    }
+    .button-row Button {
+        margin: 0 1;
     }
     """
-
+    def __init__(
+        self,
+        agents: list[AgentSpec],
+        stage_allowed: list[str],
+        stage_denied: list[str],
+    ) -> None:
+        """
+        Initialize the agent selector.
+        Args:
+            agents: List of available agents
+            stage_allowed: Tools allowed by the current stage
+            stage_denied: Tools denied by the current stage
+        """
+        super().__init__()
+        self.agents = agents
+        self.stage_allowed = stage_allowed
+        self.stage_denied = stage_denied
+        self.selected_agent: AgentSpec | None = None
+        self.agent_cards: list[AgentCard] = []
     def compose(self) -> ComposeResult:
-        """Compose the main three-pane layout."""
-        yield Header()
-        with Horizontal():
-            yield FileTree()
-            yield SessionViewer()
-            yield ContextPanel()
-        yield Footer()
-        yield CommandPalette()
+        """Create the selector UI."""
+        with Container():
+            yield Static("[bold]Select Agent (Optional)[/bold]", classes="modal-title")
+            yield Static(
+                "[dim]Choose an agent to assist with this session, or continue without one.[/dim]",
+                classes="modal-subtitle",
+            )
+            # Agent list
+            with VerticalScroll(classes="agent-list"):
+                for agent in self.agents:
+                    card = AgentCard(agent, selected=False)
+                    self.agent_cards.append(card)
+                    yield card
+            # Final tools preview
+            yield Container(
+                Static("[bold]Final Tool Permissions:[/bold]"),
+                Static(self._compute_final_tools_text(), id="final-tools-text"),
+                classes="final-tools",
+            )
+            # Buttons
+            with Horizontal(classes="button-row"):
+                yield Button("Select", variant="primary", id="select-button")
+                yield Button("No Agent", variant="default", id="no-agent-button")
+                yield Button("Cancel", variant="default", id="cancel-button")
+    def _compute_final_tools_text(self) -> str:
+        """Compute the final tools text based on current selection."""
+        if self.selected_agent and self.selected_agent.tools:
+            # Intersection of stage allowed and agent tools
+            allowed = set(self.stage_allowed).intersection(set(self.selected_agent.tools))
+        else:
+            # Just stage allowed
+            allowed = set(self.stage_allowed)
+        # Remove denied tools
+        final = allowed - set(self.stage_denied)
+        if final:
+            return f"[green]{', '.join(sorted(final))}[/green]"
+        else:
+            return "[red]None (no tools available)[/red]"
+    def on_click(self, event: events.Click) -> None:
+        """Handle clicks on agent cards."""
+        # Check if click was on an agent card
+        if event.widget is None:
+            return
+        for card in self.agent_cards:
+            if card in event.widget.ancestors_with_self:
+                # Deselect all cards
+                for c in self.agent_cards:
+                    c.remove_class("selected")
+                    c.selected = False
+                # Select the clicked card
+                card.add_class("selected")
+                card.selected = True
+                self.selected_agent = card.agent
+                # Update final tools preview
+                tools_text = self.query_one("#final-tools-text", Static)
+                tools_text.update(self._compute_final_tools_text())
+                break
+    @on(Button.Pressed, "#select-button")
+    def handle_select(self) -> None:
+        """Handle select button - return selected agent."""
+        if self.selected_agent:
+            self.dismiss(self.selected_agent)
+        else:
+            # No agent selected, treat as "No Agent"
+            self.dismiss(None)
+    @on(Button.Pressed, "#no-agent-button")
+    def handle_no_agent(self) -> None:
+        """Handle no agent button - return None."""
+        self.dismiss(None)
+    @on(Button.Pressed, "#cancel-button")
+    def handle_cancel(self) -> None:
+        """Handle cancel button - dismiss with None (cancellation)."""
+        # In this context, we'll treat cancel as "no agent" to avoid blocking
+        self.dismiss(None)
 ````
 
 ## File: app/tui/widgets/context_panel.py
 ````python
 """Context panel widget for displaying relevant cards and information."""
-
 from textual.containers import VerticalScroll
 from textual.widgets import Static
-
-
 class ContextPanel(VerticalScroll):
     """Right-side panel for context cards and relevant information."""
-
     DEFAULT_CSS = """
     ContextPanel {
         width: 35;
@@ -1120,7 +1015,6 @@ class ContextPanel(VerticalScroll):
         border: solid $primary;
         padding: 1;
     }
-
     .context-card {
         background: $panel;
         border: solid $primary-lighten-2;
@@ -1128,11 +1022,9 @@ class ContextPanel(VerticalScroll):
         margin-bottom: 1;
     }
     """
-
     def __init__(self) -> None:
         """Initialize the context panel."""
         super().__init__(id="context-panel")
-
     def on_mount(self) -> None:
         """Add placeholder context cards."""
         self.mount(
@@ -1153,50 +1045,6 @@ class ContextPanel(VerticalScroll):
                 classes="context-card",
             )
         )
-````
-
-## File: app/tui/widgets/file_tree.py
-````python
-"""File tree widget for project navigation."""
-
-from textual.widgets import Tree
-
-
-class FileTree(Tree[str]):
-    """File tree for navigating project documents."""
-
-    DEFAULT_CSS = """
-    FileTree {
-        width: 30;
-        background: $surface;
-        border: solid $primary;
-    }
-    """
-
-    def __init__(self) -> None:
-        """Initialize the file tree with placeholder content."""
-        super().__init__("Projects", id="file-tree")
-
-    def on_mount(self) -> None:
-        """Populate the tree with placeholder project structure."""
-        root = self.root
-        root.expand()
-
-        # Add placeholder project structure
-        project1 = root.add("📁 example-project", expand=True)
-        project1.add_leaf("📄 kernel.md")
-        project1.add_leaf("📄 outline.md")
-        project1.add_leaf("📄 project.yaml")
-
-        elements = project1.add("📁 elements", expand=True)
-        elements.add_leaf("📄 workstream-1.md")
-        elements.add_leaf("📄 workstream-2.md")
-
-        research = project1.add("📁 research", expand=True)
-        research.add_leaf("📄 findings.md")
-
-        exports = project1.add("📁 exports", expand=True)
-        exports.add_leaf("📄 synthesis.md")
 ````
 
 ## File: brainstormbuddy/.obsidian/app.json
@@ -1632,12 +1480,10 @@ exports/
 ````yaml
 codecov:
   require_ci_to_pass: true
-
 coverage:
   precision: 2
   round: down
   range: "70...100"
-
   status:
     project:
       default:
@@ -1647,19 +1493,16 @@ coverage:
           default:
             target: 80%
         changes: false
-
     patch:
       default:
         target: 80%
         threshold: 2%
-
 comment:
   layout: "reach,diff,flags,tree"
   behavior: default
   require_changes: false
   require_base: false
   require_head: true
-
 ignore:
   - "tests/**/*"
   - "**/__init__.py"
@@ -1671,33 +1514,25 @@ ignore:
 ````python
 #!/usr/bin/env python3
 """Standalone script to materialize Claude configuration."""
-
 import sys
 from pathlib import Path
-
 from app.permissions.settings_writer import write_project_settings
-
-
 def main() -> None:
     """Main entry point for materialize-claude command."""
     if len(sys.argv) != 2:
         print("Usage: materialize_claude.py <destination_path>")
         print("Example: uv run materialize_claude.py /tmp/claude-work")
         sys.exit(1)
-
     dest = Path(sys.argv[1]).resolve()
-
     try:
         # Ensure the destination directory exists
         dest.mkdir(parents=True, exist_ok=True)
-
         # Generate the Claude configuration
         config_dir = write_project_settings(
             repo_root=dest,
             config_dir_name=".claude",
             import_hooks_from="app.permissions.hooks_lib",
         )
-
         print(f"✓ Successfully created Claude configuration at: {config_dir}")
         print(f"  Settings: {config_dir}/settings.json")
         print(f"  Hooks: {config_dir}/hooks/")
@@ -1705,23 +1540,33 @@ def main() -> None:
         print("To use this configuration with Claude Code:")
         print(f"  cd {dest}")
         print("  claude")
-
     except Exception as e:
         print(f"✗ Failed to create Claude configuration: {e}", file=sys.stderr)
         sys.exit(1)
-
-
 if __name__ == "__main__":
     main()
+````
+
+## File: app/core/config.py
+````python
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="BRAINSTORMBUDDY_")
+    data_dir: str = "projects"
+    exports_dir: str = "exports"
+    log_dir: str = "logs"
+    enable_web_tools: bool = False
+@lru_cache(maxsize=1)
+def load_settings() -> Settings:
+    return Settings()
 ````
 
 ## File: app/files/batch.py
 ````python
 """Batch diff builder and preview for atomic multi-file operations."""
-
 from dataclasses import dataclass, field
 from pathlib import Path
-
 from app.files.diff import (
     Patch,
     apply_patches,
@@ -1729,38 +1574,28 @@ from app.files.diff import (
     generate_diff_preview,
     is_unchanged,
 )
-
-
 @dataclass
 class FileChange:
     """Represents a pending change to a single file."""
-
     path: Path
     old_content: str
     new_content: str
-
     @property
     def is_new_file(self) -> bool:
         """Check if this represents a new file creation."""
         return self.old_content == ""
-
     @property
     def has_changes(self) -> bool:
         """Check if there are actual changes."""
         patch = compute_patch(self.old_content, self.new_content)
         return not is_unchanged(patch)
-
-
 @dataclass
 class BatchDiff:
     """Aggregates multiple file changes for atomic batch operations."""
-
     changes: list[FileChange] = field(default_factory=list)
-
     def add_file(self, path: Path | str, old_content: str, new_content: str) -> None:
         """
         Add a file change to the batch.
-
         Args:
             path: Path to the file
             old_content: Current content (empty string for new files)
@@ -1768,57 +1603,43 @@ class BatchDiff:
         """
         file_path = Path(path) if isinstance(path, str) else path
         change = FileChange(file_path, old_content, new_content)
-
         # Only add if there are actual changes
         if change.has_changes:
             self.changes.append(change)
-
     def add_new_file(self, path: Path | str, content: str) -> None:
         """
         Convenience method to add a new file creation.
-
         Args:
             path: Path to the new file
             content: Content for the new file
         """
         self.add_file(path, "", content)
-
     def add_existing_file(self, path: Path | str, new_content: str) -> None:
         """
         Add an existing file modification, reading current content.
-
         Args:
             path: Path to the existing file
             new_content: New content to write
-
         Raises:
             FileNotFoundError: If the file doesn't exist
         """
         file_path = Path(path) if isinstance(path, str) else path
-
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
-
         with open(file_path, encoding="utf-8") as f:
             old_content = f.read()
-
         self.add_file(file_path, old_content, new_content)
-
     def generate_preview(self, context_lines: int = 3) -> str:
         """
         Generate a combined diff preview for all changes.
-
         Args:
             context_lines: Number of context lines around changes
-
         Returns:
             Combined diff preview as a string
         """
         if not self.changes:
             return "No changes to preview."
-
         previews = []
-
         for change in self.changes:
             # Generate individual diff with file path as label
             diff = generate_diff_preview(
@@ -1828,7 +1649,6 @@ class BatchDiff:
                 from_label=str(change.path),
                 to_label=str(change.path),
             )
-
             # Add separator between files
             if diff != "No changes detected.":
                 previews.append(f"{'=' * 60}")
@@ -1837,163 +1657,118 @@ class BatchDiff:
                     previews.append("(new file)")
                 previews.append(f"{'=' * 60}")
                 previews.append(diff)
-
         if not previews:
             return "No changes to preview."
-
         return "\n".join(previews)
-
     def apply(self) -> list[Patch]:
         """
         Apply all changes atomically.
-
         Either all files are updated successfully, or none are modified.
         Uses temporary files and atomic replacement to ensure safety.
-
         Returns:
             List of Patch objects for applied changes
-
         Raises:
             IOError: If atomic replacement fails
             ValueError: If any file's current content doesn't match expected
         """
         if not self.changes:
             return []
-
         # Convert to format expected by apply_patches
         patches_list: list[tuple[Path | str, str, str]] = [
             (change.path, change.old_content, change.new_content) for change in self.changes
         ]
-
         # Apply all patches atomically
         return apply_patches(patches_list)
-
     def clear(self) -> None:
         """Clear all pending changes."""
         self.changes.clear()
-
     def __len__(self) -> int:
         """Return the number of pending changes."""
         return len(self.changes)
-
     def __bool__(self) -> bool:
         """Return True if there are pending changes."""
         return len(self.changes) > 0
-
-
 def create_batch_from_dict(files: dict[str, str], base_path: Path | None = None) -> BatchDiff:
     """
     Create a BatchDiff from a dictionary of relative paths to content.
-
     Args:
         files: Dictionary mapping relative paths to file content
         base_path: Base directory for resolving relative paths
-
     Returns:
         BatchDiff instance with all file changes
     """
     batch = BatchDiff()
-
     for rel_path, content in files.items():
         full_path = base_path / rel_path if base_path else Path(rel_path)
-
         # Check if file exists to determine old content
         if full_path.exists():
             with open(full_path, encoding="utf-8") as f:
                 old_content = f.read()
         else:
             old_content = ""
-
         batch.add_file(full_path, old_content, content)
-
     return batch
 ````
 
 ## File: app/files/mdio.py
 ````python
 """Markdown file I/O utilities."""
-
 from pathlib import Path
-
 from app.files.atomic import atomic_write_text
-
-
 def read_md(path: Path | str) -> str:
     """
     Read a markdown file and return its contents.
-
     Args:
         path: Path to the markdown file
-
     Returns:
         Contents of the markdown file
-
     Raises:
         FileNotFoundError: If the file doesn't exist
         IOError: If there's an error reading the file
     """
     file_path = Path(path) if isinstance(path, str) else path
-
     with open(file_path, encoding="utf-8") as f:
         return f.read()
-
-
 def write_md(path: Path | str, text: str) -> None:
     """
     Write text to a markdown file.
-
     Args:
         path: Path to the markdown file
         text: Content to write to the file
-
     Raises:
         IOError: If there's an error writing the file
     """
     file_path = Path(path) if isinstance(path, str) else path
-
     atomic_write_text(file_path, text)
 ````
 
 ## File: app/files/scaffold.py
 ````python
 """Project scaffold utility for creating standardized project structures."""
-
 from datetime import datetime
 from pathlib import Path
-
 import yaml
-
 from app.files.atomic import atomic_write_text
-
-
 def scaffold_project(slug: str, base: Path | str = "projects") -> Path:
     """
     Create a project directory structure with seed files.
-
     Args:
         slug: Project identifier (will be used as directory name)
         base: Base directory for projects (default: "projects")
-
     Returns:
         Path to the created/existing project directory
-
     The function is idempotent - running it multiple times with the same
     slug will not cause errors or duplicate content.
     """
     base_path = Path(base) if isinstance(base, str) else base
     project_path = base_path / slug
-
     # Create directory structure
     _create_directories(project_path)
-
     # Create seed files
     _create_project_yaml(project_path / "project.yaml", slug)
     _create_kernel_md(project_path / "kernel.md", slug)
     _create_outline_md(project_path / "outline.md", slug)
-
     return project_path
-
-
 def _create_directories(project_path: Path) -> None:
     """Create the required directory structure."""
     directories = [
@@ -2002,16 +1777,12 @@ def _create_directories(project_path: Path) -> None:
         project_path / "research",
         project_path / "exports",
     ]
-
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
-
-
 def _create_project_yaml(file_path: Path, slug: str) -> None:
     """Create project.yaml with basic metadata if it doesn't exist."""
     if file_path.exists():
         return
-
     project_data = {
         "name": slug,
         "created": datetime.now().isoformat(),
@@ -2023,85 +1794,54 @@ def _create_project_yaml(file_path: Path, slug: str) -> None:
             "format": "brainstormbuddy-project",
         },
     }
-
     with open(file_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(project_data, f, default_flow_style=False, sort_keys=False)
-
-
 def _create_kernel_md(file_path: Path, slug: str) -> None:
     """Create kernel.md with minimal structure if it doesn't exist."""
     if file_path.exists():
         return
-
     content = f"""---
 title: Kernel
 project: {slug}
 created: {datetime.now().isoformat()}
 stage: kernel
 ---
-
 # Kernel
-
 ## Core Concept
-
 *The essential idea or problem to explore.*
-
 ## Key Questions
-
 *What are we trying to answer or solve?*
-
 ## Success Criteria
-
 *How will we know when we've achieved our goal?*
 """
-
     atomic_write_text(file_path, content)
-
-
 def _create_outline_md(file_path: Path, slug: str) -> None:
     """Create outline.md with minimal structure if it doesn't exist."""
     if file_path.exists():
         return
-
     content = f"""---
 title: Outline
 project: {slug}
 created: {datetime.now().isoformat()}
 stage: outline
 ---
-
 # Outline
-
 ## Executive Summary
-
 *High-level overview of the project.*
-
 ## Main Sections
-
 ### Section 1
-
 *Key points and structure.*
-
 ### Section 2
-
 *Key points and structure.*
-
 ### Section 3
-
 *Key points and structure.*
-
 ## Next Steps
-
 *What needs to be done next?*
 """
-
     atomic_write_text(file_path, content)
-
-
 def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
     """
     Ensure a project exists, creating it if necessary.
-
     This is an alias for scaffold_project for clarity in different contexts.
     """
     return scaffold_project(slug, base)
@@ -2110,122 +1850,90 @@ def ensure_project_exists(slug: str, base: Path | str = "projects") -> Path:
 ## File: app/files/workstream.py
 ````python
 """Workstream document generation for outline and element files."""
-
 from datetime import datetime
 from pathlib import Path
-
 from app.files.batch import BatchDiff
-
-
 def generate_outline_content(project_name: str, kernel_summary: str | None = None) -> str:
     """
     Generate content for outline.md file.
-
     Args:
         project_name: Name of the project
         kernel_summary: Optional summary from kernel stage
-
     Returns:
         Markdown content for outline.md
     """
     timestamp = datetime.now().isoformat()
-
     kernel_section = ""
     if kernel_summary:
         kernel_section = f"""
 ## From Kernel
-
 {kernel_summary}
 """
-
     return f"""---
 title: Outline
 project: {project_name}
 created: {timestamp}
 stage: outline
 ---
-
 # Project Outline: {project_name}
-
 ## Executive Summary
-
 *A concise overview of the project's goals, scope, and expected outcomes.*
 {kernel_section}
-
 ## Core Objectives
-
 1. **Primary Goal**: *What is the main thing we're trying to achieve?*
 2. **Secondary Goals**: *What else would we like to accomplish?*
 3. **Success Metrics**: *How will we measure success?*
-
 ## Key Workstreams
-
 ### Requirements Definition
 - Functional requirements
 - Non-functional requirements
 - Constraints and assumptions
 - See: [requirements.md](elements/requirements.md)
-
 ### Research & Analysis
 - Background research
 - Market analysis
 - Technical feasibility
 - See: [research.md](elements/research.md)
-
 ### Solution Design
 - Architecture overview
 - Key components
 - Integration points
 - See: [design.md](elements/design.md)
-
 ### Implementation Plan
 - Phases and milestones
 - Resource requirements
 - Risk mitigation
 - See: [implementation.md](elements/implementation.md)
-
 ### Synthesis & Recommendations
 - Key findings
 - Recommended approach
 - Next steps
 - See: [synthesis.md](elements/synthesis.md)
-
 ## Timeline
-
 *Proposed timeline for the project.*
-
 | Phase | Duration | Key Deliverables |
 |-------|----------|------------------|
 | Research | 1-2 weeks | Research findings, feasibility analysis |
 | Design | 1 week | Architecture, specifications |
 | Implementation | 2-4 weeks | Working prototype/solution |
 | Testing & Refinement | 1 week | Validated solution |
-
 ## Open Questions
-
 - *What questions need to be answered before proceeding?*
 - *What assumptions need validation?*
 - *What dependencies need resolution?*
-
 ## Notes
-
 *Additional context, references, or considerations.*
 """
-
-
 def generate_element_content(element_type: str, project_name: str) -> str:
     """
     Generate content for element markdown files.
-
     Args:
         element_type: Type of element (requirements, research, design, etc.)
         project_name: Name of the project
-
     Returns:
         Markdown content for the element file
     """
     timestamp = datetime.now().isoformat()
-
     templates = {
         "requirements": f"""---
 title: Requirements
@@ -2234,55 +1942,40 @@ created: {timestamp}
 type: element
 workstream: requirements
 ---
-
 # Requirements
-
 ## Functional Requirements
-
 ### Core Features
 - *What must the solution do?*
 - *What are the essential capabilities?*
-
 ### User Stories
 - As a [user type], I want to [action] so that [benefit]
 - *Add more user stories as needed*
-
 ## Non-Functional Requirements
-
 ### Performance
 - *Response time expectations*
 - *Throughput requirements*
 - *Scalability needs*
-
 ### Security
 - *Authentication/authorization requirements*
 - *Data protection needs*
 - *Compliance requirements*
-
 ### Usability
 - *User experience requirements*
 - *Accessibility needs*
 - *Documentation requirements*
-
 ## Constraints
-
 ### Technical Constraints
 - *Platform limitations*
 - *Technology stack requirements*
 - *Integration requirements*
-
 ### Business Constraints
 - *Budget limitations*
 - *Timeline restrictions*
 - *Resource availability*
-
 ## Assumptions
-
 - *What are we assuming to be true?*
 - *What dependencies are we counting on?*
-
 ## Acceptance Criteria
-
 - *How will we know the requirements are met?*
 - *What tests or validations will we perform?*
 """,
@@ -2293,59 +1986,43 @@ created: {timestamp}
 type: element
 workstream: research
 ---
-
 # Research & Analysis
-
 ## Background Research
-
 ### Domain Context
 - *What is the problem space?*
 - *What are the key concepts?*
 - *What terminology is important?*
-
 ### Prior Art
 - *What existing solutions are there?*
 - *What can we learn from them?*
 - *What gaps do they leave?*
-
 ## Market Analysis
-
 ### Target Audience
 - *Who are the users?*
 - *What are their needs?*
 - *What are their pain points?*
-
 ### Competitive Landscape
 - *Who are the competitors?*
 - *What are their strengths/weaknesses?*
 - *What opportunities exist?*
-
 ## Technical Research
-
 ### Technology Options
 - *What technologies could we use?*
 - *What are the trade-offs?*
 - *What are the risks?*
-
 ### Feasibility Analysis
 - *Is the solution technically feasible?*
 - *What are the technical challenges?*
 - *What POCs or experiments are needed?*
-
 ## Key Findings
-
 1. **Finding 1**: *Description and implications*
 2. **Finding 2**: *Description and implications*
 3. **Finding 3**: *Description and implications*
-
 ## Recommendations
-
 - *Based on research, what do we recommend?*
 - *What approach should we take?*
 - *What should we avoid?*
-
 ## References
-
 - *List of sources, links, and citations*
 """,
         "design": f"""---
@@ -2355,71 +2032,53 @@ created: {timestamp}
 type: element
 workstream: design
 ---
-
 # Solution Design
-
 ## Architecture Overview
-
 ### High-Level Architecture
 - *System architecture diagram or description*
 - *Key components and their relationships*
 - *Data flow overview*
-
 ### Design Principles
 - *What principles guide the design?*
 - *What patterns are we following?*
 - *What best practices apply?*
-
 ## Component Design
-
 ### Core Components
 1. **Component 1**
    - Purpose: *What it does*
    - Responsibilities: *What it's responsible for*
    - Interfaces: *How it interacts with other components*
-
 2. **Component 2**
    - Purpose: *What it does*
    - Responsibilities: *What it's responsible for*
    - Interfaces: *How it interacts with other components*
-
 ### Data Model
 - *Data structures and schemas*
 - *Database design if applicable*
 - *Data flow and transformations*
-
 ## Integration Points
-
 ### External Systems
 - *What external systems do we integrate with?*
 - *What are the integration methods?*
 - *What are the data formats?*
-
 ### APIs and Interfaces
 - *What APIs do we expose?*
 - *What protocols do we use?*
 - *What are the contracts?*
-
 ## Security Design
-
 ### Authentication & Authorization
 - *How do we handle authentication?*
 - *How do we manage authorization?*
 - *What security patterns do we use?*
-
 ### Data Protection
 - *How do we protect data at rest?*
 - *How do we protect data in transit?*
 - *What encryption do we use?*
-
 ## Performance Considerations
-
 - *What are the performance bottlenecks?*
 - *How do we optimize for performance?*
 - *What caching strategies do we use?*
-
 ## Deployment Architecture
-
 - *How will the solution be deployed?*
 - *What infrastructure is required?*
 - *What are the scaling considerations?*
@@ -2431,95 +2090,74 @@ created: {timestamp}
 type: element
 workstream: implementation
 ---
-
 # Implementation Plan
-
 ## Development Approach
-
 ### Methodology
 - *Agile, Waterfall, or hybrid approach?*
 - *Sprint/iteration structure*
 - *Development workflow*
-
 ### Team Structure
 - *Required roles and responsibilities*
 - *Team size and composition*
 - *Communication structure*
-
 ## Phases and Milestones
-
 ### Phase 1: Foundation
 **Duration**: *X weeks*
 **Deliverables**:
 - *Core infrastructure setup*
 - *Basic functionality*
 - *Initial testing framework*
-
 ### Phase 2: Core Features
 **Duration**: *X weeks*
 **Deliverables**:
 - *Main feature implementation*
 - *Integration work*
 - *Testing and validation*
-
 ### Phase 3: Enhancement
 **Duration**: *X weeks*
 **Deliverables**:
 - *Additional features*
 - *Performance optimization*
 - *Polish and refinement*
-
 ### Phase 4: Deployment
 **Duration**: *X weeks*
 **Deliverables**:
 - *Production deployment*
 - *Documentation*
 - *Training materials*
-
 ## Resource Requirements
-
 ### Human Resources
 - *Developer hours needed*
 - *Specialist expertise required*
 - *Support staff needs*
-
 ### Technical Resources
 - *Development environments*
 - *Testing infrastructure*
 - *Production infrastructure*
-
 ### Tools and Licenses
 - *Required software tools*
 - *License costs*
 - *Third-party services*
-
 ## Risk Management
-
 ### Identified Risks
 1. **Risk 1**: *Description and impact*
    - Mitigation: *How we'll address it*
 2. **Risk 2**: *Description and impact*
    - Mitigation: *How we'll address it*
-
 ### Contingency Planning
 - *What if timelines slip?*
 - *What if resources are unavailable?*
 - *What if requirements change?*
-
 ## Quality Assurance
-
 ### Testing Strategy
 - *Unit testing approach*
 - *Integration testing plan*
 - *User acceptance testing*
-
 ### Code Quality
 - *Code review process*
 - *Quality metrics*
 - *Documentation standards*
-
 ## Success Criteria
-
 - *How do we know implementation is successful?*
 - *What metrics will we track?*
 - *What are the acceptance criteria?*
@@ -2531,90 +2169,64 @@ created: {timestamp}
 type: element
 workstream: synthesis
 ---
-
 # Synthesis & Recommendations
-
 ## Executive Summary
-
 *High-level summary of the entire project, findings, and recommendations.*
-
 ## Key Findings
-
 ### Finding 1: *Title*
 **Evidence**: *What supports this finding?*
 **Implications**: *What does this mean for the project?*
 **Confidence**: High/Medium/Low
-
 ### Finding 2: *Title*
 **Evidence**: *What supports this finding?*
 **Implications**: *What does this mean for the project?*
 **Confidence**: High/Medium/Low
-
 ### Finding 3: *Title*
 **Evidence**: *What supports this finding?*
 **Implications**: *What does this mean for the project?*
 **Confidence**: High/Medium/Low
-
 ## Integrated Analysis
-
 ### Connecting the Dots
 - *How do the findings relate to each other?*
 - *What patterns emerge?*
 - *What story do they tell together?*
-
 ### Trade-offs and Decisions
 - *What trade-offs were identified?*
 - *What decisions were made and why?*
 - *What alternatives were considered?*
-
 ## Recommendations
-
 ### Primary Recommendation
 **What**: *Clear statement of what should be done*
 **Why**: *Justification based on findings*
 **How**: *High-level approach*
 **When**: *Suggested timeline*
-
 ### Alternative Options
 1. **Option A**: *Description, pros, cons*
 2. **Option B**: *Description, pros, cons*
-
 ## Implementation Roadmap
-
 ### Immediate Next Steps (0-2 weeks)
 1. *Action item 1*
 2. *Action item 2*
 3. *Action item 3*
-
 ### Short-term Actions (2-8 weeks)
 - *Key activities and milestones*
-
 ### Long-term Vision (3+ months)
 - *Future enhancements and evolution*
-
 ## Critical Success Factors
-
 - *What must be in place for success?*
 - *What could derail the project?*
 - *What support is needed?*
-
 ## Conclusion
-
 *Final thoughts, key takeaways, and call to action.*
-
 ## Appendices
-
 ### A. Detailed Evidence
 *Supporting data, research details, calculations*
-
 ### B. Stakeholder Feedback
 *Input from various stakeholders*
-
 ### C. References and Resources
 *Bibliography, links, additional reading*
 """,
     }
-
     return templates.get(
         element_type,
         f"""---
@@ -2624,14 +2236,10 @@ created: {timestamp}
 type: element
 workstream: {element_type}
 ---
-
 # {element_type.title()}
-
 *Content for {element_type} workstream.*
 """,
     )
-
-
 def create_workstream_batch(
     project_path: Path,
     project_name: str,
@@ -2640,18 +2248,15 @@ def create_workstream_batch(
 ) -> BatchDiff:
     """
     Create a batch of workstream documents for a project.
-
     Args:
         project_path: Path to the project directory
         project_name: Name of the project
         kernel_summary: Optional summary from kernel stage
         include_elements: List of element types to include (default: all)
-
     Returns:
         BatchDiff instance ready to preview or apply
     """
     batch = BatchDiff()
-
     # Default elements if not specified
     if include_elements is None:
         include_elements = [
@@ -2661,33 +2266,26 @@ def create_workstream_batch(
             "implementation",
             "synthesis",
         ]
-
     # Add outline.md
     outline_path = project_path / "outline.md"
     outline_content = generate_outline_content(project_name, kernel_summary)
-
     if outline_path.exists():
         with open(outline_path, encoding="utf-8") as f:
             old_content = f.read()
     else:
         old_content = ""
-
     batch.add_file(outline_path, old_content, outline_content)
-
     # Add element files
     elements_dir = project_path / "elements"
     for element_type in include_elements:
         element_path = elements_dir / f"{element_type}.md"
         element_content = generate_element_content(element_type, project_name)
-
         if element_path.exists():
             with open(element_path, encoding="utf-8") as f:
                 old_content = f.read()
         else:
             old_content = ""
-
         batch.add_file(element_path, old_content, element_content)
-
     return batch
 ````
 
@@ -2726,142 +2324,79 @@ Example (exactly 2 lines in the jsonl block):
 ## File: app/tui/views/__init__.py
 ````python
 """View modules for the TUI application."""
-
 from .main_screen import MainScreen
-
 __all__ = ["MainScreen"]
 ````
 
-## File: app/tui/widgets/kernel_approval.py
+## File: app/tui/views/main_screen.py
 ````python
-"""Modal widget for approving kernel changes with diff preview."""
-
+"""Main screen view with three-pane structure."""
 from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer
-from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Static
-
-
-class KernelApprovalModal(ModalScreen[bool]):
-    """Modal for reviewing and approving kernel changes."""
-
+from textual.containers import Horizontal
+from textual.screen import Screen
+from textual.widgets import Footer, Header
+from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
+class MainScreen(Screen[None]):
+    """Main three-pane screen for the application."""
     DEFAULT_CSS = """
-    KernelApprovalModal {
-        align: center middle;
+    MainScreen {
+        layout: vertical;
     }
-
-    KernelApprovalModal > Container {
-        background: $surface;
-        width: 90%;
-        height: 80%;
-        border: thick $primary;
-        padding: 1;
-    }
-
-    KernelApprovalModal .diff-container {
+    Horizontal {
         height: 1fr;
-        margin-bottom: 1;
-        border: solid $primary;
-        padding: 1;
-    }
-
-    KernelApprovalModal .button-container {
-        height: 3;
-        align: center middle;
-    }
-
-    KernelApprovalModal Button {
-        margin: 0 1;
-        width: 16;
-    }
-
-    KernelApprovalModal .accept-button {
-        background: $success;
-    }
-
-    KernelApprovalModal .reject-button {
-        background: $warning;
     }
     """
-
-    BINDINGS = [
-        Binding("y", "accept", "Accept", priority=True),
-        Binding("n", "reject", "Reject", priority=True),
-        Binding("escape", "reject", "Cancel"),
-    ]
-
-    def __init__(
-        self,
-        diff_content: str,
-        project_slug: str,
-        name: str | None = None,
-        id: str | None = None,
-        classes: str | None = None,
-    ) -> None:
-        """
-        Initialize the kernel approval modal.
-
-        Args:
-            diff_content: The diff preview to display
-            project_slug: The project identifier
-            name: Optional widget name
-            id: Optional widget ID
-            classes: Optional CSS classes
-        """
-        super().__init__(name=name, id=id, classes=classes)
-        self.diff_content = diff_content
-        self.project_slug = project_slug
-
     def compose(self) -> ComposeResult:
-        """Compose the modal UI."""
-        with Container():
-            yield Label(f"[bold]Kernel Changes for Project: {self.project_slug}[/bold]")
-            yield Label("[dim]Review the changes below and approve or reject[/dim]")
+        """Compose the main three-pane layout."""
+        yield Header()
+        with Horizontal():
+            yield FileTree()
+            yield SessionViewer()
+            yield ContextPanel()
+        yield Footer()
+        yield CommandPalette()
+````
 
-            with ScrollableContainer(classes="diff-container"):
-                yield Static(self.diff_content, markup=True)
-
-            with Horizontal(classes="button-container"):
-                yield Button(
-                    "Accept (Y)",
-                    variant="success",
-                    classes="accept-button",
-                    id="accept",
-                )
-                yield Button(
-                    "Reject (N)",
-                    variant="warning",
-                    classes="reject-button",
-                    id="reject",
-                )
-
-    def action_accept(self) -> None:
-        """Accept the changes."""
-        self.dismiss(True)
-
-    def action_reject(self) -> None:
-        """Reject the changes."""
-        self.dismiss(False)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button press events."""
-        if event.button.id == "accept":
-            self.action_accept()
-        elif event.button.id == "reject":
-            self.action_reject()
+## File: app/tui/widgets/file_tree.py
+````python
+"""File tree widget for project navigation."""
+from textual.widgets import Tree
+class FileTree(Tree[str]):
+    """File tree for navigating project documents."""
+    DEFAULT_CSS = """
+    FileTree {
+        width: 30;
+        background: $surface;
+        border: solid $primary;
+    }
+    """
+    def __init__(self) -> None:
+        """Initialize the file tree with placeholder content."""
+        super().__init__("Projects", id="file-tree")
+    def on_mount(self) -> None:
+        """Populate the tree with placeholder project structure."""
+        root = self.root
+        root.expand()
+        # Add placeholder project structure
+        project1 = root.add("📁 example-project", expand=True)
+        project1.add_leaf("📄 kernel.md")
+        project1.add_leaf("📄 outline.md")
+        project1.add_leaf("📄 project.yaml")
+        elements = project1.add("📁 elements", expand=True)
+        elements.add_leaf("📄 workstream-1.md")
+        elements.add_leaf("📄 workstream-2.md")
+        research = project1.add("📁 research", expand=True)
+        research.add_leaf("📄 findings.md")
+        exports = project1.add("📁 exports", expand=True)
+        exports.add_leaf("📄 synthesis.md")
 ````
 
 ## File: app/tui/widgets/session_viewer.py
 ````python
 """Session viewer widget for displaying editor content or Claude streams."""
-
 from textual.widgets import RichLog
-
-
 class SessionViewer(RichLog):
     """Main content viewer for editing documents or viewing session output."""
-
     DEFAULT_CSS = """
     SessionViewer {
         background: $surface;
@@ -2869,11 +2404,9 @@ class SessionViewer(RichLog):
         padding: 1;
     }
     """
-
     def __init__(self) -> None:
         """Initialize the session viewer."""
         super().__init__(id="session-viewer", wrap=True, highlight=True, markup=True)
-
     def on_mount(self) -> None:
         """Display welcome message on mount."""
         self.write("[bold cyan]Welcome to Brainstorm Buddy[/bold cyan]\n")
@@ -2883,7 +2416,6 @@ class SessionViewer(RichLog):
         self.write("[yellow]Research[/yellow] → [yellow]Synthesis[/yellow] → ")
         self.write("[yellow]Export[/yellow]\n")
         self.write("\n[dim]Press ':' to open the command palette[/dim]")
-
     def write(
         self,
         content: object,
@@ -2895,7 +2427,6 @@ class SessionViewer(RichLog):
     ) -> "SessionViewer":
         """
         Write text to the viewer with optional scrolling.
-
         Args:
             content: Content to write (supports Rich markup)
             width: Width hint for content
@@ -2903,7 +2434,6 @@ class SessionViewer(RichLog):
             shrink: Whether to shrink content to fit
             scroll_end: Whether to scroll to the end after writing
             animate: Whether to animate scrolling
-
         Returns:
             Self for chaining
         """
@@ -2926,27 +2456,20 @@ class SessionViewer(RichLog):
 ## File: app/__init__.py
 ````python
 """Brainstorm Buddy - Python terminal-first brainstorming app."""
-
 __version__ = "0.1.0"
 ````
 
 ## File: app/cli.py
 ````python
 """Command-line interface for Brainstorm Buddy."""
-
 import sys
 from pathlib import Path
-
 import typer
-
 from app.permissions.settings_writer import write_project_settings
-
 app = typer.Typer(
     name="bb",
     help="Brainstorm Buddy CLI - Tools for managing brainstorming sessions and Claude configs",
 )
-
-
 @app.command()
 def materialize_claude(
     dest: str = typer.Option(..., "--dest", "-d", help="Destination path for .claude config"),
@@ -2955,17 +2478,14 @@ def materialize_claude(
     try:
         # Convert string to Path
         dest_path = Path(dest).resolve()
-
         # Ensure the destination directory exists
         dest_path.mkdir(parents=True, exist_ok=True)
-
         # Generate the Claude configuration
         config_dir = write_project_settings(
             repo_root=dest_path,
             config_dir_name=".claude",
             import_hooks_from="app.permissions.hooks_lib",
         )
-
         print(f"✓ Successfully created Claude configuration at: {config_dir}")
         print(f"  Settings: {config_dir}/settings.json")
         print(f"  Hooks: {config_dir}/hooks/")
@@ -2973,12 +2493,9 @@ def materialize_claude(
         print("To use this configuration with Claude Code:")
         print(f"  cd {dest_path}")
         print("  claude")
-
     except Exception as e:
         print(f"✗ Failed to create Claude configuration: {e}", file=sys.stderr)
         sys.exit(1)
-
-
 if __name__ == "__main__":
     app()
 ````
@@ -2997,7 +2514,6 @@ repos:
         args: [--fix]
       # Run the formatter.
       - id: ruff-format
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
@@ -3011,7 +2527,6 @@ repos:
       - id: debug-statements
       - id: mixed-line-ending
         args: ['--fix=lf']
-
 # Optional: Add mypy hook (commented out by default as it can be slow)
 # - repo: https://github.com/pre-commit/mirrors-mypy
 #   rev: v1.13.0
@@ -3021,47 +2536,1099 @@ repos:
 #       args: [--strict, --ignore-missing-imports]
 ````
 
+## File: test_fts_fix.py
+````python
+#!/usr/bin/env python3
+"""Test script to verify FTS sync fix works correctly."""
+import asyncio
+import sys
+from pathlib import Path
+# Add project to path
+sys.path.insert(0, str(Path(__file__).parent))
+from app.research.db import ResearchDB
+async def test_fts_sync() -> None:
+    """Test that FTS properly syncs with CRUD operations."""
+    db_path = Path("/tmp/test_fts_sync.db")
+    db_path.unlink(missing_ok=True)
+    async with ResearchDB(db_path) as db:
+        print("Testing FTS sync with CRUD operations...")
+        # Insert a finding
+        finding_id = await db.insert_finding(
+            url="https://example.com",
+            source_type="web",
+            claim="Original searchable claim",
+            evidence="Original evidence",
+            confidence=0.7,
+        )
+        print(f"✓ Inserted finding with ID: {finding_id}")
+        # Search for original term
+        results = await db.search_fts("searchable")
+        assert len(results) == 1, f"Expected 1 result for 'searchable', got {len(results)}"
+        print("✓ Found 1 result for 'searchable' before update")
+        # Update the claim
+        success = await db.update_finding(finding_id, claim="Updated different claim")
+        assert success, "Failed to update finding"
+        print("✓ Updated finding claim")
+        # Search for old term (should not find)
+        results = await db.search_fts("searchable")
+        assert (
+            len(results) == 0
+        ), f"Expected 0 results for 'searchable' after update, got {len(results)}"
+        print("✓ Found 0 results for 'searchable' after update")
+        # Search for new term (should find)
+        results = await db.search_fts("different")
+        assert len(results) == 1, f"Expected 1 result for 'different', got {len(results)}"
+        print("✓ Found 1 result for 'different' after update")
+        # Delete and verify
+        success = await db.delete_finding(finding_id)
+        assert success, "Failed to delete finding"
+        results = await db.search_fts("different")
+        assert len(results) == 0, f"Expected 0 results after delete, got {len(results)}"
+        print("✓ Found 0 results after delete")
+        print("\n✅ All FTS sync tests passed!")
+    # Cleanup
+    db_path.unlink(missing_ok=True)
+if __name__ == "__main__":
+    try:
+        asyncio.run(test_fts_sync())
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}", file=sys.stderr)
+        sys.exit(1)
+````
+
+## File: .github/workflows/release.yml
+````yaml
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+    - name: Create virtual environment and install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install ruff mypy pytest build
+    - name: Run full test suite
+      run: |
+        source .venv/bin/activate
+        ruff check .
+        mypy . --strict
+        pytest -q
+    - name: Build package
+      run: |
+        source .venv/bin/activate
+        python -m build
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+    - name: Publish to PyPI
+      if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha')
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        source .venv/bin/activate
+        uv pip install twine
+        twine upload dist/*
+````
+
+## File: .github/workflows/security.yml
+````yaml
+name: Security
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+    - name: Create virtual environment and install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+    - name: Check for dependency vulnerabilities with pip-audit
+      run: |
+        uv pip install pip-audit
+        source .venv/bin/activate
+        pip-audit
+    - name: Run Bandit security linter
+      run: |
+        uv pip install bandit[toml]
+        source .venv/bin/activate
+        bandit -r app/ -ll
+    - name: Check for outdated dependencies
+      run: |
+        uv pip list --outdated
+      continue-on-error: true
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+    - uses: actions/checkout@v5
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+````
+
+## File: app/research/db.py
+````python
+"""SQLite database with FTS for research findings."""
+import json
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Self
+import aiosqlite
+class ResearchDB:
+    """Async SQLite database for research findings with FTS support."""
+    def __init__(self, db_path: Path | str) -> None:
+        """Initialize database with path."""
+        self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
+        self.conn: aiosqlite.Connection | None = None
+    async def __aenter__(self) -> Self:
+        """Enter async context manager."""
+        self.conn = await aiosqlite.connect(str(self.db_path))
+        await self.init_db()
+        return self
+    async def __aexit__(self, *args: Any) -> None:
+        """Exit async context manager."""
+        if self.conn:
+            await self.conn.close()
+            self.conn = None
+    async def init_db(self) -> None:
+        """Initialize database schema and FTS index."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        # Create schema version table for migrations
+        await self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        # Insert initial version if not exists
+        await self.conn.execute("""
+            INSERT OR IGNORE INTO schema_version (version) VALUES (1)
+        """)
+        # Create main findings table
+        await self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS findings (
+                id TEXT PRIMARY KEY,
+                url TEXT,
+                source_type TEXT,
+                claim TEXT,
+                evidence TEXT,
+                confidence REAL,
+                tags TEXT,
+                workstream TEXT,
+                retrieved_at TEXT
+            )
+        """)
+        # Create indexes for better query performance
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_workstream ON findings(workstream)
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_source_type ON findings(source_type)
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_confidence ON findings(confidence)
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_retrieved_at ON findings(retrieved_at)
+        """)
+        # Create FTS5 virtual table for full-text search
+        # Note: We don't use content=findings because it causes FTS5 to read
+        # directly from the findings table, bypassing our trigger updates
+        await self.conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS findings_fts USING fts5(
+                id UNINDEXED,
+                claim,
+                evidence
+            )
+        """)
+        # Create triggers to keep FTS in sync
+        # Drop old triggers first to ensure clean state
+        await self.conn.execute("DROP TRIGGER IF EXISTS findings_ai")
+        await self.conn.execute("DROP TRIGGER IF EXISTS findings_ad")
+        await self.conn.execute("DROP TRIGGER IF EXISTS findings_au")
+        await self.conn.execute("""
+            CREATE TRIGGER findings_ai
+            AFTER INSERT ON findings BEGIN
+                INSERT INTO findings_fts(id, claim, evidence)
+                VALUES (new.id, new.claim, new.evidence);
+            END
+        """)
+        await self.conn.execute("""
+            CREATE TRIGGER findings_ad
+            AFTER DELETE ON findings BEGIN
+                DELETE FROM findings_fts WHERE id = old.id;
+            END
+        """)
+        await self.conn.execute("""
+            CREATE TRIGGER findings_au
+            AFTER UPDATE ON findings BEGIN
+                DELETE FROM findings_fts WHERE id = old.id;
+                INSERT INTO findings_fts(id, claim, evidence)
+                VALUES (new.id, new.claim, new.evidence);
+            END
+        """)
+        await self.conn.commit()
+    async def insert_finding(
+        self,
+        url: str,
+        source_type: str,
+        claim: str,
+        evidence: str,
+        confidence: float,
+        tags: list[str] | None = None,
+        workstream: str | None = None,
+    ) -> str:
+        """Insert a new finding and return its ID."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        finding_id = str(uuid.uuid4())
+        tags_json = json.dumps(tags or [])
+        retrieved_at = datetime.now(UTC).isoformat()
+        await self.conn.execute(
+            """
+            INSERT INTO findings (id, url, source_type, claim, evidence,
+                                confidence, tags, workstream, retrieved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                finding_id,
+                url,
+                source_type,
+                claim,
+                evidence,
+                confidence,
+                tags_json,
+                workstream,
+                retrieved_at,
+            ),
+        )
+        await self.conn.commit()
+        return finding_id
+    async def update_finding(
+        self,
+        finding_id: str,
+        url: str | None = None,
+        source_type: str | None = None,
+        claim: str | None = None,
+        evidence: str | None = None,
+        confidence: float | None = None,
+        tags: list[str] | None = None,
+        workstream: str | None = None,
+    ) -> bool:
+        """Update an existing finding. Returns True if found and updated."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        # Get current values
+        async with self.conn.execute(
+            "SELECT * FROM findings WHERE id = ?", (finding_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return False
+        # Build update query dynamically
+        updates = []
+        params: list[Any] = []
+        if url is not None:
+            updates.append("url = ?")
+            params.append(url)
+        if source_type is not None:
+            updates.append("source_type = ?")
+            params.append(source_type)
+        if claim is not None:
+            updates.append("claim = ?")
+            params.append(claim)
+        if evidence is not None:
+            updates.append("evidence = ?")
+            params.append(evidence)
+        if confidence is not None:
+            updates.append("confidence = ?")
+            params.append(confidence)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags))
+        if workstream is not None:
+            updates.append("workstream = ?")
+            params.append(workstream)
+        if not updates:
+            return True  # Nothing to update
+        params.append(finding_id)
+        query = f"UPDATE findings SET {', '.join(updates)} WHERE id = ?"
+        await self.conn.execute(query, params)
+        await self.conn.commit()
+        return True
+    async def delete_finding(self, finding_id: str) -> bool:
+        """Delete a finding. Returns True if found and deleted."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        cursor = await self.conn.execute("DELETE FROM findings WHERE id = ?", (finding_id,))
+        await self.conn.commit()
+        return cursor.rowcount > 0
+    async def get_finding(self, finding_id: str) -> dict[str, Any] | None:
+        """Get a finding by ID."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        async with self.conn.execute(
+            "SELECT * FROM findings WHERE id = ?", (finding_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row[0],
+                "url": row[1],
+                "source_type": row[2],
+                "claim": row[3],
+                "evidence": row[4],
+                "confidence": row[5],
+                "tags": json.loads(row[6]) if row[6] else [],
+                "workstream": row[7],
+                "retrieved_at": row[8],
+            }
+    async def search_fts(self, query: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Search findings using full-text search on claim and evidence."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        results = []
+        async with self.conn.execute(
+            """
+            SELECT f.*
+            FROM findings f
+            JOIN findings_fts fts ON f.id = fts.id
+            WHERE findings_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+            """,
+            (query, limit),
+        ) as cursor:
+            async for row in cursor:
+                results.append(
+                    {
+                        "id": row[0],
+                        "url": row[1],
+                        "source_type": row[2],
+                        "claim": row[3],
+                        "evidence": row[4],
+                        "confidence": row[5],
+                        "tags": json.loads(row[6]) if row[6] else [],
+                        "workstream": row[7],
+                        "retrieved_at": row[8],
+                    }
+                )
+        return results
+    async def list_findings(
+        self,
+        workstream: str | None = None,
+        source_type: str | None = None,
+        min_confidence: float | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List findings with optional filters."""
+        if not self.conn:
+            raise RuntimeError("Database not connected")
+        conditions = []
+        params: list[Any] = []
+        if workstream:
+            conditions.append("workstream = ?")
+            params.append(workstream)
+        if source_type:
+            conditions.append("source_type = ?")
+            params.append(source_type)
+        if min_confidence is not None:
+            conditions.append("confidence >= ?")
+            params.append(min_confidence)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(limit)
+        query = f"""
+            SELECT * FROM findings
+            {where_clause}
+            ORDER BY retrieved_at DESC
+            LIMIT ?
+        """
+        results = []
+        async with self.conn.execute(query, params) as cursor:
+            async for row in cursor:
+                results.append(
+                    {
+                        "id": row[0],
+                        "url": row[1],
+                        "source_type": row[2],
+                        "claim": row[3],
+                        "evidence": row[4],
+                        "confidence": row[5],
+                        "tags": json.loads(row[6]) if row[6] else [],
+                        "workstream": row[7],
+                        "retrieved_at": row[8],
+                    }
+                )
+        return results
+````
+
+## File: app/tui/widgets/__init__.py
+````python
+"""Reusable widget components for the TUI."""
+from .command_palette import CommandPalette
+from .context_panel import ContextPanel
+from .file_tree import FileTree
+from .kernel_approval import KernelApprovalModal
+from .session_viewer import SessionViewer
+__all__ = [
+    "CommandPalette",
+    "ContextPanel",
+    "FileTree",
+    "KernelApprovalModal",
+    "SessionViewer",
+]
+````
+
+## File: app/tui/widgets/kernel_approval.py
+````python
+"""Modal widget for approving kernel changes with diff preview."""
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.screen import ModalScreen
+from textual.widgets import Button, Label, Static
+class KernelApprovalModal(ModalScreen[bool]):
+    """Modal for reviewing and approving kernel changes."""
+    DEFAULT_CSS = """
+    KernelApprovalModal {
+        align: center middle;
+    }
+    KernelApprovalModal > Container {
+        background: $surface;
+        width: 90%;
+        height: 80%;
+        border: thick $primary;
+        padding: 1;
+    }
+    KernelApprovalModal .diff-container {
+        height: 1fr;
+        margin-bottom: 1;
+        border: solid $primary;
+        padding: 1;
+    }
+    KernelApprovalModal .button-container {
+        height: 3;
+        align: center middle;
+    }
+    KernelApprovalModal Button {
+        margin: 0 1;
+        width: 16;
+    }
+    KernelApprovalModal .accept-button {
+        background: $success;
+    }
+    KernelApprovalModal .reject-button {
+        background: $warning;
+    }
+    """
+    BINDINGS = [
+        Binding("y", "accept", "Accept", priority=True),
+        Binding("n", "reject", "Reject", priority=True),
+        Binding("escape", "reject", "Cancel"),
+    ]
+    def __init__(
+        self,
+        diff_content: str,
+        project_slug: str,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        """
+        Initialize the kernel approval modal.
+        Args:
+            diff_content: The diff preview to display
+            project_slug: The project identifier
+            name: Optional widget name
+            id: Optional widget ID
+            classes: Optional CSS classes
+        """
+        super().__init__(name=name, id=id, classes=classes)
+        self.diff_content = diff_content
+        self.project_slug = project_slug
+    def compose(self) -> ComposeResult:
+        """Compose the modal UI."""
+        with Container():
+            yield Label(f"[bold]Kernel Changes for Project: {self.project_slug}[/bold]")
+            yield Label("[dim]Review the changes below and approve or reject[/dim]")
+            with ScrollableContainer(classes="diff-container"):
+                yield Static(self.diff_content, markup=False)
+            with Horizontal(classes="button-container"):
+                yield Button(
+                    "Accept (Y)",
+                    variant="success",
+                    classes="accept-button",
+                    id="accept",
+                )
+                yield Button(
+                    "Reject (N)",
+                    variant="warning",
+                    classes="reject-button",
+                    id="reject",
+                )
+    def action_accept(self) -> None:
+        """Accept the changes."""
+        self.dismiss(True)
+    def action_reject(self) -> None:
+        """Reject the changes."""
+        self.dismiss(False)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
+        if event.button.id == "accept":
+            self.action_accept()
+        elif event.button.id == "reject":
+            self.action_reject()
+````
+
 ## File: requirements-dev.txt
 ````
-# Development dependencies for brainstormbuddy
-# Install with: uv pip install -r requirements-dev.txt
+# This file was autogenerated by uv via the following command:
+#    uv pip compile pyproject.toml --extra dev -o requirements-dev.txt --python-version 3.11 --no-strip-extras
+aiofiles==24.1.0
+    # via brainstormbuddy (pyproject.toml)
+aiosqlite==0.21.0
+    # via brainstormbuddy (pyproject.toml)
+annotated-types==0.7.0
+    # via pydantic
+cfgv==3.4.0
+    # via pre-commit
+click==8.2.1
+    # via typer
+distlib==0.4.0
+    # via virtualenv
+filelock==3.19.1
+    # via virtualenv
+identify==2.6.13
+    # via pre-commit
+iniconfig==2.1.0
+    # via pytest
+linkify-it-py==2.0.3
+    # via markdown-it-py
+markdown-it-py[linkify, plugins]==3.0.0
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   mdformat
+    #   mdit-py-plugins
+    #   rich
+    #   textual
+mdformat==0.7.22
+    # via brainstormbuddy (pyproject.toml)
+mdit-py-plugins==0.5.0
+    # via markdown-it-py
+mdurl==0.1.2
+    # via markdown-it-py
+mypy==1.17.1
+    # via brainstormbuddy (pyproject.toml)
+mypy-extensions==1.1.0
+    # via mypy
+nodeenv==1.9.1
+    # via pre-commit
+packaging==25.0
+    # via pytest
+pathspec==0.12.1
+    # via mypy
+platformdirs==4.3.8
+    # via
+    #   textual
+    #   virtualenv
+pluggy==1.6.0
+    # via pytest
+pre-commit==4.3.0
+    # via brainstormbuddy (pyproject.toml)
+pydantic==2.11.7
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   pydantic-settings
+pydantic-core==2.33.2
+    # via pydantic
+pydantic-settings==2.10.1
+    # via brainstormbuddy (pyproject.toml)
+pygments==2.19.2
+    # via
+    #   pytest
+    #   rich
+    #   textual
+pytest==8.4.1
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   pytest-asyncio
+pytest-asyncio==1.1.0
+    # via brainstormbuddy (pyproject.toml)
+python-dotenv==1.1.1
+    # via pydantic-settings
+pyyaml==6.0.2
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   pre-commit
+rich==14.1.0
+    # via
+    #   textual
+    #   typer
+ruff==0.12.9
+    # via brainstormbuddy (pyproject.toml)
+shellingham==1.5.4
+    # via typer
+textual==5.3.0
+    # via brainstormbuddy (pyproject.toml)
+typer==0.16.1
+    # via brainstormbuddy (pyproject.toml)
+types-pyyaml==6.0.12.20250809
+    # via brainstormbuddy (pyproject.toml)
+typing-extensions==4.14.1
+    # via
+    #   brainstormbuddy (pyproject.toml)
+    #   aiosqlite
+    #   mypy
+    #   pydantic
+    #   pydantic-core
+    #   textual
+    #   typer
+    #   typing-inspection
+typing-inspection==0.4.1
+    # via
+    #   pydantic
+    #   pydantic-settings
+uc-micro-py==1.0.3
+    # via linkify-it-py
+virtualenv==20.34.0
+    # via pre-commit
+````
 
-# Testing
-pytest>=8.3.0
-pytest-asyncio>=0.23.0
-pytest-cov>=5.0.0
+## File: app/files/diff.py
+````python
+"""Diff and patch utilities for atomic file operations."""
+import difflib
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from app.files.atomic import atomic_write_text
+@dataclass
+class Patch:
+    """Represents a patch to be applied to a file."""
+    original: str
+    modified: str
+    diff_lines: list[str]
+def compute_patch(old: str, new: str) -> Patch:
+    """
+    Compute a patch representing the difference between two strings.
+    Args:
+        old: Original text content
+        new: Modified text content
+    Returns:
+        Patch object containing the diff information
+    """
+    # Split into lines while preserving line endings
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    # Generate unified diff
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        lineterm="",
+    )
+    return Patch(
+        original=old,
+        modified=new,
+        diff_lines=list(diff),
+    )
+def apply_patch(path: Path | str, patch: Patch) -> None:
+    """
+    Apply a patch to a file atomically using temp file and replace.
+    This ensures the file is either fully updated or not modified at all,
+    preventing partial writes in case of errors.
+    Args:
+        path: Path to the file to patch
+        patch: Patch object to apply
+    Raises:
+        IOError: If there's an error during the atomic write operation
+    """
+    # Delegate to atomic_write_text for the actual atomic write
+    atomic_write_text(path, patch.modified)
+def generate_diff_preview(
+    old: str,
+    new: str,
+    context_lines: int = 3,
+    from_label: str | None = None,
+    to_label: str | None = None,
+) -> str:
+    """
+    Generate a human-readable diff preview.
+    Args:
+        old: Original text content
+        new: Modified text content
+        context_lines: Number of context lines to show around changes
+        from_label: Optional label for the original file (defaults to "before")
+        to_label: Optional label for the modified file (defaults to "after")
+    Returns:
+        String representation of the diff suitable for display
+    """
+    # Split into lines while preserving line endings
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    # Generate unified diff with specified context
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        fromfile=from_label if from_label is not None else "before",
+        tofile=to_label if to_label is not None else "after",
+        n=context_lines,
+        lineterm="",
+    )
+    diff_lines = list(diff)
+    if not diff_lines:
+        return "No changes detected."
+    # Join with newlines for readable output
+    return "\n".join(diff_lines)
+def is_unchanged(patch: Patch) -> bool:
+    """
+    Check if a patch represents no changes.
+    Args:
+        patch: Patch object to check
+    Returns:
+        True if the patch represents no changes, False otherwise
+    """
+    return patch.original == patch.modified or len(patch.diff_lines) == 0
+def apply_patch_from_strings(path: Path | str, old_content: str, new_content: str) -> Patch | None:
+    """
+    Helper function to compute and apply a patch in one operation.
+    Args:
+        path: Path to the file to patch
+        old_content: Expected current content (for verification)
+        new_content: New content to write
+    Returns:
+        The applied Patch object, or None if no changes were needed
+    Raises:
+        ValueError: If the current file content doesn't match old_content
+        IOError: If there's an error during the write operation
+    """
+    file_path = Path(path) if isinstance(path, str) else path
+    # Read current content if file exists
+    if file_path.exists():
+        with open(file_path, encoding="utf-8") as f:
+            current = f.read()
+        if current != old_content:
+            raise ValueError(f"Current content of {file_path} doesn't match expected old_content")
+    # Compute patch
+    patch = compute_patch(old_content, new_content)
+    # Only apply if there are changes
+    if not is_unchanged(patch):
+        apply_patch(file_path, patch)
+        return patch
+    return None
+def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
+    """
+    Apply multiple file edits atomically (all-or-nothing).
+    This function ensures that either all patches are applied successfully,
+    or none are applied at all. It writes all temporary files first, then
+    replaces all targets atomically. On any failure, all temporary files
+    are cleaned up and original files remain unchanged.
+    Args:
+        patches: List of tuples containing (path, old_content, new_content)
+    Returns:
+        List of Patch objects for each changed file
+    Raises:
+        IOError: If there's an error during the atomic write operations
+        ValueError: If any file's current content doesn't match expected
+    """
+    # Prepare all patches and temp files
+    temp_files: list[tuple[Path, Path, int | None, str, bool]] = []
+    computed_patches: list[Patch] = []
+    backup_files: list[tuple[Path, Path]] = []
+    try:
+        for path_input, old_content, new_content in patches:
+            file_path = Path(path_input) if isinstance(path_input, str) else path_input
+            # Track whether file existed before operation
+            existed_before = file_path.exists()
+            # Read and verify current content if file exists
+            if existed_before:
+                with open(file_path, encoding="utf-8") as f:
+                    current = f.read()
+                if current != old_content:
+                    raise ValueError(
+                        f"Current content of {file_path} doesn't match expected old_content"
+                    )
+                # Preserve file mode
+                file_mode = os.stat(file_path).st_mode
+            else:
+                file_mode = None
+                current = ""
+                # Ensure parent directory exists
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+            # Compute patch
+            patch = compute_patch(old_content, new_content)
+            # Skip unchanged files
+            if is_unchanged(patch):
+                continue
+            computed_patches.append(patch)
+            # Write to temporary file
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=file_path.parent,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_file:
+                tmp_file.write(new_content)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+                tmp_path = Path(tmp_file.name)
+            # Store temp file info for later replacement
+            temp_files.append((file_path, tmp_path, file_mode, current, existed_before))
+        # Create backups of existing files before replacement
+        for target_path, _, _, original_content, existed_before in temp_files:
+            if existed_before:
+                # Create backup file
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=target_path.parent,
+                    delete=False,
+                    suffix=".backup",
+                ) as backup_file:
+                    backup_file.write(original_content)
+                    backup_file.flush()
+                    os.fsync(backup_file.fileno())
+                    backup_path = Path(backup_file.name)
+                backup_files.append((target_path, backup_path))
+        # Now replace all files
+        completed_replacements = []
+        try:
+            for target_path, temp_path, file_mode, _, _ in temp_files:
+                # Preserve file mode if it existed
+                if file_mode is not None:
+                    os.chmod(temp_path, file_mode)
+                # Atomic replace
+                temp_path.replace(target_path)
+                completed_replacements.append(target_path)
+            # Fsync parent directories for durability (best-effort)
+            # Collect unique parent directories
+            parent_dirs = set()
+            for target_path, _, _, _, _ in temp_files:
+                parent_dirs.add(target_path.parent)
+            # Fsync each parent directory once
+            for parent_dir in parent_dirs:
+                try:
+                    dfd = os.open(parent_dir, os.O_DIRECTORY)
+                    try:
+                        os.fsync(dfd)
+                    finally:
+                        os.close(dfd)
+                except OSError:
+                    # Platform/filesystem doesn't support directory fsync
+                    pass
+        except Exception as e:
+            # Restore original files from backups or remove newly created files
+            for target_path in completed_replacements:
+                # Find if this file existed before the operation
+                existed_before = False
+                for file_path, _, _, _, file_existed in temp_files:
+                    if file_path == target_path:
+                        existed_before = file_existed
+                        break
+                if existed_before:
+                    # Find the backup for this file and restore it
+                    for orig_path, backup_path in backup_files:
+                        if orig_path == target_path:
+                            backup_path.replace(target_path)
+                            break
+                else:
+                    # File didn't exist before, remove it
+                    target_path.unlink(missing_ok=True)
+            # Clean up any remaining temp files
+            for target_path, temp_path, _, _, _ in temp_files:
+                if target_path not in completed_replacements:
+                    temp_path.unlink(missing_ok=True)
+            # Clean up backup files
+            for _, backup_path in backup_files:
+                backup_path.unlink(missing_ok=True)
+            raise OSError(f"Failed to atomically replace files: {e}") from e
+        # Success - clean up backup files
+        for _, backup_path in backup_files:
+            backup_path.unlink(missing_ok=True)
+    except Exception:
+        # Clean up any temp files created before the error
+        for _, temp_path, _, _, _ in temp_files:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+        raise
+    return computed_patches
+````
 
-# Linting and formatting
-ruff>=0.7.0
-
-# Type checking
-mypy>=1.13.0
-types-PyYAML>=6.0
-pytest-stub>=1.1.0
-
-# CLI
-typer>=0.9.0
-
-# Pre-commit hooks (optional)
-pre-commit>=4.3.0
-
-# Security and packaging (optional)
-pip-audit>=2.7.0
-bandit[toml]>=1.7.0
-build>=1.0.0
-twine>=5.0.0
+## File: app/permissions/settings_writer.py
+````python
+"""Settings writer for Claude project configuration."""
+import json
+from pathlib import Path
+from typing import Any
+def write_project_settings(
+    repo_root: Path = Path("."),
+    config_dir_name: str = ".claude",
+    import_hooks_from: str = "app.permissions.hooks_lib",
+) -> Path:
+    """
+    Write Claude project settings with deny-first permissions and hook configuration.
+    Args:
+        repo_root: Root directory of the repository (default: current directory)
+        config_dir_name: Name of the configuration directory (default: ".claude")
+        import_hooks_from: Python module path to import hooks from (default: "app.permissions.hooks_lib")
+    Returns:
+        Path to the created configuration directory
+    """
+    repo_root = Path(repo_root)
+    config_dir = repo_root / config_dir_name
+    hooks_dir = config_dir / "hooks"
+    # Ensure directories exist
+    config_dir.mkdir(exist_ok=True)
+    hooks_dir.mkdir(exist_ok=True)
+    # Define settings structure
+    settings: dict[str, Any] = {
+        "permissions": {
+            "allow": ["Read", "Edit", "Write"],
+            "deny": ["Bash", "WebSearch", "WebFetch"],
+            "denyPaths": [".env*", "secrets/**", ".git/**"],
+            "writeRoots": ["projects/**", "exports/**"],
+        },
+        "hooks": {
+            "PreToolUse": f"{config_dir_name}/hooks/gate.py",
+            "PostToolUse": f"{config_dir_name}/hooks/format_md.py",
+        },
+    }
+    # Write settings.json
+    settings_path = config_dir / "settings.json"
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")  # Add trailing newline
+    # Create hook stub files
+    _create_gate_hook(hooks_dir / "gate.py")
+    _create_format_md_hook(hooks_dir / "format_md.py", import_hooks_from)
+    return config_dir
+def _create_gate_hook(hook_path: Path) -> None:
+    """
+    Create the PreToolUse gate hook stub.
+    Args:
+        hook_path: Path to the hook file
+    """
+    hook_content = '''#!/usr/bin/env python3
+"""Claude PreToolUse hook."""
+# TODO: Implement PreToolUse hook logic
+# This hook is called pre tool use
+def main():
+    """Main hook entry point."""
+    pass
+if __name__ == "__main__":
+    main()
+'''
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(hook_content)
+    # Make the hook executable (Python will handle this cross-platform)
+    hook_path.chmod(0o755)
+def _create_format_md_hook(hook_path: Path, import_hooks_from: str) -> None:
+    """
+    Create the PostToolUse format_md hook that imports from hooks_lib.
+    Args:
+        hook_path: Path to the hook file
+        import_hooks_from: Python module path to import hooks from
+    """
+    hook_content = f'''#!/usr/bin/env python3
+"""Claude PostToolUse hook: format Markdown via mdformat (pure Python)."""
+from __future__ import annotations
+import json
+import sys
+from pathlib import Path
+# Import formatting function and atomic writer from the app's hooks library
+from {import_hooks_from}.format_md import _format_markdown_text
+from {import_hooks_from}.io import atomic_replace_text
+def main() -> None:
+    """Main hook entry point."""
+    # stdin JSON: dict with tool_name and target_path keys
+    payload = json.load(sys.stdin)
+    path = Path(payload.get("target_path") or "")
+    if path.suffix.lower() != ".md":
+        sys.exit(0)
+    # Read, format, write back atomically with durability guarantees
+    content = path.read_text(encoding="utf-8") if path.exists() else ""
+    formatted = _format_markdown_text(content)
+    if formatted != content:
+        atomic_replace_text(path, formatted)
+    sys.exit(0)
+if __name__ == "__main__":
+    main()
+'''
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(hook_content)
+    # Make the hook executable (Python will handle this cross-platform)
+    hook_path.chmod(0o755)
 ````
 
 ## File: requirements.txt
 ````
 # This file was autogenerated by uv via the following command:
-#    uv pip compile pyproject.toml -o requirements.txt
+#    uv pip compile pyproject.toml -o requirements.txt --python-version 3.11
 aiofiles==24.1.0
     # via brainstormbuddy (pyproject.toml)
-aiosqlite==0.20.0
+aiosqlite==0.21.0
     # via brainstormbuddy (pyproject.toml)
 annotated-types==0.7.0
     # via pydantic
+click==8.2.1
+    # via typer
 linkify-it-py==2.0.3
     # via markdown-it-py
 markdown-it-py==3.0.0
@@ -3097,6 +3664,8 @@ rich==14.1.0
     # via textual
 textual==0.86.3
     # via brainstormbuddy (pyproject.toml)
+typer==0.9.0
+    # via brainstormbuddy (pyproject.toml)
 typing-extensions==4.14.1
     # via
     #   brainstormbuddy (pyproject.toml)
@@ -3104,6 +3673,7 @@ typing-extensions==4.14.1
     #   pydantic
     #   pydantic-core
     #   textual
+    #   typer
     #   typing-inspection
 typing-inspection==0.4.1
     # via
@@ -3111,368 +3681,134 @@ typing-inspection==0.4.1
     #   pydantic-settings
 uc-micro-py==1.0.3
     # via linkify-it-py
-typer==0.9.0  # CLI framework
 ````
 
-## File: app/tui/widgets/__init__.py
+## File: app/llm/claude_client.py
 ````python
-"""Reusable widget components for the TUI."""
-
-from .command_palette import CommandPalette
-from .context_panel import ContextPanel
-from .file_tree import FileTree
-from .kernel_approval import KernelApprovalModal
-from .session_viewer import SessionViewer
-
-__all__ = [
-    "CommandPalette",
-    "ContextPanel",
-    "FileTree",
-    "KernelApprovalModal",
-    "SessionViewer",
-]
-````
-
-## File: app/files/diff.py
-````python
-"""Diff and patch utilities for atomic file operations."""
-
-import difflib
-import os
-import tempfile
+"""Claude client interface with streaming support and fake implementation."""
+from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from pathlib import Path
-
-from app.files.atomic import atomic_write_text
-
-
-@dataclass
-class Patch:
-    """Represents a patch to be applied to a file."""
-
-    original: str
-    modified: str
-    diff_lines: list[str]
-
-
-def compute_patch(old: str, new: str) -> Patch:
-    """
-    Compute a patch representing the difference between two strings.
-
-    Args:
-        old: Original text content
-        new: Modified text content
-
-    Returns:
-        Patch object containing the diff information
-    """
-    # Split into lines while preserving line endings
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-
-    # Generate unified diff
-    diff = difflib.unified_diff(
-        old_lines,
-        new_lines,
-        lineterm="",
-    )
-
-    return Patch(
-        original=old,
-        modified=new,
-        diff_lines=list(diff),
-    )
-
-
-def apply_patch(path: Path | str, patch: Patch) -> None:
-    """
-    Apply a patch to a file atomically using temp file and replace.
-
-    This ensures the file is either fully updated or not modified at all,
-    preventing partial writes in case of errors.
-
-    Args:
-        path: Path to the file to patch
-        patch: Patch object to apply
-
-    Raises:
-        IOError: If there's an error during the atomic write operation
-    """
-    # Delegate to atomic_write_text for the actual atomic write
-    atomic_write_text(path, patch.modified)
-
-
-def generate_diff_preview(
-    old: str,
-    new: str,
-    context_lines: int = 3,
-    from_label: str | None = None,
-    to_label: str | None = None,
-) -> str:
-    """
-    Generate a human-readable diff preview.
-
-    Args:
-        old: Original text content
-        new: Modified text content
-        context_lines: Number of context lines to show around changes
-        from_label: Optional label for the original file (defaults to "before")
-        to_label: Optional label for the modified file (defaults to "after")
-
-    Returns:
-        String representation of the diff suitable for display
-    """
-    # Split into lines while preserving line endings
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-
-    # Generate unified diff with specified context
-    diff = difflib.unified_diff(
-        old_lines,
-        new_lines,
-        fromfile=from_label if from_label is not None else "before",
-        tofile=to_label if to_label is not None else "after",
-        n=context_lines,
-        lineterm="",
-    )
-
-    diff_lines = list(diff)
-
-    if not diff_lines:
-        return "No changes detected."
-
-    # Join with newlines for readable output
-    return "\n".join(diff_lines)
-
-
-def is_unchanged(patch: Patch) -> bool:
-    """
-    Check if a patch represents no changes.
-
-    Args:
-        patch: Patch object to check
-
-    Returns:
-        True if the patch represents no changes, False otherwise
-    """
-    return patch.original == patch.modified or len(patch.diff_lines) == 0
-
-
-def apply_patch_from_strings(path: Path | str, old_content: str, new_content: str) -> Patch | None:
-    """
-    Helper function to compute and apply a patch in one operation.
-
-    Args:
-        path: Path to the file to patch
-        old_content: Expected current content (for verification)
-        new_content: New content to write
-
-    Returns:
-        The applied Patch object, or None if no changes were needed
-
-    Raises:
-        ValueError: If the current file content doesn't match old_content
-        IOError: If there's an error during the write operation
-    """
-    file_path = Path(path) if isinstance(path, str) else path
-
-    # Read current content if file exists
-    if file_path.exists():
-        with open(file_path, encoding="utf-8") as f:
-            current = f.read()
-        if current != old_content:
-            raise ValueError(f"Current content of {file_path} doesn't match expected old_content")
-
-    # Compute patch
-    patch = compute_patch(old_content, new_content)
-
-    # Only apply if there are changes
-    if not is_unchanged(patch):
-        apply_patch(file_path, patch)
-        return patch
-
-    return None
-
-
-def apply_patches(patches: list[tuple[Path | str, str, str]]) -> list[Patch]:
-    """
-    Apply multiple file edits atomically (all-or-nothing).
-
-    This function ensures that either all patches are applied successfully,
-    or none are applied at all. It writes all temporary files first, then
-    replaces all targets atomically. On any failure, all temporary files
-    are cleaned up and original files remain unchanged.
-
-    Args:
-        patches: List of tuples containing (path, old_content, new_content)
-
-    Returns:
-        List of Patch objects for each changed file
-
-    Raises:
-        IOError: If there's an error during the atomic write operations
-        ValueError: If any file's current content doesn't match expected
-    """
-    # Prepare all patches and temp files
-    temp_files: list[tuple[Path, Path, int | None, str, bool]] = []
-    computed_patches: list[Patch] = []
-    backup_files: list[tuple[Path, Path]] = []
-
-    try:
-        for path_input, old_content, new_content in patches:
-            file_path = Path(path_input) if isinstance(path_input, str) else path_input
-
-            # Track whether file existed before operation
-            existed_before = file_path.exists()
-
-            # Read and verify current content if file exists
-            if existed_before:
-                with open(file_path, encoding="utf-8") as f:
-                    current = f.read()
-                if current != old_content:
-                    raise ValueError(
-                        f"Current content of {file_path} doesn't match expected old_content"
-                    )
-                # Preserve file mode
-                file_mode = os.stat(file_path).st_mode
-            else:
-                file_mode = None
-                current = ""
-                # Ensure parent directory exists
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Compute patch
-            patch = compute_patch(old_content, new_content)
-
-            # Skip unchanged files
-            if is_unchanged(patch):
-                continue
-
-            computed_patches.append(patch)
-
-            # Write to temporary file
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=file_path.parent,
-                delete=False,
-                suffix=".tmp",
-            ) as tmp_file:
-                tmp_file.write(new_content)
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())
-                tmp_path = Path(tmp_file.name)
-
-            # Store temp file info for later replacement
-            temp_files.append((file_path, tmp_path, file_mode, current, existed_before))
-
-        # Create backups of existing files before replacement
-        for target_path, _, _, original_content, existed_before in temp_files:
-            if existed_before:
-                # Create backup file
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    dir=target_path.parent,
-                    delete=False,
-                    suffix=".backup",
-                ) as backup_file:
-                    backup_file.write(original_content)
-                    backup_file.flush()
-                    os.fsync(backup_file.fileno())
-                    backup_path = Path(backup_file.name)
-                backup_files.append((target_path, backup_path))
-
-        # Now replace all files
-        completed_replacements = []
-        try:
-            for target_path, temp_path, file_mode, _, _ in temp_files:
-                # Preserve file mode if it existed
-                if file_mode is not None:
-                    os.chmod(temp_path, file_mode)
-
-                # Atomic replace
-                temp_path.replace(target_path)
-                completed_replacements.append(target_path)
-
-            # Fsync parent directories for durability (best-effort)
-            # Collect unique parent directories
-            parent_dirs = set()
-            for target_path, _, _, _, _ in temp_files:
-                parent_dirs.add(target_path.parent)
-
-            # Fsync each parent directory once
-            for parent_dir in parent_dirs:
-                try:
-                    dfd = os.open(parent_dir, os.O_DIRECTORY)
-                    try:
-                        os.fsync(dfd)
-                    finally:
-                        os.close(dfd)
-                except OSError:
-                    # Platform/filesystem doesn't support directory fsync
-                    pass
-
-        except Exception as e:
-            # Restore original files from backups or remove newly created files
-            for target_path in completed_replacements:
-                # Find if this file existed before the operation
-                existed_before = False
-                for file_path, _, _, _, file_existed in temp_files:
-                    if file_path == target_path:
-                        existed_before = file_existed
-                        break
-
-                if existed_before:
-                    # Find the backup for this file and restore it
-                    for orig_path, backup_path in backup_files:
-                        if orig_path == target_path:
-                            backup_path.replace(target_path)
-                            break
-                else:
-                    # File didn't exist before, remove it
-                    target_path.unlink(missing_ok=True)
-
-            # Clean up any remaining temp files
-            for target_path, temp_path, _, _, _ in temp_files:
-                if target_path not in completed_replacements:
-                    temp_path.unlink(missing_ok=True)
-
-            # Clean up backup files
-            for _, backup_path in backup_files:
-                backup_path.unlink(missing_ok=True)
-
-            raise OSError(f"Failed to atomically replace files: {e}") from e
-
-        # Success - clean up backup files
-        for _, backup_path in backup_files:
-            backup_path.unlink(missing_ok=True)
-
-    except Exception:
-        # Clean up any temp files created before the error
-        for _, temp_path, _, _, _ in temp_files:
-            if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
-        raise
-
-    return computed_patches
+@dataclass(frozen=True)
+class TextDelta:
+    """Represents a text chunk in the stream."""
+    text: str
+@dataclass(frozen=True)
+class ToolUseStart:
+    """Indicates the start of tool usage."""
+    tool_name: str
+    tool_id: str
+@dataclass(frozen=True)
+class ToolUseEnd:
+    """Indicates the end of tool usage."""
+    tool_id: str
+    result: str | None = None
+@dataclass(frozen=True)
+class MessageDone:
+    """Indicates the message stream is complete."""
+    pass
+Event = TextDelta | ToolUseStart | ToolUseEnd | MessageDone
+class ClaudeClient(ABC):
+    """Abstract interface for Claude API clients."""
+    @abstractmethod
+    async def stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        allowed_tools: list[str] | None = None,
+        denied_tools: list[str] | None = None,
+        permission_mode: str = "standard",
+        cwd: str | None = None,
+    ) -> AsyncGenerator[Event, None]:
+        """
+        Stream events from Claude API.
+        Args:
+            prompt: User prompt to send to Claude
+            system_prompt: Optional system prompt to set context
+            allowed_tools: List of allowed tool names
+            denied_tools: List of denied tool names
+            permission_mode: Permission mode for tool usage
+            cwd: Current working directory for tool execution
+        Yields:
+            Event objects representing stream chunks
+        """
+        raise NotImplementedError
+        yield  # pragma: no cover
+class FakeClaudeClient(ClaudeClient):
+    """Fake implementation for testing with deterministic output."""
+    async def stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        allowed_tools: list[str] | None = None,
+        denied_tools: list[str] | None = None,
+        permission_mode: str = "standard",
+        cwd: str | None = None,
+    ) -> AsyncGenerator[Event, None]:
+        """Yield a deterministic sequence of events for testing."""
+        # Parameters are intentionally unused in fake implementation
+        _ = (allowed_tools, denied_tools, permission_mode, cwd)
+        # Check if this is a kernel stage request
+        if system_prompt and "kernel stage" in system_prompt.lower():
+            # Generate a kernel document based on the prompt
+            kernel_content = f"""## Core Concept
+The essential idea is to {prompt[:100].lower().strip(".")}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
+## Key Questions
+1. What are the fundamental requirements that must be satisfied for this concept to succeed?
+2. How can we validate the core assumptions before committing significant resources?
+3. What are the critical dependencies and how can we mitigate risks associated with them?
+4. How will we measure progress and know when key milestones are achieved?
+## Success Criteria
+- Clear problem-solution fit demonstrated through user feedback or metrics
+- Scalable architecture that can grow with demand
+- Measurable improvement over existing alternatives
+- Sustainable resource model for long-term viability
+## Constraints
+- Must work within existing technical infrastructure
+- Budget and timeline considerations must be realistic
+- Regulatory and compliance requirements must be met
+- User experience must remain intuitive and accessible
+## Primary Value Proposition
+This initiative creates value by directly addressing the identified problem space with a solution that is both practical and innovative. The approach balances technical feasibility with user needs, ensuring that the outcome is not just theoretically sound but also delivers tangible benefits in real-world applications."""
+            # Stream the kernel content
+            for chunk in kernel_content.split("\n"):
+                yield TextDelta(chunk + "\n")
+            # Signal completion
+            yield MessageDone()
+        # Check if this is a clarify stage request
+        elif system_prompt and "clarify stage" in system_prompt.lower():
+            # Generate clarify questions based on the prompt
+            yield TextDelta(f"I see you want to explore: {prompt[:100]}\n\n")
+            yield TextDelta(
+                "Let me ask some clarifying questions to help sharpen your thinking:\n\n"
+            )
+            questions = [
+                "1. What specific problem are you trying to solve, and who will benefit most from the solution?",
+                "2. What constraints (time, budget, technical, regulatory) must you work within?",
+                "3. How would you measure success for this initiative after 3 months?",
+                "4. What existing solutions have you considered, and why aren't they sufficient?",
+                "5. What's the minimum viable version that would still deliver value?",
+            ]
+            for question in questions:
+                yield TextDelta(f"{question}\n\n")
+            yield MessageDone()
+        else:
+            # Default test output
+            yield TextDelta("First chunk of text")
+            yield TextDelta("Second chunk of text")
+            yield MessageDone()
 ````
 
 ## File: app/llm/sessions.py
 ````python
 """Session policy registry for stage-gated tool permissions and prompts."""
-
 from dataclasses import dataclass, replace
 from pathlib import Path
-
 from app.core.config import load_settings
 from app.llm.agents import AgentSpec
-
-
 @dataclass(frozen=True)
 class SessionPolicy:
     """Configuration for a brainstorming session stage."""
-
     stage: str
     system_prompt_path: Path
     allowed_tools: list[str]
@@ -3480,24 +3816,18 @@ class SessionPolicy:
     write_roots: list[str]
     permission_mode: str
     web_tools_allowed: list[str]
-
-
 def get_policy(stage: str) -> SessionPolicy:
     """
     Get the policy configuration for a given stage.
-
     Args:
         stage: One of 'clarify', 'kernel', 'outline', 'research', 'synthesis'
-
     Returns:
         SessionPolicy with appropriate configuration
-
     Raises:
         ValueError: If stage is not recognized
     """
     settings = load_settings()
     base_prompt_path = Path(__file__).resolve().parent / "prompts"
-
     policies = {
         "clarify": SessionPolicy(
             stage="clarify",
@@ -3549,33 +3879,25 @@ def get_policy(stage: str) -> SessionPolicy:
             web_tools_allowed=[],
         ),
     }
-
     if stage not in policies:
         raise ValueError(f"Unknown stage: {stage}. Valid stages are: {', '.join(policies.keys())}")
-
     return policies[stage]
-
-
 def merge_agent_policy(stage_policy: SessionPolicy, agent_spec: AgentSpec | None) -> SessionPolicy:
     """
     Merge an agent specification with a stage policy.
-
     Rules:
     - If agent_spec is None, return the stage policy unchanged
     - If agent has empty tools list, the merged policy has no allowed tools
     - Otherwise, agent tools are intersected with stage allowed tools
     - Denied tools from stage policy are always preserved (deny wins)
-
     Args:
         stage_policy: The base stage policy
         agent_spec: Optional agent specification to merge
-
     Returns:
         Merged SessionPolicy
     """
     if agent_spec is None:
         return stage_policy
-
     # If agent has empty tools list, no tools are allowed
     if agent_spec.tools == []:
         merged_allowed_tools: list[str] = []
@@ -3584,184 +3906,37 @@ def merge_agent_policy(stage_policy: SessionPolicy, agent_spec: AgentSpec | None
         stage_allowed_set = set(stage_policy.allowed_tools)
         agent_tools_set = set(agent_spec.tools)
         merged_allowed_tools = list(stage_allowed_set & agent_tools_set)
-
     # Create merged policy with updated allowed_tools
     return replace(stage_policy, allowed_tools=merged_allowed_tools)
-````
-
-## File: app/permissions/settings_writer.py
-````python
-"""Settings writer for Claude project configuration."""
-
-import json
-from pathlib import Path
-from typing import Any
-
-
-def write_project_settings(
-    repo_root: Path = Path("."),
-    config_dir_name: str = ".claude",
-    import_hooks_from: str = "app.permissions.hooks_lib",
-) -> Path:
-    """
-    Write Claude project settings with deny-first permissions and hook configuration.
-
-    Args:
-        repo_root: Root directory of the repository (default: current directory)
-        config_dir_name: Name of the configuration directory (default: ".claude")
-        import_hooks_from: Python module path to import hooks from (default: "app.permissions.hooks_lib")
-
-    Returns:
-        Path to the created configuration directory
-    """
-    repo_root = Path(repo_root)
-    config_dir = repo_root / config_dir_name
-    hooks_dir = config_dir / "hooks"
-
-    # Ensure directories exist
-    config_dir.mkdir(exist_ok=True)
-    hooks_dir.mkdir(exist_ok=True)
-
-    # Define settings structure
-    settings: dict[str, Any] = {
-        "permissions": {
-            "allow": ["Read", "Edit", "Write"],
-            "deny": ["Bash", "WebSearch", "WebFetch"],
-            "denyPaths": [".env*", "secrets/**", ".git/**"],
-            "writeRoots": ["projects/**", "exports/**"],
-        },
-        "hooks": {
-            "PreToolUse": f"{config_dir_name}/hooks/gate.py",
-            "PostToolUse": f"{config_dir_name}/hooks/format_md.py",
-        },
-    }
-
-    # Write settings.json
-    settings_path = config_dir / "settings.json"
-    with open(settings_path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
-        f.write("\n")  # Add trailing newline
-
-    # Create hook stub files
-    _create_gate_hook(hooks_dir / "gate.py")
-    _create_format_md_hook(hooks_dir / "format_md.py", import_hooks_from)
-
-    return config_dir
-
-
-def _create_gate_hook(hook_path: Path) -> None:
-    """
-    Create the PreToolUse gate hook stub.
-
-    Args:
-        hook_path: Path to the hook file
-    """
-    hook_content = '''#!/usr/bin/env python3
-"""Claude PreToolUse hook."""
-
-# TODO: Implement PreToolUse hook logic
-# This hook is called pre tool use
-
-def main():
-    """Main hook entry point."""
-    pass
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-    with open(hook_path, "w", encoding="utf-8") as f:
-        f.write(hook_content)
-
-    # Make the hook executable (Python will handle this cross-platform)
-    hook_path.chmod(0o755)
-
-
-def _create_format_md_hook(hook_path: Path, import_hooks_from: str) -> None:
-    """
-    Create the PostToolUse format_md hook that imports from hooks_lib.
-
-    Args:
-        hook_path: Path to the hook file
-        import_hooks_from: Python module path to import hooks from
-    """
-    hook_content = f'''#!/usr/bin/env python3
-"""Claude PostToolUse hook: format Markdown via mdformat (pure Python)."""
-
-from __future__ import annotations
-import json
-import sys
-from pathlib import Path
-
-# Import formatting function and atomic writer from the app's hooks library
-from {import_hooks_from}.format_md import _format_markdown_text
-from {import_hooks_from}.io import atomic_replace_text
-
-
-def main() -> None:
-    """Main hook entry point."""
-    # stdin JSON: dict with tool_name and target_path keys
-    payload = json.load(sys.stdin)
-    path = Path(payload.get("target_path") or "")
-    if path.suffix.lower() != ".md":
-        sys.exit(0)
-    # Read, format, write back atomically with durability guarantees
-    content = path.read_text(encoding="utf-8") if path.exists() else ""
-    formatted = _format_markdown_text(content)
-    if formatted != content:
-        atomic_replace_text(path, formatted)
-    sys.exit(0)
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-    with open(hook_path, "w", encoding="utf-8") as f:
-        f.write(hook_content)
-
-    # Make the hook executable (Python will handle this cross-platform)
-    hook_path.chmod(0o755)
 ````
 
 ## File: app/tui/app.py
 ````python
 """Textual App for Brainstorm Buddy with three-pane layout."""
-
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
-
 from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
-
-
 class BrainstormBuddyApp(App[None]):
     """Main Textual application for Brainstorm Buddy."""
-
     TITLE = "Brainstorm Buddy"
     SUB_TITLE = "Terminal-first brainstorming app"
-
     DEFAULT_CSS = """
     Screen {
         background: $surface;
     }
-
     Header {
         background: $primary;
     }
-
     Horizontal {
         height: 1fr;
     }
     """
-
     BINDINGS = [
         Binding(":", "command_palette", "Command", priority=True),
         Binding("q", "quit", "Quit"),
     ]
-
     def compose(self) -> ComposeResult:
         """Compose the app with three-pane layout."""
         yield Header()
@@ -3771,302 +3946,27 @@ class BrainstormBuddyApp(App[None]):
             yield ContextPanel()
         yield Footer()
         yield CommandPalette()
-
     def action_command_palette(self) -> None:
         """Show the command palette."""
         palette = self.query_one("#command-palette", CommandPalette)
         palette.show()
-
-
 def main() -> None:
     """Run the Brainstorm Buddy app."""
     app = BrainstormBuddyApp()
     app.run()
-
-
 if __name__ == "__main__":
     main()
-````
-
-## File: .github/workflows/ci.yml
-````yaml
-name: CI
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: "requirements*.txt"
-
-    - name: Install ruff
-      run: |
-        uv venv
-        uv pip install ruff
-
-    - name: Run ruff linting
-      run: |
-        source .venv/bin/activate
-        ruff check .
-
-    - name: Run ruff formatting check
-      run: |
-        source .venv/bin/activate
-        ruff format --check .
-
-  type-check:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: "requirements*.txt"
-
-    - name: Install dependencies
-      run: |
-        uv venv
-        uv pip install -r requirements.txt
-        uv pip install mypy types-PyYAML pytest-stub
-
-    - name: Run mypy type checking
-      run: |
-        source .venv/bin/activate
-        mypy . --strict
-
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.11', '3.12']
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: "requirements*.txt"
-
-    - name: Install dependencies
-      run: |
-        uv venv
-        uv pip install -r requirements.txt
-        uv pip install pytest pytest-cov pytest-asyncio
-
-    - name: Run tests with coverage
-      run: |
-        source .venv/bin/activate
-        PYTHONPATH=$PWD pytest -q --tb=short --cov=app --cov-report=xml --cov-report=term-missing
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: Python-${{ matrix.python-version }}
-        token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: false
-        verbose: true
-````
-
-## File: app/llm/claude_client.py
-````python
-"""Claude client interface with streaming support and fake implementation."""
-
-from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class TextDelta:
-    """Represents a text chunk in the stream."""
-
-    text: str
-
-
-@dataclass(frozen=True)
-class ToolUseStart:
-    """Indicates the start of tool usage."""
-
-    tool_name: str
-    tool_id: str
-
-
-@dataclass(frozen=True)
-class ToolUseEnd:
-    """Indicates the end of tool usage."""
-
-    tool_id: str
-    result: str | None = None
-
-
-@dataclass(frozen=True)
-class MessageDone:
-    """Indicates the message stream is complete."""
-
-    pass
-
-
-Event = TextDelta | ToolUseStart | ToolUseEnd | MessageDone
-
-
-class ClaudeClient(ABC):
-    """Abstract interface for Claude API clients."""
-
-    @abstractmethod
-    async def stream(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        allowed_tools: list[str] | None = None,
-        denied_tools: list[str] | None = None,
-        permission_mode: str = "standard",
-        cwd: str | None = None,
-    ) -> AsyncGenerator[Event, None]:
-        """
-        Stream events from Claude API.
-
-        Args:
-            prompt: User prompt to send to Claude
-            system_prompt: Optional system prompt to set context
-            allowed_tools: List of allowed tool names
-            denied_tools: List of denied tool names
-            permission_mode: Permission mode for tool usage
-            cwd: Current working directory for tool execution
-
-        Yields:
-            Event objects representing stream chunks
-        """
-        raise NotImplementedError
-        yield  # pragma: no cover
-
-
-class FakeClaudeClient(ClaudeClient):
-    """Fake implementation for testing with deterministic output."""
-
-    async def stream(
-        self,
-        prompt: str,
-        system_prompt: str | None = None,
-        allowed_tools: list[str] | None = None,
-        denied_tools: list[str] | None = None,
-        permission_mode: str = "standard",
-        cwd: str | None = None,
-    ) -> AsyncGenerator[Event, None]:
-        """Yield a deterministic sequence of events for testing."""
-        # Parameters are intentionally unused in fake implementation
-        _ = (allowed_tools, denied_tools, permission_mode, cwd)
-
-        # Check if this is a kernel stage request
-        if system_prompt and "kernel stage" in system_prompt.lower():
-            # Generate a kernel document based on the prompt
-            kernel_content = f"""## Core Concept
-The essential idea is to {prompt[:100].lower().strip(".")}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
-
-## Key Questions
-1. What are the fundamental requirements that must be satisfied for this concept to succeed?
-2. How can we validate the core assumptions before committing significant resources?
-3. What are the critical dependencies and how can we mitigate risks associated with them?
-4. How will we measure progress and know when key milestones are achieved?
-
-## Success Criteria
-- Clear problem-solution fit demonstrated through user feedback or metrics
-- Scalable architecture that can grow with demand
-- Measurable improvement over existing alternatives
-- Sustainable resource model for long-term viability
-
-## Constraints
-- Must work within existing technical infrastructure
-- Budget and timeline considerations must be realistic
-- Regulatory and compliance requirements must be met
-- User experience must remain intuitive and accessible
-
-## Primary Value Proposition
-This initiative creates value by directly addressing the identified problem space with a solution that is both practical and innovative. The approach balances technical feasibility with user needs, ensuring that the outcome is not just theoretically sound but also delivers tangible benefits in real-world applications."""
-
-            # Stream the kernel content
-            for chunk in kernel_content.split("\n"):
-                yield TextDelta(chunk + "\n")
-
-            # Signal completion
-            yield MessageDone()
-
-        # Check if this is a clarify stage request
-        elif system_prompt and "clarify stage" in system_prompt.lower():
-            # Generate clarify questions based on the prompt
-            yield TextDelta(f"I see you want to explore: {prompt[:100]}\n\n")
-            yield TextDelta(
-                "Let me ask some clarifying questions to help sharpen your thinking:\n\n"
-            )
-
-            questions = [
-                "1. What specific problem are you trying to solve, and who will benefit most from the solution?",
-                "2. What constraints (time, budget, technical, regulatory) must you work within?",
-                "3. How would you measure success for this initiative after 3 months?",
-                "4. What existing solutions have you considered, and why aren't they sufficient?",
-                "5. What's the minimum viable version that would still deliver value?",
-            ]
-
-            for question in questions:
-                yield TextDelta(f"{question}\n\n")
-
-            yield MessageDone()
-        else:
-            # Default test output
-            yield TextDelta("First chunk of text")
-            yield TextDelta("Second chunk of text")
-            yield MessageDone()
 ````
 
 ## File: app/tui/widgets/command_palette.py
 ````python
 """Command palette widget for executing app commands."""
-
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
 from textual.widgets import Input, OptionList
-
-
 class CommandPalette(Container):
     """Command palette overlay for executing commands."""
-
     DEFAULT_CSS = """
     CommandPalette {
         layer: modal;
@@ -4079,20 +3979,16 @@ class CommandPalette(Container):
         padding: 1;
         display: none;
     }
-
     CommandPalette.visible {
         display: block;
     }
-
     CommandPalette Input {
         margin-bottom: 1;
     }
     """
-
     BINDINGS = [
         Binding("escape", "close", "Close palette"),
     ]
-
     def __init__(self) -> None:
         """Initialize the command palette."""
         super().__init__(id="command-palette")
@@ -4106,81 +4002,179 @@ class CommandPalette(Container):
             ("synthesis", "Synthesize findings into final output"),
             ("export", "Export project to various formats"),
         ]
-
     def compose(self) -> ComposeResult:
         """Compose the command palette UI."""
         yield Input(placeholder="Type a command...", id="command-input")
         options = [f"{cmd}: {desc}" for cmd, desc in self.commands]
         yield OptionList(*options, id="command-list")
-
     def show(self) -> None:
         """Show the command palette."""
         self.add_class("visible")
         input_widget = self.query_one("#command-input", Input)
         input_widget.focus()
-
     def hide(self) -> None:
         """Hide the command palette."""
         self.remove_class("visible")
-
     def action_close(self) -> None:
         """Close the command palette."""
         self.hide()
-
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle command submission."""
         command = event.value.lower().strip()
-        self.execute_command(command)
+        # Run the async command execution
+        self.app.run_worker(self.execute_command(command))
         self.hide()
-
-    def execute_command(self, command: str) -> None:
+    async def execute_command(self, command: str) -> None:
         """Execute the selected command."""
         from textual import log
-
         log(f"Executing command: {command}")
-
         # Import here to avoid circular imports
+        from app.llm.sessions import get_policy
         from app.tui.views.session import SessionController
+        from app.tui.widgets.agent_selector import AgentSelector
         from app.tui.widgets.session_viewer import SessionViewer
-
         # Get the session viewer from the main screen
         viewer = self.app.query_one("#session-viewer", SessionViewer)
-
         # Create controller
         controller = SessionController(viewer)
-
         # Handle clarify command
         if command == "clarify":
+            # Get stage policy for tool info
+            policy = get_policy("clarify")
+            # Show agent selector
+            agents = controller.get_available_agents()
+            selector = AgentSelector(agents, policy.allowed_tools, policy.denied_tools)
+            selected_agent = await self.app.push_screen_wait(selector)
             # Run the async task using Textual's worker system
-            self.app.run_worker(controller.start_clarify_session(), exclusive=True)
-
+            self.app.run_worker(
+                controller.start_clarify_session(agent=selected_agent), exclusive=True
+            )
         # Handle kernel command
         elif command == "kernel":
             # For now, use a default project slug - in production, this would prompt for it
             project_slug = "default-project"
             initial_idea = "Build a better brainstorming app"
-
+            # Get stage policy for tool info
+            policy = get_policy("kernel")
+            # Show agent selector
+            agents = controller.get_available_agents()
+            selector = AgentSelector(agents, policy.allowed_tools, policy.denied_tools)
+            selected_agent = await self.app.push_screen_wait(selector)
             # Run the async task using Textual's worker system
             self.app.run_worker(
-                controller.start_kernel_session(project_slug, initial_idea),
+                controller.start_kernel_session(project_slug, initial_idea, agent=selected_agent),
                 exclusive=True,
             )
-
         # Handle generate workstreams command
         elif command == "generate workstreams":
             # Run the async task using Textual's worker system
             self.app.run_worker(controller.generate_workstreams(), exclusive=True)
 ````
 
+## File: .github/workflows/ci.yml
+````yaml
+name: CI
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+    - name: Install ruff
+      run: |
+        uv venv
+        uv pip install ruff
+    - name: Run ruff linting
+      run: |
+        source .venv/bin/activate
+        ruff check .
+    - name: Run ruff formatting check
+      run: |
+        source .venv/bin/activate
+        ruff format --check .
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+    - name: Install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install mypy types-PyYAML pytest-stub
+    - name: Run mypy type checking
+      run: |
+        source .venv/bin/activate
+        mypy . --strict
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "requirements*.txt"
+    - name: Install dependencies
+      run: |
+        uv venv
+        uv pip install -r requirements.txt
+        uv pip install pytest pytest-cov pytest-asyncio
+    - name: Run tests with coverage
+      run: |
+        source .venv/bin/activate
+        PYTHONPATH=$PWD pytest -q --tb=short --cov=app --cov-report=xml --cov-report=term-missing
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: Python-${{ matrix.python-version }}
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
+        verbose: true
+````
+
 ## File: app/tui/views/session.py
 ````python
 """Session controller for managing brainstorming sessions and Claude interactions."""
-
 from pathlib import Path
-
 from app.files.diff import apply_patch, compute_patch, generate_diff_preview
 from app.files.markdown import extract_section_paragraph
 from app.files.workstream import create_workstream_batch
+from app.llm.agents import AgentSpec, load_agent_specs
 from app.llm.claude_client import (
     ClaudeClient,
     Event,
@@ -4188,18 +4182,14 @@ from app.llm.claude_client import (
     MessageDone,
     TextDelta,
 )
-from app.llm.sessions import get_policy
+from app.llm.sessions import get_policy, merge_agent_policy
 from app.tui.widgets.kernel_approval import KernelApprovalModal
 from app.tui.widgets.session_viewer import SessionViewer
-
-
 class SessionController:
     """Controller for managing brainstorming sessions."""
-
     def __init__(self, session_viewer: SessionViewer) -> None:
         """
         Initialize the session controller.
-
         Args:
             session_viewer: The widget to display session output
         """
@@ -4208,31 +4198,46 @@ class SessionController:
         self.current_stage: str | None = None
         self.pending_kernel_content: str | None = None
         self.project_slug: str | None = None
-
+        # Cache loaded agent specs
+        self._agent_specs: list[AgentSpec] | None = None
+        self.selected_agent: AgentSpec | None = None
+    def get_available_agents(self) -> list[AgentSpec]:
+        """
+        Get available agent specifications.
+        Returns:
+            List of loaded agent specs
+        """
+        if self._agent_specs is None:
+            self._agent_specs = load_agent_specs("app.llm.agentspecs")
+        return self._agent_specs
     async def start_clarify_session(
-        self, initial_prompt: str = "I want to build a better app"
+        self, initial_prompt: str = "I want to build a better app", agent: AgentSpec | None = None
     ) -> None:
         """
         Start a clarify stage session.
-
         Args:
             initial_prompt: The user's initial brainstorming idea
+            agent: Optional agent specification to use
         """
         self.current_stage = "clarify"
-
-        # Get clarify policy
+        self.selected_agent = agent
+        # Get clarify policy and merge with agent if provided
         policy = get_policy("clarify")
-
+        if agent:
+            policy = merge_agent_policy(policy, agent)
         # Read system prompt
         system_prompt_content = ""
         if policy.system_prompt_path.exists():
             system_prompt_content = policy.system_prompt_path.read_text()
-
         # Clear viewer and show starting message
         self.viewer.clear()
         self.viewer.write("[bold cyan]Starting Clarify Session[/bold cyan]\n")
+        if agent:
+            self.viewer.write(f"[dim]Using agent: {agent.name}[/dim]\n")
+        self.viewer.write(
+            f"[dim]Allowed tools: {', '.join(policy.allowed_tools) if policy.allowed_tools else 'None'}[/dim]\n"
+        )
         self.viewer.write("[dim]Generating clarifying questions...[/dim]\n\n")
-
         # Stream events from client
         try:
             async for event in self.client.stream(
@@ -4245,35 +4250,41 @@ class SessionController:
                 await self._handle_event(event)
         except Exception as e:
             self.viewer.write(f"\n[red]Error during session: {e}[/red]")
-
     async def start_kernel_session(
-        self, project_slug: str, initial_idea: str = "Build a better app"
+        self,
+        project_slug: str,
+        initial_idea: str = "Build a better app",
+        agent: AgentSpec | None = None,
     ) -> None:
         """
         Start a kernel stage session.
-
         Args:
             project_slug: The project identifier/slug
             initial_idea: The user's refined brainstorming idea
+            agent: Optional agent specification to use
         """
         self.current_stage = "kernel"
         self.project_slug = project_slug
         self.pending_kernel_content = ""
-
-        # Get kernel policy
+        self.selected_agent = agent
+        # Get kernel policy and merge with agent if provided
         policy = get_policy("kernel")
-
+        if agent:
+            policy = merge_agent_policy(policy, agent)
         # Read system prompt
         system_prompt_content = ""
         if policy.system_prompt_path.exists():
             system_prompt_content = policy.system_prompt_path.read_text()
-
         # Clear viewer and show starting message
         self.viewer.clear()
         self.viewer.write("[bold cyan]Starting Kernel Session[/bold cyan]\n")
         self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n")
+        if agent:
+            self.viewer.write(f"[dim]Using agent: {agent.name}[/dim]\n")
+        self.viewer.write(
+            f"[dim]Allowed tools: {', '.join(policy.allowed_tools) if policy.allowed_tools else 'None'}[/dim]\n"
+        )
         self.viewer.write("[dim]Generating kernel document...[/dim]\n\n")
-
         # Stream events from client
         try:
             async for event in self.client.stream(
@@ -4286,11 +4297,9 @@ class SessionController:
                 await self._handle_kernel_event(event)
         except Exception as e:
             self.viewer.write(f"\n[red]Error during session: {e}[/red]")
-
     async def _handle_event(self, event: Event) -> None:
         """
         Handle a stream event from the Claude client.
-
         Args:
             event: The event to handle
         """
@@ -4302,11 +4311,9 @@ class SessionController:
             self.viewer.write(
                 "\n[dim]Session complete. Consider these questions as you refine your idea.[/dim]"
             )
-
     async def _handle_kernel_event(self, event: Event) -> None:
         """
         Handle a stream event from the Claude client during kernel stage.
-
         Args:
             event: The event to handle
         """
@@ -4320,21 +4327,17 @@ class SessionController:
             # Session complete - show diff preview
             self.viewer.write("\n[dim]Kernel generation complete.[/dim]\n")
             await self._show_kernel_diff_preview()
-
     async def _show_kernel_diff_preview(self) -> None:
         """Show a diff preview and prompt for approval."""
         if not self.project_slug or not self.pending_kernel_content:
             self.viewer.write("[red]Error: No kernel content to preview[/red]\n")
             return
-
         # Construct kernel file path
         kernel_path = Path("projects") / self.project_slug / "kernel.md"
-
         # Read existing content if file exists
         old_content = ""
         if kernel_path.exists():
             old_content = kernel_path.read_text()
-
         # Generate diff preview
         diff_preview = generate_diff_preview(
             old_content,
@@ -4343,84 +4346,66 @@ class SessionController:
             from_label=f"projects/{self.project_slug}/kernel.md (current)",
             to_label=f"projects/{self.project_slug}/kernel.md (proposed)",
         )
-
         # Get the app instance through the viewer
         app = self.viewer.app
-
         # Show modal and wait for response
         modal = KernelApprovalModal(diff_preview, self.project_slug)
         approved = await app.push_screen_wait(modal)
-
         if approved:
             self.approve_kernel_changes()
         else:
             self.reject_kernel_changes()
-
     def approve_kernel_changes(self) -> bool:
         """
         Apply the pending kernel changes atomically.
-
         Returns:
             True if changes were applied successfully, False otherwise
         """
         if not self.project_slug or not self.pending_kernel_content:
             self.viewer.write("[red]Error: No pending changes to apply[/red]\n")
             return False
-
         try:
             # Construct kernel file path
             kernel_path = Path("projects") / self.project_slug / "kernel.md"
-
             # Ensure parent directory exists
             kernel_path.parent.mkdir(parents=True, exist_ok=True)
-
             # Read existing content if file exists
             old_content = ""
             if kernel_path.exists():
                 old_content = kernel_path.read_text()
-
             # Compute and apply patch
             patch = compute_patch(old_content, self.pending_kernel_content)
             apply_patch(kernel_path, patch)
-
             self.viewer.write(
                 f"\n[green]✓ Kernel successfully written to projects/{self.project_slug}/kernel.md[/green]\n"
             )
-
             # Clear pending content
             self.pending_kernel_content = None
             return True
-
         except Exception as e:
             self.viewer.write(
                 f"\n[red]Error applying changes: {e}[/red]\n"
                 "[yellow]Original file remains unchanged.[/yellow]\n"
             )
             return False
-
     def reject_kernel_changes(self) -> None:
         """Reject the pending kernel changes."""
         self.viewer.write("\n[yellow]Changes rejected. Kernel file remains unchanged.[/yellow]\n")
         self.pending_kernel_content = None
-
     async def generate_workstreams(self, project_slug: str = "default-project") -> None:
         """
         Generate workstream documents (outline and elements) for a project.
-
         Args:
             project_slug: The project identifier/slug
         """
         self.project_slug = project_slug
-
         # Clear viewer and show starting message
         self.viewer.clear()
         self.viewer.write("[bold cyan]Generating Workstream Documents[/bold cyan]\n")
         self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n\n")
-
         try:
             # Get project path
             project_path = Path("projects") / project_slug
-
             # Check if kernel exists and read it for summary
             kernel_summary = None
             kernel_path = project_path / "kernel.md"
@@ -4428,23 +4413,19 @@ class SessionController:
                 kernel_content = kernel_path.read_text()
                 # Use robust extraction utility to get the Core Concept paragraph
                 kernel_summary = extract_section_paragraph(kernel_content, "## Core Concept")
-
             # Create batch with all workstream documents
             self.viewer.write("[dim]Creating batch with outline and element documents...[/dim]\n")
             batch = create_workstream_batch(
                 project_path, project_slug, kernel_summary=kernel_summary
             )
-
             if not batch:
                 self.viewer.write(
                     "[yellow]No changes needed - all files are up to date.[/yellow]\n"
                 )
                 return
-
             # Generate and show preview
             self.viewer.write("\n[bold]Preview of changes:[/bold]\n")
             preview = batch.generate_preview(context_lines=2)
-
             # Limit preview display for readability
             preview_lines = preview.split("\n")
             if len(preview_lines) > 50:
@@ -4453,22 +4434,17 @@ class SessionController:
                 self.viewer.write(f"\n[dim]... ({len(preview_lines) - 40} more lines) ...[/dim]\n")
             else:
                 self.viewer.write(preview)
-
             self.viewer.write(f"\n[dim]Total files to create/update: {len(batch)}[/dim]\n")
-
             # Get the app instance through the viewer
             app = self.viewer.app
-
             # Create a simple approval modal (reuse KernelApprovalModal for now)
             # In production, we'd create a dedicated WorkstreamApprovalModal
             modal = KernelApprovalModal(preview, project_slug)
             approved = await app.push_screen_wait(modal)
-
             if approved:
                 # Apply all changes atomically
                 self.viewer.write("\n[dim]Applying changes atomically...[/dim]\n")
                 patches = batch.apply()
-
                 self.viewer.write(
                     f"\n[green]✓ Successfully created/updated {len(patches)} files:[/green]\n"
                 )
@@ -4479,7 +4455,6 @@ class SessionController:
                     )
             else:
                 self.viewer.write("\n[yellow]Changes rejected. No files were modified.[/yellow]\n")
-
         except Exception as e:
             self.viewer.write(f"\n[red]Error generating workstreams: {e}[/red]\n")
             self.viewer.write("[yellow]No files were modified.[/yellow]\n")
@@ -4493,6 +4468,28 @@ version = "0.1.0"
 description = "Python terminal-first brainstorming app using Claude Code"
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "textual>=0.86.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.0",
+    "PyYAML>=6.0",
+    "aiofiles>=24.1.0",
+    "markdown-it-py>=3.0.0",
+    "mdformat>=0.7.17",
+    "aiosqlite>=0.21.0",
+    "typing-extensions>=4.12.0",
+    "typer>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.12.9",
+    "mypy>=1.13.0",
+    "pre-commit>=4.3.0",
+    "types-PyYAML>=6.0",
+]
 
 [tool.poetry]
 name = "brainstormbuddy"
@@ -4511,14 +4508,14 @@ PyYAML = "^6.0"
 aiofiles = "^24.1.0"
 markdown-it-py = "^3.0.0"
 mdformat = "^0.7.17"
-aiosqlite = "^0.20.0"
+aiosqlite = "^0.21.0"
 typing-extensions = "^4.12.0"
 typer = "^0.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
 pytest-asyncio = "^0.23.0"
-ruff = "^0.7.0"
+ruff = "^0.12.9"
 mypy = "^1.13.0"
 pre-commit = "^4.3.0"
 types-PyYAML = "^6.0"

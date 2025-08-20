@@ -1,6 +1,7 @@
 """Unit tests for research import view."""
 
-from unittest.mock import AsyncMock, MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from textual.widgets import DataTable, TextArea
@@ -9,13 +10,13 @@ from app.tui.views.research import ResearchImportModal
 
 
 @pytest.fixture
-def temp_db_path(tmp_path):
+def temp_db_path(tmp_path: Path) -> Path:
     """Create a temporary database path."""
     return tmp_path / "test_research.db"
 
 
 @pytest.mark.asyncio
-async def test_research_import_modal_init(temp_db_path):
+async def test_research_import_modal_init(temp_db_path: Path) -> None:
     """Test ResearchImportModal initialization."""
     modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
     assert modal.workstream == "test"
@@ -24,7 +25,7 @@ async def test_research_import_modal_init(temp_db_path):
     assert modal.findings == []
 
 
-def test_research_import_modal_compose():
+def test_research_import_modal_compose() -> None:
     """Test ResearchImportModal UI composition returns widgets."""
     modal = ResearchImportModal()
 
@@ -37,7 +38,7 @@ def test_research_import_modal_compose():
 
 
 @pytest.mark.asyncio
-async def test_handle_import_empty_content(temp_db_path):
+async def test_handle_import_empty_content(temp_db_path: Path) -> None:
     """Test handling import with empty content."""
     modal = ResearchImportModal(db_path=temp_db_path)
 
@@ -45,16 +46,16 @@ async def test_handle_import_empty_content(temp_db_path):
     text_area_mock = MagicMock(spec=TextArea)
     text_area_mock.text = ""
 
-    modal.query_one = MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
-    modal.update_status = MagicMock()
-
-    await modal.handle_import()
-
-    modal.update_status.assert_called_with("No content to import", is_error=True)
+    with patch.object(
+        modal, "query_one", MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
+    ):
+        with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
+            await modal.handle_import()
+            update_status_mock.assert_called_with("No content to import", is_error=True)
 
 
 @pytest.mark.asyncio
-async def test_handle_import_valid_markdown(temp_db_path):
+async def test_handle_import_valid_markdown(temp_db_path: Path) -> None:
     """Test importing valid markdown content."""
     modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
 
@@ -62,33 +63,34 @@ async def test_handle_import_valid_markdown(temp_db_path):
     text_area_mock = MagicMock(spec=TextArea)
     text_area_mock.text = "- Test claim | Test evidence | https://example.com | 0.8 | tag1,tag2"
 
-    modal.query_one = MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
-    modal.update_status = MagicMock()
-    modal.refresh_table = AsyncMock()
+    with patch.object(
+        modal, "query_one", MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
+    ):
+        with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
+            with patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock:
+                # Ensure the database is initialized first
+                from app.research.db import ResearchDB
 
-    # Ensure the database is initialized first
-    from app.research.db import ResearchDB
+                async with ResearchDB(temp_db_path):
+                    pass  # Just initialize the DB
 
-    async with ResearchDB(temp_db_path):
-        pass  # Just initialize the DB
+                await modal.handle_import()
 
-    await modal.handle_import()
+                # Verify text area was cleared
+                assert text_area_mock.text == ""
 
-    # Verify text area was cleared
-    assert text_area_mock.text == ""
+                # Verify status was updated
+                update_status_mock.assert_called()
+                status_call = update_status_mock.call_args[0][0]
+                assert "Import complete" in status_call
+                assert "1 added" in status_call
 
-    # Verify status was updated
-    modal.update_status.assert_called()
-    status_call = modal.update_status.call_args[0][0]
-    assert "Import complete" in status_call
-    assert "1 added" in status_call
-
-    # Verify table refresh was called
-    modal.refresh_table.assert_called_once()
+                # Verify table refresh was called
+                refresh_table_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_handle_import_duplicate_detection(temp_db_path):
+async def test_handle_import_duplicate_detection(temp_db_path: Path) -> None:
     """Test duplicate detection during import."""
     from app.research.db import ResearchDB
 
@@ -110,21 +112,22 @@ async def test_handle_import_duplicate_detection(temp_db_path):
     text_area_mock = MagicMock(spec=TextArea)
     text_area_mock.text = "- Test claim | Different evidence | https://example.com | 0.9 | new"
 
-    modal.query_one = MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
-    modal.update_status = MagicMock()
-    modal.refresh_table = AsyncMock()
+    with patch.object(
+        modal, "query_one", MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
+    ):
+        with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
+            with patch.object(modal, "refresh_table", AsyncMock()):
+                await modal.handle_import()
 
-    await modal.handle_import()
-
-    # Verify status shows skipped duplicate
-    modal.update_status.assert_called()
-    status_call = modal.update_status.call_args[0][0]
-    assert "0 added" in status_call
-    assert "1 skipped" in status_call
+                # Verify status shows skipped duplicate
+                update_status_mock.assert_called()
+                status_call = update_status_mock.call_args[0][0]
+                assert "0 added" in status_call
+                assert "1 skipped" in status_call
 
 
 @pytest.mark.asyncio
-async def test_handle_import_json_format(temp_db_path):
+async def test_handle_import_json_format(temp_db_path: Path) -> None:
     """Test importing JSON format content."""
     modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
 
@@ -142,27 +145,28 @@ async def test_handle_import_json_format(temp_db_path):
     text_area_mock = MagicMock(spec=TextArea)
     text_area_mock.text = json_content
 
-    modal.query_one = MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
-    modal.update_status = MagicMock()
-    modal.refresh_table = AsyncMock()
+    with patch.object(
+        modal, "query_one", MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
+    ):
+        with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
+            with patch.object(modal, "refresh_table", AsyncMock()):
+                # Initialize database
+                from app.research.db import ResearchDB
 
-    # Initialize database
-    from app.research.db import ResearchDB
+                async with ResearchDB(temp_db_path):
+                    pass
 
-    async with ResearchDB(temp_db_path):
-        pass
+                await modal.handle_import()
 
-    await modal.handle_import()
-
-    # Verify import succeeded
-    modal.update_status.assert_called()
-    status_call = modal.update_status.call_args[0][0]
-    assert "Import complete" in status_call
-    assert "1 added" in status_call
+                # Verify import succeeded
+                update_status_mock.assert_called()
+                status_call = update_status_mock.call_args[0][0]
+                assert "Import complete" in status_call
+                assert "1 added" in status_call
 
 
 @pytest.mark.asyncio
-async def test_handle_import_invalid_content(temp_db_path):
+async def test_handle_import_invalid_content(temp_db_path: Path) -> None:
     """Test handling invalid content that can't be parsed."""
     modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
 
@@ -170,19 +174,20 @@ async def test_handle_import_invalid_content(temp_db_path):
     text_area_mock = MagicMock(spec=TextArea)
     text_area_mock.text = "This is not valid markdown or JSON for findings"
 
-    modal.query_one = MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
-    modal.update_status = MagicMock()
+    with patch.object(
+        modal, "query_one", MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock)
+    ):
+        with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
+            await modal.handle_import()
 
-    await modal.handle_import()
-
-    # Verify error status
-    modal.update_status.assert_called_with(
-        "No valid findings found in pasted content", is_error=True
-    )
+            # Verify error status
+            update_status_mock.assert_called_with(
+                "No valid findings found in pasted content", is_error=True
+            )
 
 
 @pytest.mark.asyncio
-async def test_refresh_table_with_findings(temp_db_path):
+async def test_refresh_table_with_findings(temp_db_path: Path) -> None:
     """Test refreshing table with existing findings."""
     from app.research.db import ResearchDB
 
@@ -214,9 +219,8 @@ async def test_refresh_table_with_findings(temp_db_path):
     table_mock.clear = MagicMock()
     table_mock.add_row = MagicMock()
 
-    modal.query_one = MagicMock(return_value=table_mock)
-
-    await modal.refresh_table()
+    with patch.object(modal, "query_one", MagicMock(return_value=table_mock)):
+        await modal.refresh_table()
 
     # Verify table was cleared and rows were added
     table_mock.clear.assert_called_once()
@@ -236,7 +240,7 @@ async def test_refresh_table_with_findings(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_refresh_table_empty_database(temp_db_path):
+async def test_refresh_table_empty_database(temp_db_path: Path) -> None:
     """Test refreshing table when database is empty."""
     modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
 
@@ -245,56 +249,51 @@ async def test_refresh_table_empty_database(temp_db_path):
     table_mock.clear = MagicMock()
     table_mock.add_row = MagicMock()
 
-    modal.query_one = MagicMock(return_value=table_mock)
+    with patch.object(modal, "query_one", MagicMock(return_value=table_mock)):
+        await modal.refresh_table()
 
-    await modal.refresh_table()
-
-    # Verify table was cleared but no rows added
-    table_mock.clear.assert_called_once()
-    table_mock.add_row.assert_not_called()
+        # Verify table was cleared but no rows added
+        table_mock.clear.assert_called_once()
+        table_mock.add_row.assert_not_called()
 
 
-def test_update_status_normal_message():
+def test_update_status_normal_message() -> None:
     """Test updating status with normal message."""
     modal = ResearchImportModal()
 
     # Mock Static widget
     status_widget_mock = MagicMock()
-    modal.query_one = MagicMock(return_value=status_widget_mock)
 
-    modal.update_status("Test success message")
+    with patch.object(modal, "query_one", MagicMock(return_value=status_widget_mock)):
+        modal.update_status("Test success message")
+        status_widget_mock.update.assert_called_with("[green]Test success message[/green]")
 
-    status_widget_mock.update.assert_called_with("[green]Test success message[/green]")
 
-
-def test_update_status_error_message():
+def test_update_status_error_message() -> None:
     """Test updating status with error message."""
     modal = ResearchImportModal()
 
     # Mock Static widget
     status_widget_mock = MagicMock()
-    modal.query_one = MagicMock(return_value=status_widget_mock)
 
-    modal.update_status("Test error message", is_error=True)
+    with patch.object(modal, "query_one", MagicMock(return_value=status_widget_mock)):
+        modal.update_status("Test error message", is_error=True)
+        status_widget_mock.update.assert_called_with("[red]Test error message[/red]")
 
-    status_widget_mock.update.assert_called_with("[red]Test error message[/red]")
 
-
-def test_handle_close():
+def test_handle_close() -> None:
     """Test handle_close dismisses the modal."""
     modal = ResearchImportModal()
-    modal.dismiss = MagicMock()
 
-    modal.handle_close()
+    with patch.object(modal, "dismiss", MagicMock()) as dismiss_mock:
+        modal.handle_close()
+        dismiss_mock.assert_called_with(True)
 
-    modal.dismiss.assert_called_with(True)
 
-
-def test_action_close():
+def test_action_close() -> None:
     """Test action_close (escape key) dismisses the modal."""
     modal = ResearchImportModal()
-    modal.dismiss = MagicMock()
 
-    modal.action_close()
-
-    modal.dismiss.assert_called_with(True)
+    with patch.object(modal, "dismiss", MagicMock()) as dismiss_mock:
+        modal.action_close()
+        dismiss_mock.assert_called_with(True)

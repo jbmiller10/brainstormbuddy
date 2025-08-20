@@ -1,6 +1,9 @@
 """Integration tests for research import functionality."""
 
 import asyncio
+from collections.abc import Coroutine
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,7 +13,7 @@ from app.tui.widgets.command_palette import CommandPalette
 
 
 @pytest.mark.asyncio
-async def test_research_import_command_execution(tmp_path):
+async def test_research_import_command_execution(tmp_path: Path) -> None:
     """Test that research import command can be executed."""
     palette = CommandPalette()
 
@@ -29,7 +32,7 @@ async def test_research_import_command_execution(tmp_path):
     # Track if push_screen_wait was called with a ResearchImportModal
     modal_shown = False
 
-    async def check_modal(modal):
+    async def check_modal(modal: Any) -> bool:
         nonlocal modal_shown
         # Check if it's a ResearchImportModal instance
         if modal.__class__.__name__ == "ResearchImportModal":
@@ -60,7 +63,7 @@ async def test_research_import_command_execution(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_research_modal_compose_elements():
+async def test_research_modal_compose_elements() -> None:
     """Test that research modal compose creates expected UI elements."""
     modal = ResearchImportModal()
 
@@ -77,7 +80,7 @@ async def test_research_modal_compose_elements():
 
 
 @pytest.mark.asyncio
-async def test_on_mount_loads_existing_findings(tmp_path):
+async def test_on_mount_loads_existing_findings(tmp_path: Path) -> None:
     """Test that on_mount loads existing findings into the table."""
     from app.research.db import ResearchDB
 
@@ -96,37 +99,38 @@ async def test_on_mount_loads_existing_findings(tmp_path):
         )
 
     modal = ResearchImportModal(db_path=db_path)
-    modal.refresh_table = AsyncMock()
 
-    # Call on_mount
-    await modal.on_mount()
+    # Mock the refresh_table method
+    with patch.object(modal, "refresh_table", new_callable=AsyncMock) as mock_refresh:
+        # Call on_mount
+        await modal.on_mount()
 
-    # Verify refresh_table was called
-    modal.refresh_table.assert_called_once()
+        # Verify refresh_table was called
+        mock_refresh.assert_called_once()
 
 
-def test_research_import_button_handlers():
+def test_research_import_button_handlers() -> None:
     """Test button press handlers."""
     modal = ResearchImportModal()
-    modal.dismiss = MagicMock()
 
-    # Test close button handler
-    modal.handle_close()
-    modal.dismiss.assert_called_with(True)
+    # Mock the dismiss method
+    with patch.object(modal, "dismiss", new_callable=MagicMock) as mock_dismiss:
+        # Test close button handler
+        modal.handle_close()
+        mock_dismiss.assert_called_with(True)
 
-    # Reset mock
-    modal.dismiss.reset_mock()
+        # Reset mock
+        mock_dismiss.reset_mock()
 
-    # Test escape action
-    modal.action_close()
-    modal.dismiss.assert_called_with(True)
+        # Test escape action
+        modal.action_close()
+        mock_dismiss.assert_called_with(True)
 
 
 @pytest.mark.asyncio
-async def test_command_palette_input_submitted_properly():
+async def test_command_palette_input_submitted_properly() -> None:
     """Test that on_input_submitted properly handles the coroutine."""
     palette = CommandPalette()
-    palette.hide = MagicMock()
 
     # Create a proper mock event
     from textual.widgets import Input
@@ -137,7 +141,7 @@ async def test_command_palette_input_submitted_properly():
     # Mock app.run_worker to capture the coroutine
     captured_coro = None
 
-    def capture_coro(coro, **_kwargs):
+    def capture_coro(coro: Coroutine[Any, Any, Any], **_kwargs: dict[str, Any]) -> Any:
         nonlocal captured_coro
         captured_coro = coro
         # Create a task to properly handle the coroutine
@@ -147,12 +151,14 @@ async def test_command_palette_input_submitted_properly():
     mock_app.run_worker = MagicMock(side_effect=capture_coro)
 
     # Patch execute_command to be a simple async function
-    async def mock_execute(cmd):
+    async def mock_execute(cmd: str) -> str:
         return f"Executed: {cmd}"
 
-    palette.execute_command = mock_execute
-
-    with patch.object(CommandPalette, "app", new=mock_app):
+    with (
+        patch.object(palette, "hide", new_callable=MagicMock) as mock_hide,
+        patch.object(palette, "execute_command", new=mock_execute),
+        patch.object(CommandPalette, "app", new=mock_app),
+    ):
         # Call on_input_submitted
         palette.on_input_submitted(event)
 
@@ -161,7 +167,7 @@ async def test_command_palette_input_submitted_properly():
         assert captured_coro is not None
 
         # Verify palette was hidden
-        palette.hide.assert_called_once()
+        mock_hide.assert_called_once()
 
         # Await the captured coroutine to prevent warning
         result = await captured_coro
