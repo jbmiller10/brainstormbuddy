@@ -77,6 +77,16 @@ class CommandPalette(Container):
         self.app.run_worker(self.execute_command(command))
         self.hide()
 
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle option selection from the list."""
+        # Extract command from the option text (format: "command: description")
+        option_text = str(event.option.prompt)
+        if ":" in option_text:
+            command = option_text.split(":")[0].strip().lower()
+            # Run the async command execution
+            self.app.run_worker(self.execute_command(command))
+            self.hide()
+
     async def execute_command(self, command: str) -> None:
         """Execute the selected command."""
         from textual import log
