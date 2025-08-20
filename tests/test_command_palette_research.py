@@ -1,7 +1,7 @@
 """Unit tests for command palette research import command."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -41,6 +41,7 @@ def test_research_import_creates_correct_path():
 @pytest.mark.asyncio
 async def test_on_input_submitted_calls_hide():
     """Test that input submission hides the palette."""
+
     palette = CommandPalette()
     palette.hide = MagicMock()
 
@@ -48,14 +49,20 @@ async def test_on_input_submitted_calls_hide():
     from textual.widgets import Input
 
     event = MagicMock(spec=Input.Submitted)
-    event.value = "research import"
+    event.value = "test command"
 
-    # Mock execute_command to avoid actual execution
-    palette.execute_command = AsyncMock(return_value=None)
+    # Track the coroutine to clean it up
+    created_coro = None
 
-    # Mock app.run_worker
+    def track_coro(coro, **_kwargs):
+        nonlocal created_coro
+        created_coro = coro
+        # Return a mock task
+        return MagicMock()
+
+    # Mock app.run_worker to track the coroutine
     mock_app = MagicMock()
-    mock_app.run_worker = MagicMock()
+    mock_app.run_worker = MagicMock(side_effect=track_coro)
 
     with patch.object(CommandPalette, "app", new=mock_app):
         # Trigger the event handler
@@ -66,6 +73,11 @@ async def test_on_input_submitted_calls_hide():
 
         # Verify palette was hidden
         palette.hide.assert_called_once()
+
+        # Clean up the coroutine
+        if created_coro:
+            # Close the coroutine to prevent warning
+            created_coro.close()
 
 
 @pytest.mark.asyncio
