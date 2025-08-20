@@ -53,7 +53,7 @@ def atomic_write_text(path: Path | str, text: str) -> None:
 
         # Fsync parent directory for durability (best-effort)
         try:
-            dfd = os.open(file_path.parent, os.O_DIRECTORY)
+            dfd = os.open(file_path.parent, getattr(os, "O_DIRECTORY", 0))
             try:
                 os.fsync(dfd)
             finally:

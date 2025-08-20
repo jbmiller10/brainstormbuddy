@@ -51,7 +51,7 @@ def atomic_replace_text(path: Path, text: str) -> None:
 
         # Fsync parent directory for durability (best-effort)
         try:
-            dfd = os.open(path.parent, os.O_DIRECTORY)
+            dfd = os.open(path.parent, getattr(os, "O_DIRECTORY", 0))
             try:
                 os.fsync(dfd)
             finally:
