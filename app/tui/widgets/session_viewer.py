@@ -18,16 +18,6 @@ class SessionViewer(RichLog):
         """Initialize the session viewer."""
         super().__init__(id="session-viewer", wrap=True, highlight=True, markup=True)
 
-    def on_mount(self) -> None:
-        """Display welcome message on mount."""
-        self.write("[bold cyan]Welcome to Brainstorm Buddy[/bold cyan]\n")
-        self.write("\nA terminal-first brainstorming app that guides you through:\n")
-        self.write("• [yellow]Capture[/yellow] → [yellow]Clarify[/yellow] → ")
-        self.write("[yellow]Kernel[/yellow] → [yellow]Outline[/yellow] → ")
-        self.write("[yellow]Research[/yellow] → [yellow]Synthesis[/yellow] → ")
-        self.write("[yellow]Export[/yellow]\n")
-        self.write("\n[dim]Press ':' to open the command palette[/dim]")
-
     def write(
         self,
         content: object,
