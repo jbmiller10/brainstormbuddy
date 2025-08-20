@@ -149,6 +149,77 @@ class TestValidateToolUse:
         assert allowed
         assert reason == ""
 
+    def test_url_domain_wildcard_base_domain_matches(self) -> None:
+        """Test that base domain matches its own wildcard pattern."""
+        # Test deny list
+        payload = {
+            "tool_name": "WebFetch",
+            "url": "https://example.com/api",
+            "allowed_domains": [],
+            "denied_domains": ["*.example.com"],
+        }
+        allowed, reason = validate_tool_use(payload)
+        assert not allowed
+        assert "example.com" in reason
+
+        # Test allow list
+        payload = {
+            "tool_name": "WebFetch",
+            "url": "https://github.com/api",
+            "allowed_domains": ["*.github.com"],
+            "denied_domains": [],
+        }
+        allowed, reason = validate_tool_use(payload)
+        assert allowed
+        assert reason == ""
+
+    def test_url_domain_wildcard_no_false_matches(self) -> None:
+        """Test that similar domains don't falsely match wildcards."""
+        # Should NOT match "badexample.com" against "*.example.com"
+        payload = {
+            "tool_name": "WebFetch",
+            "url": "https://badexample.com/api",
+            "allowed_domains": [],
+            "denied_domains": ["*.example.com"],
+        }
+        allowed, reason = validate_tool_use(payload)
+        assert allowed  # Should be allowed since it doesn't match the deny pattern
+        assert reason == ""
+
+        # Should NOT match "example.co" against "*.example.com"
+        payload = {
+            "tool_name": "WebFetch",
+            "url": "https://example.co/api",
+            "allowed_domains": ["*.example.com"],
+            "denied_domains": [],
+        }
+        allowed, reason = validate_tool_use(payload)
+        assert not allowed  # Should be denied since it's not in allow list
+        assert "not in allow list" in reason
+
+    def test_url_domain_wildcard_deep_subdomains(self) -> None:
+        """Test that deep subdomains match wildcard patterns."""
+        payload = {
+            "tool_name": "WebFetch",
+            "url": "https://api.v2.test.example.com/endpoint",
+            "allowed_domains": [],
+            "denied_domains": ["*.example.com"],
+        }
+        allowed, reason = validate_tool_use(payload)
+        assert not allowed
+        assert "example.com" in reason
+
+        # Test with allow list
+        payload = {
+            "tool_name": "WebFetch",
+            "url": "https://api.v2.test.example.com/endpoint",
+            "allowed_domains": ["*.example.com"],
+            "denied_domains": [],
+        }
+        allowed, reason = validate_tool_use(payload)
+        assert allowed
+        assert reason == ""
+
     def test_url_domain_deny_wins_over_allow(self) -> None:
         """Test that deny list takes precedence over allow list."""
         payload = {
