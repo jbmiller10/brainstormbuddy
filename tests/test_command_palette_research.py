@@ -1,7 +1,7 @@
 """Unit tests for command palette research import command."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -38,7 +38,8 @@ def test_research_import_creates_correct_path():
     assert expected_db_path.name == "research.db"
 
 
-def test_on_input_submitted_calls_hide():
+@pytest.mark.asyncio
+async def test_on_input_submitted_calls_hide():
     """Test that input submission hides the palette."""
     palette = CommandPalette()
     palette.hide = MagicMock()
@@ -49,14 +50,19 @@ def test_on_input_submitted_calls_hide():
     event = MagicMock(spec=Input.Submitted)
     event.value = "research import"
 
-    # Mock app.run_worker to avoid actual execution
-    with patch.object(CommandPalette, "app", new_callable=lambda: MagicMock()) as mock_app_property:
-        mock_app = MagicMock()
-        mock_app.run_worker = MagicMock()
-        mock_app_property.return_value = mock_app
+    # Mock execute_command to avoid actual execution
+    palette.execute_command = AsyncMock(return_value=None)
 
+    # Mock app.run_worker
+    mock_app = MagicMock()
+    mock_app.run_worker = MagicMock()
+
+    with patch.object(CommandPalette, "app", new=mock_app):
         # Trigger the event handler
         palette.on_input_submitted(event)
+
+        # Verify run_worker was called (it schedules execute_command)
+        mock_app.run_worker.assert_called_once()
 
         # Verify palette was hidden
         palette.hide.assert_called_once()
