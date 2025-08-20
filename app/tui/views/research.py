@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Static, TextArea
+from textual.widgets import Button, DataTable, Input, Static, TextArea
 
 from app.research.db import ResearchDB
 from app.research.ingest import Finding, parse_findings
@@ -76,6 +76,32 @@ class ResearchImportModal(ModalScreen[bool]):
     .button-row Button {
         margin: 0 1;
     }
+
+    .filter-section {
+        height: auto;
+        margin-bottom: 1;
+        border: solid $primary 50%;
+        padding: 1;
+    }
+
+    .filter-inputs {
+        height: auto;
+        margin: 1 0;
+    }
+
+    .filter-inputs Input {
+        margin: 0 0 1 0;
+    }
+
+    .filter-button-row {
+        height: 3;
+        align: center middle;
+        margin-top: 1;
+    }
+
+    .filter-button-row Button {
+        margin: 0 1;
+    }
     """
 
     BINDINGS = [
@@ -99,6 +125,10 @@ class ResearchImportModal(ModalScreen[bool]):
         self.db_path = db_path or Path("projects") / "default" / "research.db"
         self.status_message = ""
         self.findings: list[Finding] = []
+        # Filter state
+        self.filter_workstream: str = ""
+        self.filter_tags: list[str] = []
+        self.filter_min_confidence: float | None = None
 
     def compose(self) -> ComposeResult:
         """Create the research import UI."""
@@ -127,6 +157,26 @@ class ResearchImportModal(ModalScreen[bool]):
             # Status message
             yield Static("", id="status-message", classes="status-message")
 
+            # Filter section
+            with Container(classes="filter-section"):
+                yield Static("[bold]Filters[/bold]", classes="section-title")
+                with Container(classes="filter-inputs"):
+                    yield Input(
+                        placeholder="Filter by workstream...",
+                        id="filter-workstream",
+                    )
+                    yield Input(
+                        placeholder="Filter by tags (comma-separated)...",
+                        id="filter-tags",
+                    )
+                    yield Input(
+                        placeholder="Minimum confidence (0.0-1.0)...",
+                        id="filter-confidence",
+                    )
+                with Horizontal(classes="filter-button-row"):
+                    yield Button("Apply Filters", variant="primary", id="apply-filters")
+                    yield Button("Clear Filters", variant="default", id="clear-filters")
+
             # Table section
             with ScrollableContainer(classes="table-section"):
                 yield Static("[bold]Current Findings[/bold]", classes="section-title")
@@ -150,7 +200,22 @@ class ResearchImportModal(ModalScreen[bool]):
         # Load findings from database
         if self.db_path.exists():
             async with ResearchDB(self.db_path) as db:
-                findings = await db.list_findings(limit=100)
+                # Apply database-level filters
+                findings = await db.list_findings(
+                    workstream=self.filter_workstream if self.filter_workstream else None,
+                    min_confidence=self.filter_min_confidence,
+                    limit=100,
+                )
+
+                # Apply client-side tag filtering
+                if self.filter_tags:
+                    filtered_findings = []
+                    for finding in findings:
+                        finding_tags = finding.get("tags", [])
+                        # Check if any filter tag is in the finding's tags
+                        if any(tag in finding_tags for tag in self.filter_tags):
+                            filtered_findings.append(finding)
+                    findings = filtered_findings
 
                 for finding in findings:
                     tags_str = ", ".join(finding.get("tags", []))
@@ -230,6 +295,66 @@ class ResearchImportModal(ModalScreen[bool]):
     def handle_close(self) -> None:
         """Close the modal."""
         self.dismiss(True)
+
+    @on(Button.Pressed, "#apply-filters")
+    async def handle_apply_filters(self) -> None:
+        """Apply the current filter values."""
+        # Get filter values from inputs
+        workstream_input = self.query_one("#filter-workstream", Input)
+        tags_input = self.query_one("#filter-tags", Input)
+        confidence_input = self.query_one("#filter-confidence", Input)
+
+        # Update filter state
+        self.filter_workstream = workstream_input.value.strip()
+
+        # Parse tags (comma-separated)
+        tags_text = tags_input.value.strip()
+        if tags_text:
+            self.filter_tags = [tag.strip() for tag in tags_text.split(",") if tag.strip()]
+        else:
+            self.filter_tags = []
+
+        # Parse confidence (validate it's between 0.0 and 1.0)
+        confidence_text = confidence_input.value.strip()
+        if confidence_text:
+            try:
+                confidence = float(confidence_text)
+                if 0.0 <= confidence <= 1.0:
+                    self.filter_min_confidence = confidence
+                    self.update_status("Filters applied", is_error=False)
+                else:
+                    self.update_status("Confidence must be between 0.0 and 1.0", is_error=True)
+                    return
+            except ValueError:
+                self.update_status("Invalid confidence value", is_error=True)
+                return
+        else:
+            self.filter_min_confidence = None
+
+        # Refresh the table with filters
+        await self.refresh_table()
+
+    @on(Button.Pressed, "#clear-filters")
+    async def handle_clear_filters(self) -> None:
+        """Clear all filters and reset inputs."""
+        # Clear filter state
+        self.filter_workstream = ""
+        self.filter_tags = []
+        self.filter_min_confidence = None
+
+        # Clear input fields
+        workstream_input = self.query_one("#filter-workstream", Input)
+        tags_input = self.query_one("#filter-tags", Input)
+        confidence_input = self.query_one("#filter-confidence", Input)
+
+        workstream_input.value = ""
+        tags_input.value = ""
+        confidence_input.value = ""
+
+        self.update_status("Filters cleared", is_error=False)
+
+        # Refresh the table without filters
+        await self.refresh_table()
 
     def action_close(self) -> None:
         """Handle escape key to close."""
