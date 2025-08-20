@@ -532,9 +532,21 @@ class TestSynthesisController:
 
         # First call should load specs
         with patch("app.synthesis.controller.load_agent_specs") as mock_load:
+            from app.llm.agents import AgentSpec
+
             mock_specs = [
-                {"name": "architect", "prompt": "test"},
-                {"name": "critic", "prompt": "test"},
+                AgentSpec(
+                    name="architect",
+                    description="Test architect agent",
+                    tools=["Read", "Write"],
+                    prompt="Test architect prompt",
+                ),
+                AgentSpec(
+                    name="critic",
+                    description="Test critic agent",
+                    tools=["Read"],
+                    prompt="Test critic prompt",
+                ),
             ]
             mock_load.return_value = mock_specs
 
