@@ -105,3 +105,19 @@ class TestSynthesisViewer:
         viewer = SynthesisViewer("test")
         viewer.log_message("Test message")
         viewer.log_message("[bold]Formatted message[/bold]")
+
+    def test_compose(self) -> None:
+        """Test compose method returns correct widgets."""
+        viewer = SynthesisViewer("test-workstream")
+
+        # Call compose and get the widgets
+        widgets = list(viewer.compose())
+
+        # Should yield two widgets: status and log_widget
+        assert len(widgets) == 2
+
+        # First widget should be the status Static widget
+        assert widgets[0] == viewer.status
+
+        # Second widget should be the log_widget RichLog
+        assert widgets[1] == viewer.log_widget

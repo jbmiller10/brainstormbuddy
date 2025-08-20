@@ -169,6 +169,37 @@ class TestValidateElementStructure:
         errors = validate_element_structure(content)
         assert any("Unexpected section" in e.message for e in errors)
 
+    def test_validate_acceptance_criteria_with_colon(self) -> None:
+        """Test validation of AC items with colon prefix."""
+        content = """# Element
+
+## Decisions
+- Decision 1
+
+## Requirements
+- REQ-001: Requirement
+
+## Open Questions
+- Question
+
+## Risks & Mitigations
+- Risk: Mitigation
+
+## Acceptance Criteria
+- AC-001: Valid AC with colon and enough content here
+- AC-002: Short test case
+- AC-: Too short
+- AC-: : This starts with colon after AC-
+"""
+
+        errors = validate_element_structure(content)
+        # Should have errors for "AC-: Too short" (9 chars after removing "- AC-")
+        # and "AC-: : This starts with colon" (strips the first colon, still long enough)
+        assert len(errors) == 1
+        assert any("AC item appears incomplete" in e.message for e in errors)
+        # "AC-: Too short" → after removing "- AC-" → ": Too short" → after stripping colon → "Too short" (9 chars)
+        assert any(e.line_number == 18 for e in errors)
+
 
 class TestAutoFixElementStructure:
     """Test auto-fix functionality."""

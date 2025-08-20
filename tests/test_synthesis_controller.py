@@ -519,6 +519,133 @@ class TestSynthesisController:
                 )
             assert "Critic agent specification not found" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_get_agent_specs_caching(self) -> None:
+        """Test that get_agent_specs caches the result."""
+        controller = SynthesisController("test")
+
+        # First call should load specs
+        with patch("app.synthesis.controller.load_agent_specs") as mock_load:
+            mock_specs = [
+                {"name": "architect", "prompt": "test"},
+                {"name": "critic", "prompt": "test"},
+            ]
+            mock_load.return_value = mock_specs
+
+            specs1 = controller.get_agent_specs()
+            assert specs1 == mock_specs
+            mock_load.assert_called_once_with("app.llm.agentspecs")
+
+            # Second call should use cached value
+            specs2 = controller.get_agent_specs()
+            assert specs2 == mock_specs
+            # Still only called once
+            mock_load.assert_called_once()
+
+            # Verify cache is used
+            assert controller._agent_specs == mock_specs
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_existing_element_file(self) -> None:
+        """Test synthesis when element file already exists."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test project structure
+            project_path = Path(tmpdir) / "projects" / "test-project"
+            project_path.mkdir(parents=True)
+
+            # Create existing element file
+            elements_dir = project_path / "elements"
+            elements_dir.mkdir()
+            element_path = elements_dir / "ui-ux.md"
+            existing_content = "# Old Requirements\n\nOld content here"
+            element_path.write_text(existing_content)
+
+            # Create kernel
+            kernel_path = project_path / "kernel.md"
+            kernel_path.write_text("# Kernel\n\nTest kernel")
+
+            controller = SynthesisController("test-project")
+            controller.project_path = project_path
+
+            # Mock the architect to return new content
+            new_content = "# New Requirements\n\n## Decisions\n\nNew decisions"
+
+            with (
+                patch.object(controller, "run_architect", new=AsyncMock(return_value=new_content)),
+                patch.object(controller, "logger") as mock_logger,
+            ):
+                mock_logger.log_event = AsyncMock()
+
+                result = await controller.synthesize_workstream(
+                    workstream="ui-ux",
+                    run_critic=False,
+                )
+
+                # Verify diff preview includes old content
+                assert "Old Requirements" in result.diff_preview
+                assert "New Requirements" in result.diff_preview
+                assert result.workstream == "ui-ux"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_critic_logging(self) -> None:
+        """Test that critic events are properly logged."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test project structure
+            project_path = Path(tmpdir) / "projects" / "test-project"
+            project_path.mkdir(parents=True)
+
+            # Create kernel
+            kernel_path = project_path / "kernel.md"
+            kernel_path.write_text("# Kernel\n\nTest kernel")
+
+            controller = SynthesisController("test-project")
+            controller.project_path = project_path
+
+            # Mock critic issues
+            critic_issues = [
+                CriticIssue("Critical", "Requirements", "Issue 1", "Fix 1"),
+                CriticIssue("Critical", "Requirements", "Issue 2", "Fix 2"),
+                CriticIssue("Warning", "Decisions", "Issue 3", "Fix 3"),
+            ]
+
+            proposal = "# Requirements\n\n## Decisions\n\nContent"
+
+            with (
+                patch.object(controller, "run_architect", new=AsyncMock(return_value=proposal)),
+                patch.object(controller, "run_critic", new=AsyncMock(return_value=critic_issues)),
+                patch.object(controller, "logger") as mock_logger,
+            ):
+                mock_logger.log_event = AsyncMock()
+
+                result = await controller.synthesize_workstream(
+                    workstream="backend",
+                    run_critic=True,
+                )
+
+                # Verify critic logging events
+                log_calls = mock_logger.log_event.call_args_list
+
+                # Find critic start event
+                critic_start_found = False
+                critic_complete_found = False
+
+                for call in log_calls:
+                    args, kwargs = call
+                    if kwargs.get("stage") == "critic" and kwargs.get("event") == "start":
+                        critic_start_found = True
+                        assert kwargs["data"]["workstream"] == "backend"
+                    elif kwargs.get("stage") == "critic" and kwargs.get("event") == "complete":
+                        critic_complete_found = True
+                        assert kwargs["data"]["workstream"] == "backend"
+                        assert kwargs["data"]["issues_count"] == 3
+                        assert kwargs["data"]["critical_count"] == 2
+
+                assert critic_start_found, "Critic start event not logged"
+                assert critic_complete_found, "Critic complete event not logged"
+
+                # Verify result includes critic issues
+                assert result.critic_issues == critic_issues
+
 
 class TestCriticIssue:
     """Test CriticIssue dataclass."""
