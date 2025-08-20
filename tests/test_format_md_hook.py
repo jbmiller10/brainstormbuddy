@@ -104,7 +104,7 @@ def test_format_markdown_text_via_generated_hook(tmp_path: Path) -> None:
     spec.loader.exec_module(format_md_module)
 
     # Test the _format_markdown_text function from the generated hook
-    raw = "#  Title\\n\\n-  item\\n-  item2"
+    raw = "#  Title\n\n-  item\n-  item2"
     out = format_md_module._format_markdown_text(raw)
 
     # Verify formatting worked
