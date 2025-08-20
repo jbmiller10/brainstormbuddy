@@ -126,7 +126,7 @@ class TestSynthesisController:
         # Create mock events
         from app.llm.claude_client import MessageDone, TextDelta
 
-        async def mock_stream(*args: Any, **kwargs: Any) -> Any:  # type: ignore[no-untyped-def]  # noqa: ARG001
+        async def mock_stream(*args: Any, **kwargs: Any) -> Any:  # noqa: ARG001
             yield TextDelta("## Decisions\n")
             yield TextDelta("- Use React\n")
             yield TextDelta("## Requirements\n")
@@ -171,7 +171,7 @@ class TestSynthesisController:
 
         from app.llm.claude_client import MessageDone, TextDelta
 
-        async def mock_stream(*args: Any, **kwargs: Any) -> Any:  # type: ignore[no-untyped-def]  # noqa: ARG001
+        async def mock_stream(*args: Any, **kwargs: Any) -> Any:  # noqa: ARG001
             yield TextDelta('[{"severity": "Critical", "section": "Requirements", ')
             yield TextDelta('"message": "Missing requirement", "action": "Add requirement"}]')
             yield MessageDone()
@@ -222,7 +222,7 @@ class TestSynthesisController:
 
             from app.llm.claude_client import MessageDone, TextDelta
 
-            async def mock_stream(*args: Any, **kwargs: Any) -> Any:  # type: ignore[no-untyped-def]  # noqa: ARG001
+            async def mock_stream(*args: Any, **kwargs: Any) -> Any:  # noqa: ARG001
                 yield TextDelta("# UI/UX\n")
                 yield TextDelta("## Decisions\n- Decision 1\n")
                 yield TextDelta("## Requirements\n- REQ-1: Requirement\n")

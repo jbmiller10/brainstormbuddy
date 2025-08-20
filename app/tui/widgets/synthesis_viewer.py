@@ -156,7 +156,7 @@ class SynthesisViewer(VerticalScroll):
         # Display diff without markup to avoid rendering issues
         for line in shown_lines:
             # Use plain text for diffs to avoid markup issues
-            self.log_widget.write(line, markup=False)
+            self.log_widget.write(line)
 
         if len(lines) > max_lines:
             self.log_widget.write(f"\n[dim]... ({len(lines) - max_lines} more lines) ...[/dim]")
