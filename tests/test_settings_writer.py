@@ -74,7 +74,7 @@ def test_hooks_configuration(tmp_path: Path) -> None:
 
 
 def test_hook_files_have_content(tmp_path: Path) -> None:
-    """Test that hook files contain placeholder content."""
+    """Test that hook files contain expected content."""
     write_project_settings(repo_root=tmp_path)
 
     gate_hook = tmp_path / ".claude" / "hooks" / "gate.py"
@@ -84,8 +84,10 @@ def test_hook_files_have_content(tmp_path: Path) -> None:
     with open(gate_hook, encoding="utf-8") as f:
         gate_content = f.read()
     assert "PreToolUse" in gate_content
-    assert "TODO" in gate_content
-    assert "def main():" in gate_content
+    assert "from app.permissions.hooks_lib.gate import validate_tool_use" in gate_content
+    assert "def main() -> None:" in gate_content
+    assert "sys.exit(2)" in gate_content  # Exit code 2 on deny
+    assert "sys.exit(0)" in gate_content  # Exit code 0 on allow
 
     # Check format_md.py content
     with open(format_hook, encoding="utf-8") as f:
