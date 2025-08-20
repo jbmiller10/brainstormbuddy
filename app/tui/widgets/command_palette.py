@@ -9,6 +9,8 @@ from textual.widgets import Input, OptionList
 class CommandPalette(Container):
     """Command palette overlay for executing commands."""
 
+    OPTION_FORMAT = "command: description"  # Expected format for option text
+
     DEFAULT_CSS = """
     CommandPalette {
         layer: modal;
@@ -76,6 +78,22 @@ class CommandPalette(Container):
         # Run the async command execution
         self.app.run_worker(self.execute_command(command))
         self.hide()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle option selection from the list."""
+        from textual import log
+
+        # Extract command from the option text (format: "command: description")
+        option_text = str(event.option.prompt)
+        if ":" in option_text:
+            command = option_text.split(":", 1)[0].strip().lower()
+            # Run the async command execution
+            self.app.run_worker(self.execute_command(command))
+            self.hide()
+        else:
+            log.warning(
+                f"Unexpected option format (expected '{self.OPTION_FORMAT}'): {option_text}"
+            )
 
     async def execute_command(self, command: str) -> None:
         """Execute the selected command."""

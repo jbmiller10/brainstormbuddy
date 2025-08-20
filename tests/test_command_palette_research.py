@@ -41,6 +41,136 @@ def test_research_import_creates_correct_path() -> None:
 
 
 @pytest.mark.asyncio
+async def test_on_option_list_option_selected() -> None:
+    """Test that selecting an option from the list executes the command."""
+    from textual.widgets import OptionList
+
+    palette = CommandPalette()
+    # Use Mock() instead of direct assignment to avoid method-assign error
+    palette.hide = Mock()  # type: ignore[method-assign]
+
+    # Mock OptionList.OptionSelected event
+    event = MagicMock(spec=OptionList.OptionSelected)
+    # Create a mock option with prompt attribute
+    mock_option = MagicMock()
+    mock_option.prompt = "clarify: Enter clarify stage for current project"
+    event.option = mock_option
+
+    # Track the coroutine to clean it up
+    created_coro: Any | None = None
+
+    def track_coro(coro: Any, **_kwargs: Any) -> MagicMock:
+        nonlocal created_coro
+        created_coro = coro
+        # Return a mock task
+        return MagicMock()
+
+    # Mock app.run_worker to track the coroutine
+    mock_app = MagicMock()
+    mock_app.run_worker = MagicMock(side_effect=track_coro)
+
+    with patch.object(CommandPalette, "app", new=mock_app):
+        # Trigger the event handler
+        palette.on_option_list_option_selected(event)
+
+        # Verify run_worker was called (it schedules execute_command)
+        mock_app.run_worker.assert_called_once()
+
+        # Verify palette was hidden
+        palette.hide.assert_called_once()
+
+        # Clean up the coroutine
+        if created_coro:
+            # Close the coroutine to prevent warning
+            created_coro.close()
+
+
+def test_on_option_list_option_selected_parses_command() -> None:
+    """Test that option selection correctly parses the command from option text."""
+    from textual.widgets import OptionList
+
+    palette = CommandPalette()
+    palette.hide = Mock()  # type: ignore[method-assign]
+
+    # Mock OptionList.OptionSelected event with different command formats
+    event = MagicMock(spec=OptionList.OptionSelected)
+    mock_option = MagicMock()
+    mock_option.prompt = "research import: Import research findings"
+    event.option = mock_option
+
+    # Track the coroutine to clean it up
+    created_coro: Any | None = None
+
+    def track_coro(coro: Any, **_kwargs: Any) -> MagicMock:
+        nonlocal created_coro
+        created_coro = coro
+        return MagicMock()
+
+    # Mock app.run_worker to track the coroutine
+    mock_app = MagicMock()
+    mock_app.run_worker = MagicMock(side_effect=track_coro)
+
+    # Mock execute_command to verify it gets called with correct command
+    with patch.object(palette, "execute_command") as mock_execute:
+        mock_execute.return_value = MagicMock()  # Return a mock coroutine
+
+        with patch.object(CommandPalette, "app", new=mock_app):
+            # Trigger the event handler
+            palette.on_option_list_option_selected(event)
+
+            # Verify execute_command was called with the correct command
+            mock_execute.assert_called_once_with("research import")
+
+            # Verify run_worker was called
+            mock_app.run_worker.assert_called_once()
+
+            # Verify palette was hidden
+            palette.hide.assert_called_once()
+
+            # Clean up the coroutine if one was created
+            if created_coro and hasattr(created_coro, "close"):
+                created_coro.close()
+
+
+def test_on_option_list_option_selected_malformed_option() -> None:
+    """Test that malformed options (without colon) are handled gracefully."""
+    from textual.widgets import OptionList
+
+    palette = CommandPalette()
+    palette.hide = Mock()  # type: ignore[method-assign]
+
+    # Mock OptionList.OptionSelected event with malformed option (no colon)
+    event = MagicMock(spec=OptionList.OptionSelected)
+    mock_option = MagicMock()
+    mock_option.prompt = "malformed option without colon"
+    event.option = mock_option
+
+    # Mock app
+    mock_app = MagicMock()
+    mock_app.run_worker = MagicMock()
+
+    # Mock log.warning to verify it gets called
+    with (
+        patch.object(CommandPalette, "app", new=mock_app),
+        patch("textual.log") as mock_log,
+    ):
+        # Trigger the event handler
+        palette.on_option_list_option_selected(event)
+
+        # Verify execute_command was NOT called (no run_worker call)
+        mock_app.run_worker.assert_not_called()
+
+        # Verify palette was NOT hidden
+        palette.hide.assert_not_called()
+
+        # Verify warning was logged
+        mock_log.warning.assert_called_once()
+        warning_msg = mock_log.warning.call_args[0][0]
+        assert "Unexpected option format" in warning_msg
+        assert "malformed option without colon" in warning_msg
+
+
+@pytest.mark.asyncio
 async def test_on_input_submitted_calls_hide() -> None:
     """Test that input submission hides the palette."""
 
