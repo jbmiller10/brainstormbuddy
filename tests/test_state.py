@@ -59,7 +59,7 @@ def test_observer_notification() -> None:
     state._active_project = None  # type: ignore
     state._subscribers.clear()  # type: ignore
 
-    notifications = []
+    notifications: list[tuple[str | None, str | None, Reason]] = []
 
     def observer(new: str | None, old: str | None, reason: Reason) -> None:
         notifications.append((new, old, reason))
@@ -88,8 +88,8 @@ def test_multiple_observers() -> None:
     state._active_project = None  # type: ignore
     state._subscribers.clear()  # type: ignore
 
-    notifications1 = []
-    notifications2 = []
+    notifications1: list[tuple[str | None, str | None, Reason]] = []
+    notifications2: list[tuple[str | None, str | None, Reason]] = []
 
     def observer1(new: str | None, old: str | None, reason: Reason) -> None:
         notifications1.append((new, old, reason))
@@ -124,7 +124,7 @@ def test_weak_reference_cleanup() -> None:
 
     class Observer:
         def __init__(self) -> None:
-            self.notifications = []
+            self.notifications: list[tuple[str | None, str | None, Reason]] = []
 
         def callback(self, new: str | None, old: str | None, reason: Reason) -> None:
             self.notifications.append((new, old, reason))
@@ -150,7 +150,7 @@ def test_observer_exception_handling() -> None:
     state._active_project = None  # type: ignore
     state._subscribers.clear()  # type: ignore
 
-    notifications = []
+    notifications: list[tuple[str | None, str | None, Reason]] = []
 
     def bad_observer(new: str | None, old: str | None, reason: Reason) -> None:  # noqa: ARG001
         raise ValueError("Test exception")
@@ -173,7 +173,7 @@ def test_reason_values() -> None:
     state._active_project = None  # type: ignore
 
     reasons: list[Reason] = ["manual", "wizard-accept", "project-switch", "reset"]
-    notifications = []
+    notifications: list[Reason] = []
 
     def observer(new: str | None, old: str | None, reason: Reason) -> None:  # noqa: ARG001
         notifications.append(reason)

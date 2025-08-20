@@ -3,6 +3,7 @@
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -20,7 +21,7 @@ def temp_projects_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_project_data() -> dict:
+def sample_project_data() -> dict[str, Any]:
     """Create sample project data with all required fields."""
     return {
         "slug": "test-project",
@@ -46,14 +47,14 @@ def test_protocol_implementation() -> None:
     assert hasattr(project_meta, "validate_project_yaml")
 
 
-def test_validate_project_yaml_valid(sample_project_data: dict) -> None:
+def test_validate_project_yaml_valid(sample_project_data: dict[str, Any]) -> None:
     """Test validation with valid data."""
     assert ProjectMeta.validate_project_yaml(sample_project_data) is True
 
 
 def test_validate_project_yaml_missing_fields() -> None:
     """Test validation with missing required fields."""
-    incomplete_data = {
+    incomplete_data: dict[str, Any] = {
         "slug": "test",
         "title": "Test",
         # Missing other required fields
@@ -122,7 +123,7 @@ def test_read_project_yaml_missing_file(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_read_project_yaml_valid(
-    monkeypatch: pytest.MonkeyPatch, sample_project_data: dict
+    monkeypatch: pytest.MonkeyPatch, sample_project_data: dict[str, Any]
 ) -> None:
     """Test reading valid project YAML."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -213,7 +214,7 @@ def test_write_project_yaml_creates_directory(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_write_project_yaml_atomic(
-    monkeypatch: pytest.MonkeyPatch, sample_project_data: dict
+    monkeypatch: pytest.MonkeyPatch, sample_project_data: dict[str, Any]
 ) -> None:
     """Test that writes are atomic."""
     with tempfile.TemporaryDirectory() as tmpdir:
