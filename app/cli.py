@@ -16,6 +16,9 @@ app = typer.Typer(
 @app.command()
 def materialize_claude(
     dest: str = typer.Option(..., "--dest", "-d", help="Destination path for .claude config"),
+    config_dir_name: str = typer.Option(
+        ".claude", "--config-dir-name", "-c", help="Name of the configuration directory"
+    ),
 ) -> None:
     """Generate Claude configuration at the specified destination."""
     try:
@@ -28,7 +31,7 @@ def materialize_claude(
         # Generate the Claude configuration
         config_dir = write_project_settings(
             repo_root=dest_path,
-            config_dir_name=".claude",
+            config_dir_name=config_dir_name,
             import_hooks_from="app.permissions.hooks_lib",
         )
 
