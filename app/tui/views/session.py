@@ -343,3 +343,147 @@ class SessionController:
         except Exception as e:
             self.viewer.write(f"\n[red]Error generating workstreams: {e}[/red]\n")
             self.viewer.write("[yellow]No files were modified.[/yellow]\n")
+
+    async def start_synthesis_session(
+        self,
+        project_slug: str,
+        workstream: str,
+        agent: AgentSpec | None = None,
+        run_critic: bool = False,
+    ) -> None:
+        """
+        Start a synthesis stage session.
+
+        Args:
+            project_slug: The project identifier/slug
+            workstream: The workstream to synthesize
+            agent: Optional agent specification to use
+            run_critic: Whether to run critic review
+        """
+        from app.synthesis import SynthesisController
+        from app.synthesis.logger import SynthesisLogger
+
+        self.current_stage = "synthesis"
+        self.project_slug = project_slug
+        self.selected_agent = agent
+
+        # Get synthesis policy and merge with agent if provided
+        policy = get_policy("synthesis")
+        if agent:
+            policy = merge_agent_policy(policy, agent)
+
+        # Clear viewer and show starting message
+        self.viewer.clear()
+        self.viewer.write("[bold cyan]Starting Synthesis Session[/bold cyan]\n")
+        self.viewer.write(f"[dim]Project: {project_slug}[/dim]\n")
+        self.viewer.write(f"[dim]Workstream: {workstream}[/dim]\n")
+        if agent:
+            self.viewer.write(f"[dim]Using agent: {agent.name}[/dim]\n")
+        self.viewer.write(
+            f"[dim]Allowed tools: {', '.join(policy.allowed_tools) if policy.allowed_tools else 'None'}[/dim]\n"
+        )
+        self.viewer.write("[dim]Synthesizing requirements...[/dim]\n\n")
+
+        # Create synthesis controller and logger
+        logger = SynthesisLogger()
+        controller = SynthesisController(project_slug, self.client, logger)
+
+        try:
+            # Run synthesis
+            result = await controller.synthesize_workstream(
+                workstream=workstream,
+                run_critic=run_critic,
+                auto_fix=False,  # Let user decide on auto-fix
+            )
+
+            # Display validation results
+            if result.validation_errors:
+                self.viewer.write("\n[yellow]⚠ Validation issues found:[/yellow]\n")
+                for error in result.validation_errors:
+                    if error.line_number:
+                        self.viewer.write(f"  Line {error.line_number}: {error.message}\n")
+                    else:
+                        self.viewer.write(f"  {error.section}: {error.message}\n")
+
+            # Display critic results if run
+            if result.critic_issues:
+                self.viewer.write("\n[bold]Critic Review:[/bold]\n")
+
+                # Group by severity
+                critical = [i for i in result.critic_issues if i.severity == "Critical"]
+                warnings = [i for i in result.critic_issues if i.severity == "Warning"]
+                suggestions = [i for i in result.critic_issues if i.severity == "Suggestion"]
+
+                if critical:
+                    self.viewer.write("[red]Critical Issues:[/red]\n")
+                    for issue in critical:
+                        self.viewer.write(f"  • {issue.section}: {issue.message}\n")
+                        if issue.action:
+                            self.viewer.write(f"    → {issue.action}\n")
+
+                if warnings:
+                    self.viewer.write("[yellow]Warnings:[/yellow]\n")
+                    for issue in warnings:
+                        self.viewer.write(f"  • {issue.section}: {issue.message}\n")
+                        if issue.action:
+                            self.viewer.write(f"    → {issue.action}\n")
+
+                if suggestions:
+                    self.viewer.write("[dim]Suggestions:[/dim]\n")
+                    for issue in suggestions[:3]:  # Show only first 3 suggestions
+                        self.viewer.write(f"  • {issue.section}: {issue.message}\n")
+                    if len(suggestions) > 3:
+                        self.viewer.write(
+                            f"  [dim](and {len(suggestions) - 3} more suggestions)[/dim]\n"
+                        )
+
+            # Show diff preview
+            self.viewer.write("\n[bold]Preview of changes:[/bold]\n")
+            preview_lines = result.diff_preview.split("\n")
+            if len(preview_lines) > 40:
+                self.viewer.write("\n".join(preview_lines[:35]))
+                self.viewer.write(f"\n[dim]... ({len(preview_lines) - 35} more lines) ...[/dim]\n")
+            else:
+                self.viewer.write(result.diff_preview)
+
+            # Get approval
+            app = self.viewer.app
+            modal = KernelApprovalModal(result.diff_preview, project_slug)
+            approved = await app.push_screen_wait(modal)
+
+            if approved:
+                # Apply synthesis
+                await controller.apply_synthesis(result)
+                self.viewer.write(
+                    f"\n[green]✓ Successfully synthesized {workstream} to elements/{workstream}.md[/green]\n"
+                )
+
+                # Log decision
+                await logger.log_decision(
+                    stage="synthesis",
+                    decision="applied_as_is"
+                    if not result.validation_errors
+                    else "applied_with_fixes",
+                    details={
+                        "workstream": workstream,
+                        "validation_errors": len(result.validation_errors),
+                    },
+                )
+            else:
+                self.viewer.write(
+                    "\n[yellow]Synthesis rejected. No files were modified.[/yellow]\n"
+                )
+                await logger.log_decision(
+                    stage="synthesis",
+                    decision="canceled",
+                    details={"workstream": workstream},
+                )
+
+            # Show log location
+            self.viewer.write(f"\n[dim]Log saved to: {logger.get_log_path()}[/dim]\n")
+
+        except FileNotFoundError as e:
+            self.viewer.write(f"\n[red]Error: {e}[/red]\n")
+            self.viewer.write("[yellow]Please run the Kernel stage first.[/yellow]\n")
+        except Exception as e:
+            self.viewer.write(f"\n[red]Error during synthesis: {e}[/red]\n")
