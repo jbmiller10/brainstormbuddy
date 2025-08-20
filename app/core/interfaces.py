@@ -35,10 +35,10 @@ class AppStateProtocol(Protocol):
         ...
 
 
-# Module-level function signature that implementations should provide
-def get_app_state() -> AppStateProtocol:
-    """Get the singleton AppState instance."""
-    raise NotImplementedError("This is a protocol definition only")
+# Note: Implementations should provide a module-level function:
+# def get_app_state() -> AppStateProtocol:
+#     """Get the singleton AppState instance."""
+#     ...
 
 
 class ProjectMetaProtocol(Protocol):
