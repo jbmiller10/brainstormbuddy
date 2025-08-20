@@ -512,9 +512,11 @@
     </deliverables>
   </ticket>
 
-  <ticket id="AGT-020">
-    <title>Subagent spec loader + seed agents</title>
-    <objective>Load .claude/agents/*.md with YAML frontmatter and create researcher/critic/architect.</objective>
+    <ticket id="AGT-020">
+    <title>Subagent spec loader + seed agents (configurable source; optional materialization)</title>
+    <objective>
+      Load agent specs from a tracked package location (not .claude/) and, when needed, materialize them into any target ".claude/agents" directory for Claude Code runs.
+    </objective>
     <prerequisites>POL-010</prerequisites>
 
     <tool_policy>
@@ -523,40 +525,45 @@
     </tool_policy>
 
     <requirements>
-      <requirement>Frontmatter keys: name, description, tools(optional).</requirement>
-      <requirement>Body is system prompt (markdown text).</requirement>
-      <requirement>Validation errors are explicit and actionable.</requirement>
-      <requirement>Seed three agent files with minimal roles.</requirement>
-      <requirement>Unit tests in tests/test_agents_loader.py.</requirement>
+      <requirement>Create a default in-repo source for agent specs at "app/llm/agentspecs/".</requirement>
+      <requirement>Agent spec files are markdown with YAML frontmatter: name (str, required), description (str, required), tools (list[str], optional); body = system prompt.</requirement>
+      <requirement>Implement loader: load_agent_specs(source_pkg: str = "app.llm.agentspecs") -> list[AgentSpec]. Validation errors must be explicit and actionable.</requirement>
+      <requirement>Implement materializer: materialize_agents(target_dir: Path, source_pkg: str) -> Path that writes to "{target_dir}/.claude/agents/*.md" for Claude Code, preserving filenames.</requirement>
+      <requirement>Seed three agent specs under "app/llm/agentspecs/": researcher.md, critic.md, architect.md (minimal but valid).</requirement>
+      <requirement>Unit tests in tests/test_agents_loader.py: valid load, invalid frontmatter, materialize to tmp dir, roundtrip filename checks.</requirement>
     </requirements>
 
     <tasks>
-      <step>Implement app/llm/agents.py loader returning AgentSpec objects.</step>
-      <step>Create .claude/agents/researcher.md, critic.md, architect.md.</step>
-      <step>Add tests covering valid/invalid cases.</step>
+      <step>Add "app/llm/agentspecs/{researcher,critic,architect}.md".</step>
+      <step>Implement "app/llm/agents.py" with AgentSpec model, load_agent_specs, materialize_agents.</step>
+      <step>Write tests to load from package and to materialize into a temporary ".claude/agents/" (no repo-root dependency).</step>
       <step>Show diff.</step>
     </tasks>
 
     <acceptance_criteria>
-      <criterion>Valid specs load; invalid specs raise clear errors.</criterion>
+      <criterion>Loader returns 3 AgentSpec instances from the package path.</criterion>
+      <criterion>Invalid spec yields a clear ValueError with field name(s).</criterion>
+      <criterion>Materializer writes "{tmp}/.claude/agents/*.md" and contents match sources.</criterion>
     </acceptance_criteria>
 
     <validation>
-      <artifact_check>Confirm files and test coverage.</artifact_check>
+      <artifact_check>Assert files exist in app/llm/agentspecs and in the temp ".claude/agents" after materialization.</artifact_check>
     </validation>
 
     <deliverables>
       <file>app/llm/agents.py</file>
-      <file>.claude/agents/researcher.md</file>
-      <file>.claude/agents/critic.md</file>
-      <file>.claude/agents/architect.md</file>
+      <file>app/llm/agentspecs/researcher.md</file>
+      <file>app/llm/agentspecs/critic.md</file>
+      <file>app/llm/agentspecs/architect.md</file>
       <file>tests/test_agents_loader.py</file>
     </deliverables>
   </ticket>
 
   <ticket id="AGT-021">
-    <title>Agent invocation and policy merge</title>
-    <objective>Select agent per session; merge agent tools with stage policy (deny wins).</objective>
+    <title>Agent invocation and policy merge (decoupled from .claude)</title>
+    <objective>
+      Select agent per session using package-loaded specs; merge agent tools with stage policy (deny wins). No assumption about a repo-root ".claude".
+    </objective>
     <prerequisites>AGT-020, POL-010</prerequisites>
 
     <tool_policy>
@@ -565,25 +572,26 @@
     </tool_policy>
 
     <requirements>
-      <requirement>Merge logic: final_allowed = intersection(stage_allowed, agent_requested); apply stage/global denies last.</requirement>
-      <requirement>UI exposes agent selection and displays final tool set before starting session.</requirement>
-      <requirement>Unit tests for merge logic.</requirement>
+      <requirement>Use load_agent_specs("app.llm.agentspecs") at app init; cache results in memory.</requirement>
+      <requirement>Merge logic: final_allowed = intersection(stage_allowed, agent_requested); then subtract global denies (stage.denied_tools).</requirement>
+      <requirement>UI exposes agent selection and shows final tool set before run.</requirement>
+      <requirement>Unit tests: empty agent tools, full overlap, partial overlap, and denied precedence.</requirement>
     </requirements>
 
     <tasks>
-      <step>Implement merge function and integrate into session creation.</step>
+      <step>Implement merge function and integrate into session creation path.</step>
+      <step>Expose a simple picker in the UI; display the computed "final_allowed".</step>
       <step>Add tests in tests/test_policy_merge.py.</step>
-      <step>Update UI to select agent and preview final tools.</step>
       <step>Show diff.</step>
     </tasks>
 
     <acceptance_criteria>
       <criterion>Denied tools remain denied regardless of agent request.</criterion>
-      <criterion>Final tool list visible to user before run.</criterion>
+      <criterion>UI shows final tool set; selection persists for the session.</criterion>
     </acceptance_criteria>
 
     <validation>
-      <artifact_check>Confirm tests for edge cases (empty agent tools, overlapping lists).</artifact_check>
+      <artifact_check>Unit tests cover edge cases; manual run shows final tool list in the view.</artifact_check>
     </validation>
 
     <deliverables>
@@ -631,6 +639,47 @@
     </deliverables>
   </ticket>
 
+  <ticket id="SEC-034">
+    <title>Domain allow/deny policy editor (configurable settings dir)</title>
+    <objective>
+      Manage domain allow/deny lists in project settings without assuming a repo-root ".claude"; write to a configurable settings directory produced by the settings writer.
+    </objective>
+    <prerequisites>PERM-011</prerequisites>
+
+    <tool_policy>
+      <allowed>Read, Write, Edit</allowed>
+      <denied>Bash, Web*</denied>
+    </tool_policy>
+
+    <requirements>
+      <requirement>Extend write_project_settings(repo_root: Path, config_dir_name: str = ".claude", import_hooks_from: str | None = None) -> Path to be idempotent and return the actual config dir path.</requirement>
+      <requirement>Settings JSON must include "web_allow" and "web_deny" string lists under a stable key (e.g., permissions.webDomains.allow/deny or top-level keys—choose and document).</requirement>
+      <requirement>UI panel: choose/edit domains and show the resolved config dir path; persist via settings_writer into that dir.</requirement>
+      <requirement>Unit tests: serialization of allow/deny, load-then-save roundtrip, and writing to a tmp config dir (not repo root).</requirement>
+    </requirements>
+
+    <tasks>
+      <step>Modify settings_writer to support web allow/deny keys and the returned path.</step>
+      <step>Implement the UI editor and hook it up to settings_writer.</step>
+      <step>Tests for serialization and tmp-path write/read.</step>
+      <step>Show diff.</step>
+    </tasks>
+
+    <acceptance_criteria>
+      <criterion>Edited lists appear in the JSON written to the chosen config directory.</criterion>
+      <criterion>No dependency on a repo-root ".claude" folder.</criterion>
+    </acceptance_criteria>
+
+    <validation>
+      <artifact_check>Open resulting JSON from tmp path and verify values.</artifact_check>
+    </validation>
+
+    <deliverables>
+      <file>app/permissions/settings_writer.py</file>
+      <file>UI update (settings/agents view)</file>
+      <file>tests/test_settings_writer.py (updated/extended)</file>
+    </deliverables>
+  </ticket>
   <ticket id="RES-031">
     <title>Ingest parser for findings</title>
     <objective>Normalize markdown or JSON input into Finding records with dedupe.</objective>
@@ -738,44 +787,13 @@
     </deliverables>
   </ticket>
 
-  <ticket id="SEC-034">
-    <title>Domain allow/deny policy editor</title>
-    <objective>Manage domain allow/deny lists in project settings (no web calls yet).</objective>
-    <prerequisites>PERM-011</prerequisites>
 
-    <tool_policy>
-      <allowed>Read, Write, Edit</allowed>
-      <denied>Bash, Web*</denied>
-    </tool_policy>
-
-    <requirements>
-      <requirement>Add web_allow and web_deny lists to settings schema and writer.</requirement>
-      <requirement>Small UI panel to add/remove domains; persist via settings_writer.</requirement>
-    </requirements>
-
-    <tasks>
-      <step>Extend settings model + writer to support domain lists.</step>
-      <step>Implement UI to manage lists.</step>
-      <step>Show diff and example resulting .claude/settings.json snippet.</step>
-    </tasks>
-
-    <acceptance_criteria>
-      <criterion>Saved settings include edited domain lists.</criterion>
-    </acceptance_criteria>
-
-    <validation>
-      <artifact_check>Open resulting JSON and verify domains present.</artifact_check>
-    </validation>
-
-    <deliverables>
-      <file>app/permissions/policy.py (or extend writer)</file>
-      <file>UI update (settings/agents view)</file>
-    </deliverables>
-  </ticket>
 
   <ticket id="PERM-051">
-    <title>Hook hardening: gate.py and format_md.py</title>
-    <objective>Implement PreToolUse blocking and PostToolUse markdown formatting.</objective>
+    <title>Hook hardening (generated hooks import from package; configurable config dir)</title>
+    <objective>
+      Implement PreToolUse and PostToolUse hooks whose generated stubs import logic from in-repo modules; emit them into any config dir (not necessarily repo-root ".claude").
+    </objective>
     <prerequisites>PERM-011, DOC-014</prerequisites>
 
     <tool_policy>
@@ -784,31 +802,75 @@
     </tool_policy>
 
     <requirements>
-      <requirement>gate.py reads JSON from stdin: {tool_name, target_path, args, url?}; deny on Bash, path escape, sensitive paths, or disallowed domain.</requirement>
-      <requirement>Exit code 2 on deny; print reason to stdout/stderr.</requirement>
-      <requirement>format_md.py formats Markdown content after Write/Edit using mdformat API; no shell calls.</requirement>
-      <requirement>Unit tests calling helper functions for both scripts.</requirement>
+      <requirement>Create "app/permissions/hooks_lib/format_md.py" with _format_markdown_text(text) using mdformat; "app/permissions/hooks_lib/gate.py" with validate_tool_use(payload) -> (allowed: bool, reason: str).</requirement>
+      <requirement>settings_writer must generate hooks whose top-level modules simply import from hooks_lib and then call those helpers. Example: "from app.permissions.hooks_lib.format_md import _format_markdown_text".</requirement>
+      <requirement>Generated hooks must be placed under {config_dir}/hooks/ and be executable; tests should generate to tmp path and import via importlib.util.</requirement>
+      <requirement>Gate rules: deny Bash; deny writes outside repo; deny sensitive paths (.env*, secrets/**, .git/**); if payload.url present, deny when domain not in allow list.</requirement>
+      <requirement>Exit code 2 on deny (document); deterministic formatting for Markdown files.</requirement>
     </requirements>
 
     <tasks>
-      <step>Implement pure-Python helpers and import them in scripts.</step>
-      <step>Write tests covering allowed/denied scenarios and formatting.</step>
+      <step>Implement hooks_lib helpers and unit tests for them (pure Python).</step>
+      <step>Update settings_writer to emit import-based hook stubs in the chosen config dir.</step>
+      <step>Update tests to write hooks to tmp dir and import/run them with synthetic payloads.</step>
       <step>Show diff.</step>
     </tasks>
 
     <acceptance_criteria>
-      <criterion>Malicious paths and disallowed domains are blocked.</criterion>
-      <criterion>Markdown files are pretty-formatted deterministically.</criterion>
+      <criterion>Hook helpers pass unit tests; generated hooks import helpers correctly.</criterion>
+      <criterion>Denied scenarios return exit code 2 and reason; format hook normalizes headings/bullets.</criterion>
     </acceptance_criteria>
 
     <validation>
-      <artifact_check>Confirm exit codes and messages from helper invocations in tests.</artifact_check>
+      <artifact_check>tests/test_format_md_hook.py uses tmp config dir and passes; a new gate test covers allowed/denied cases.</artifact_check>
     </validation>
 
     <deliverables>
-      <file>.claude/hooks/gate.py</file>
-      <file>.claude/hooks/format_md.py</file>
-      <file>tests for hook helpers</file>
+      <file>app/permissions/hooks_lib/format_md.py</file>
+      <file>app/permissions/hooks_lib/gate.py</file>
+      <file>app/permissions/settings_writer.py</file>
+      <file>tests/test_format_md_hook.py (updated)</file>
+      <file>tests/test_gate_hook.py (new)</file>
+    </deliverables>
+  </ticket>
+
+   <!-- Optional but recommended -->
+  <ticket id="RUN-052" optional="true">
+    <title>Headless runner: add "materialize-claude" command</title>
+    <objective>
+      Provide a CLI subcommand to materialize a config dir containing settings and hooks to an arbitrary destination for Claude Code runs (no repo-root dependency).
+    </objective>
+    <prerequisites>PERM-011, PERM-051</prerequisites>
+
+    <tool_policy>
+      <allowed>Read, Write, Edit</allowed>
+      <denied>Bash, Web*</denied>
+    </tool_policy>
+
+    <requirements>
+      <requirement>Command: "materialize-claude --dest /path/to/workdir --config-dir-name .claude".</requirement>
+      <requirement>Invokes write_project_settings(repo_root=/path/to/workdir, config_dir_name, import_hooks_from="app.permissions.hooks_lib").</requirement>
+      <requirement>Logs the resolved config dir path so Claude can be launched with "--cwd /path/to/workdir".</requirement>
+      <requirement>Unit tests for argument parsing and that files are created in tmp dest.</requirement>
+    </requirements>
+
+    <tasks>
+      <step>Add subcommand to app/cli.py; route to settings_writer.</step>
+      <step>Add tests/test_cli.py for the new subcommand.</step>
+      <step>Show diff.</step>
+    </tasks>
+
+    <acceptance_criteria>
+      <criterion>Running the command creates {dest}/{config_dir_name}/settings.json and hooks/ with import-based stubs.</criterion>
+    </acceptance_criteria>
+
+    <validation>
+      <artifact_check>Verify created files and minimal importability in test.</artifact_check>
+    </validation>
+
+    <deliverables>
+      <file>app/cli.py</file>
+      <file>tests/test_cli.py</file>
     </deliverables>
   </ticket>
 

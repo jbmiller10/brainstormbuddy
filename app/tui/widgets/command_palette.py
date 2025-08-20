@@ -47,6 +47,7 @@ class CommandPalette(Container):
             ("research import", "Import research findings"),
             ("synthesis", "Synthesize findings into final output"),
             ("export", "Export project to various formats"),
+            ("domain settings", "Configure web domain allow/deny lists"),
         ]
 
     def compose(self) -> ComposeResult:
@@ -133,3 +134,45 @@ class CommandPalette(Container):
         elif command == "generate workstreams":
             # Run the async task using Textual's worker system
             self.app.run_worker(controller.generate_workstreams(), exclusive=True)
+
+        # Handle domain settings command
+        elif command == "domain settings":
+            from pathlib import Path
+
+            from app.tui.widgets.domain_editor import DomainEditor
+
+            # Get current settings if they exist
+            config_dir = Path(".") / ".claude"
+            allow_domains = []
+            deny_domains = []
+
+            # Try to load existing settings
+            settings_path = config_dir / "settings.json"
+            if settings_path.exists():
+                import json
+
+                with open(settings_path, encoding="utf-8") as f:
+                    settings = json.load(f)
+                    if "permissions" in settings and "webDomains" in settings["permissions"]:
+                        allow_domains = settings["permissions"]["webDomains"].get("allow", [])
+                        deny_domains = settings["permissions"]["webDomains"].get("deny", [])
+
+            # Show domain editor
+            editor = DomainEditor(config_dir, allow_domains, deny_domains)
+            await self.app.push_screen_wait(editor)
+
+        # Handle research import command
+        elif command == "research import":
+            from pathlib import Path
+
+            from app.tui.views.research import ResearchImportModal
+
+            # Determine project path and workstream
+            # For now, use default project - in production, this would be context-aware
+            project_path = Path("projects") / "default"
+            project_path.mkdir(parents=True, exist_ok=True)
+            db_path = project_path / "research.db"
+
+            # Show research import modal
+            modal = ResearchImportModal(workstream="research", db_path=db_path)
+            await self.app.push_screen_wait(modal)

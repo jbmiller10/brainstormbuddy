@@ -22,22 +22,6 @@
             }
           }
         ]
-      },
-      {
-        "id": "7a3b0dc4a998c716",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "3b33062978337689",
-            "type": "leaf",
-            "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
-            }
-          }
-        ]
       }
     ],
     "direction": "vertical"
@@ -181,6 +165,41 @@
       "command-palette:Open command palette": false,
       "bases:Create new base": false
     }
+  },
+  "floating": {
+    "id": "a807f2187b444222",
+    "type": "floating",
+    "children": [
+      {
+        "id": "f63e24ad7469765b",
+        "type": "window",
+        "children": [
+          {
+            "id": "38b7bc2d6e783252",
+            "type": "tabs",
+            "children": [
+              {
+                "id": "3b33062978337689",
+                "type": "leaf",
+                "state": {
+                  "type": "graph",
+                  "state": {},
+                  "icon": "lucide-git-fork",
+                  "title": "Graph view"
+                }
+              }
+            ]
+          }
+        ],
+        "direction": "vertical",
+        "x": 1190,
+        "y": 116,
+        "width": 600,
+        "height": 760,
+        "maximize": false,
+        "zoom": 0
+      }
+    ]
   },
   "active": "3b33062978337689",
   "lastOpenFiles": [
