@@ -57,7 +57,14 @@ def populated_db(tmp_path: Path) -> Path:
                 workstream="testing",
             )
 
-    asyncio.run(setup_db())
+    # Create a new event loop for this fixture
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(setup_db())
+    finally:
+        # Explicitly close the loop to prevent resource warnings
+        loop.close()
+
     return db_path
 
 
@@ -206,29 +213,35 @@ class TestFilterButtons:
         table_mock.clear = MagicMock()
         table_mock.add_row = MagicMock()
 
-        with patch.object(
-            modal,
-            "query_one",
-            MagicMock(
-                side_effect=lambda selector, _widget_type: {
-                    "#filter-workstream": workstream_input,
-                    "#filter-tags": tags_input,
-                    "#filter-confidence": confidence_input,
-                    "#findings-table": table_mock,
-                }.get(selector)
+        with (
+            patch.object(
+                modal,
+                "query_one",
+                MagicMock(
+                    side_effect=lambda selector, _widget_type: {
+                        "#filter-workstream": workstream_input,
+                        "#filter-tags": tags_input,
+                        "#filter-confidence": confidence_input,
+                        "#findings-table": table_mock,
+                    }.get(selector)
+                ),
             ),
+            patch.object(modal, "update_status", MagicMock()) as update_status_mock,
+            patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock,
         ):
-            with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
-                # Apply filters
-                await modal.handle_apply_filters()
+            # Apply filters
+            await modal.handle_apply_filters()
 
-                # Check filter state was updated
-                assert modal.filter_workstream == "research"
-                assert modal.filter_tags == ["ai", "ml"]
-                assert modal.filter_min_confidence == 0.7
+            # Check filter state was updated
+            assert modal.filter_workstream == "research"
+            assert modal.filter_tags == ["ai", "ml"]
+            assert modal.filter_min_confidence == 0.7
 
-                # Check status was updated
-                update_status_mock.assert_called_with("Filters applied", is_error=False)
+            # Check status was updated
+            update_status_mock.assert_called_with("Filters applied", is_error=False)
+
+            # Check table was refreshed
+            refresh_table_mock.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_clear_filters_button(self, populated_db: Path) -> None:
@@ -249,34 +262,40 @@ class TestFilterButtons:
         table_mock.clear = MagicMock()
         table_mock.add_row = MagicMock()
 
-        with patch.object(
-            modal,
-            "query_one",
-            MagicMock(
-                side_effect=lambda selector, _widget_type: {
-                    "#filter-workstream": workstream_input,
-                    "#filter-tags": tags_input,
-                    "#filter-confidence": confidence_input,
-                    "#findings-table": table_mock,
-                }.get(selector)
+        with (
+            patch.object(
+                modal,
+                "query_one",
+                MagicMock(
+                    side_effect=lambda selector, _widget_type: {
+                        "#filter-workstream": workstream_input,
+                        "#filter-tags": tags_input,
+                        "#filter-confidence": confidence_input,
+                        "#findings-table": table_mock,
+                    }.get(selector)
+                ),
             ),
+            patch.object(modal, "update_status", MagicMock()) as update_status_mock,
+            patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock,
         ):
-            with patch.object(modal, "update_status", MagicMock()) as update_status_mock:
-                # Clear filters
-                await modal.handle_clear_filters()
+            # Clear filters
+            await modal.handle_clear_filters()
 
-                # Check filter state was cleared
-                assert modal.filter_workstream == ""
-                assert modal.filter_tags == []
-                assert modal.filter_min_confidence is None
+            # Check filter state was cleared
+            assert modal.filter_workstream == ""
+            assert modal.filter_tags == []
+            assert modal.filter_min_confidence is None
 
-                # Check input fields were cleared
-                assert workstream_input.value == ""
-                assert tags_input.value == ""
-                assert confidence_input.value == ""
+            # Check input fields were cleared
+            assert workstream_input.value == ""
+            assert tags_input.value == ""
+            assert confidence_input.value == ""
 
-                # Check status was updated
-                update_status_mock.assert_called_with("Filters cleared", is_error=False)
+            # Check status was updated
+            update_status_mock.assert_called_with("Filters cleared", is_error=False)
+
+            # Check table was refreshed
+            refresh_table_mock.assert_called_once()
 
 
 class TestInputValidation:
@@ -297,29 +316,29 @@ class TestInputValidation:
         confidence_input = MagicMock(spec=Input)
         confidence_input.value = "not_a_number"
 
-        with patch.object(
-            modal,
-            "query_one",
-            MagicMock(
-                side_effect=lambda selector, _widget_type: {
-                    "#filter-workstream": workstream_input,
-                    "#filter-tags": tags_input,
-                    "#filter-confidence": confidence_input,
-                }.get(selector)
+        with (
+            patch.object(
+                modal,
+                "query_one",
+                MagicMock(
+                    side_effect=lambda selector, _widget_type: {
+                        "#filter-workstream": workstream_input,
+                        "#filter-tags": tags_input,
+                        "#filter-confidence": confidence_input,
+                    }.get(selector)
+                ),
             ),
+            patch.object(modal, "update_status", MagicMock()) as update_status_mock,
+            patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock,
         ):
-            with (
-                patch.object(modal, "update_status", MagicMock()) as update_status_mock,
-                patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock,
-            ):
-                # Try to apply filters with invalid confidence
-                await modal.handle_apply_filters()
+            # Try to apply filters with invalid confidence
+            await modal.handle_apply_filters()
 
-                # Should show error status
-                update_status_mock.assert_called_with("Invalid confidence value", is_error=True)
+            # Should show error status
+            update_status_mock.assert_called_with("Invalid confidence value", is_error=True)
 
-                # Should not refresh table
-                refresh_table_mock.assert_not_called()
+            # Should not refresh table
+            refresh_table_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_confidence_out_of_range(self, populated_db: Path) -> None:
@@ -336,31 +355,31 @@ class TestInputValidation:
         confidence_input = MagicMock(spec=Input)
         confidence_input.value = "1.5"
 
-        with patch.object(
-            modal,
-            "query_one",
-            MagicMock(
-                side_effect=lambda selector, _widget_type: {
-                    "#filter-workstream": workstream_input,
-                    "#filter-tags": tags_input,
-                    "#filter-confidence": confidence_input,
-                }.get(selector)
+        with (
+            patch.object(
+                modal,
+                "query_one",
+                MagicMock(
+                    side_effect=lambda selector, _widget_type: {
+                        "#filter-workstream": workstream_input,
+                        "#filter-tags": tags_input,
+                        "#filter-confidence": confidence_input,
+                    }.get(selector)
+                ),
             ),
+            patch.object(modal, "update_status", MagicMock()) as update_status_mock,
+            patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock,
         ):
-            with (
-                patch.object(modal, "update_status", MagicMock()) as update_status_mock,
-                patch.object(modal, "refresh_table", AsyncMock()) as refresh_table_mock,
-            ):
-                # Try to apply filters with out-of-range confidence
-                await modal.handle_apply_filters()
+            # Try to apply filters with out-of-range confidence
+            await modal.handle_apply_filters()
 
-                # Should show error status
-                update_status_mock.assert_called_with(
-                    "Confidence must be between 0.0 and 1.0", is_error=True
-                )
+            # Should show error status
+            update_status_mock.assert_called_with(
+                "Confidence must be between 0.0 and 1.0", is_error=True
+            )
 
-                # Should not refresh table
-                refresh_table_mock.assert_not_called()
+            # Should not refresh table
+            refresh_table_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_valid_confidence_boundaries(self, populated_db: Path) -> None:
@@ -380,28 +399,30 @@ class TestInputValidation:
         table_mock.clear = MagicMock()
         table_mock.add_row = MagicMock()
 
-        with patch.object(
-            modal,
-            "query_one",
-            MagicMock(
-                side_effect=lambda selector, _widget_type: {
-                    "#filter-workstream": workstream_input,
-                    "#filter-tags": tags_input,
-                    "#filter-confidence": confidence_input,
-                    "#findings-table": table_mock,
-                }.get(selector)
+        with (
+            patch.object(
+                modal,
+                "query_one",
+                MagicMock(
+                    side_effect=lambda selector, _widget_type: {
+                        "#filter-workstream": workstream_input,
+                        "#filter-tags": tags_input,
+                        "#filter-confidence": confidence_input,
+                        "#findings-table": table_mock,
+                    }.get(selector)
+                ),
             ),
+            patch.object(modal, "update_status", MagicMock()),
         ):
-            with patch.object(modal, "update_status", MagicMock()):
-                # Test 0.0
-                confidence_input.value = "0.0"
-                await modal.handle_apply_filters()
-                assert modal.filter_min_confidence == 0.0
+            # Test 0.0
+            confidence_input.value = "0.0"
+            await modal.handle_apply_filters()
+            assert modal.filter_min_confidence == 0.0
 
-                # Test 1.0
-                confidence_input.value = "1.0"
-                await modal.handle_apply_filters()
-                assert modal.filter_min_confidence == 1.0
+            # Test 1.0
+            confidence_input.value = "1.0"
+            await modal.handle_apply_filters()
+            assert modal.filter_min_confidence == 1.0
 
 
 class TestEmptyFilters:
@@ -443,23 +464,25 @@ class TestEmptyFilters:
         table_mock.clear = MagicMock()
         table_mock.add_row = MagicMock()
 
-        with patch.object(
-            modal,
-            "query_one",
-            MagicMock(
-                side_effect=lambda selector, _widget_type: {
-                    "#filter-workstream": workstream_input,
-                    "#filter-tags": tags_input,
-                    "#filter-confidence": confidence_input,
-                    "#findings-table": table_mock,
-                }.get(selector)
+        with (
+            patch.object(
+                modal,
+                "query_one",
+                MagicMock(
+                    side_effect=lambda selector, _widget_type: {
+                        "#filter-workstream": workstream_input,
+                        "#filter-tags": tags_input,
+                        "#filter-confidence": confidence_input,
+                        "#findings-table": table_mock,
+                    }.get(selector)
+                ),
             ),
+            patch.object(modal, "update_status", MagicMock()),
         ):
-            with patch.object(modal, "update_status", MagicMock()):
-                # Apply filters with whitespace-only values
-                await modal.handle_apply_filters()
+            # Apply filters with whitespace-only values
+            await modal.handle_apply_filters()
 
-                # Should treat as empty filters
-                assert modal.filter_workstream == ""
-                assert modal.filter_tags == []
-                assert modal.filter_min_confidence is None
+            # Should treat as empty filters
+            assert modal.filter_workstream == ""
+            assert modal.filter_tags == []
+            assert modal.filter_min_confidence is None
