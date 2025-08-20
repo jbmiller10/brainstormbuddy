@@ -1,7 +1,8 @@
 """Controller for synthesis stage operations."""
 
 import json
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,23 @@ from app.llm.sessions import get_policy, merge_agent_policy
 from app.research.db import ResearchDB
 from app.synthesis.logger import SynthesisLogger
 
+# Constants for synthesis operations
+EVIDENCE_TRUNCATION_LENGTH = 200
+DEFAULT_MIN_CONFIDENCE = 0.5
+DEFAULT_MAX_FINDINGS = 200
+
+
+@dataclass
+class SynthesisConfig:
+    """Configuration for synthesis operations."""
+
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE
+    max_findings: int = DEFAULT_MAX_FINDINGS
+    evidence_truncation_length: int = EVIDENCE_TRUNCATION_LENGTH
+    enable_critic: bool = False
+    enable_auto_fix: bool = False
+    enable_progress_tracking: bool = True
+
 
 @dataclass
 class CriticIssue:
@@ -27,6 +45,16 @@ class CriticIssue:
     section: str
     message: str
     action: str
+
+
+@dataclass
+class SynthesisProgress:
+    """Progress information for synthesis operations."""
+
+    step: str  # Current step name
+    progress: int  # Progress percentage (0-100)
+    message: str  # Descriptive message
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -49,6 +77,7 @@ class SynthesisController:
         project_slug: str,
         client: ClaudeClient | None = None,
         logger: SynthesisLogger | None = None,
+        config: SynthesisConfig | None = None,
     ) -> None:
         """
         Initialize synthesis controller.
@@ -57,11 +86,13 @@ class SynthesisController:
             project_slug: Project identifier
             client: Claude client for LLM operations
             logger: Logger for tracking operations
+            config: Synthesis configuration settings
         """
         self.project_slug = project_slug
         self.project_path = Path("projects") / project_slug
         self.client = client or FakeClaudeClient()
         self.logger = logger or SynthesisLogger()
+        self.config = config or SynthesisConfig()
         self._agent_specs: list[AgentSpec] | None = None
 
     def get_agent_specs(self) -> list[AgentSpec]:
@@ -90,20 +121,26 @@ class SynthesisController:
     async def load_findings(
         self,
         workstream: str,
-        min_confidence: float = 0.5,
-        max_items: int = 200,
+        min_confidence: float | None = None,
+        max_items: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Load research findings from database.
 
         Args:
             workstream: Workstream slug to filter by
-            min_confidence: Minimum confidence threshold
-            max_items: Maximum number of findings to return
+            min_confidence: Minimum confidence threshold (uses config default if not specified)
+            max_items: Maximum number of findings to return (uses config default if not specified)
 
         Returns:
             List of finding dictionaries sorted by confidence
         """
+        # Use config defaults if not specified
+        min_confidence = (
+            min_confidence if min_confidence is not None else self.config.min_confidence
+        )
+        max_items = max_items if max_items is not None else self.config.max_findings
+
         db_path = self.project_path / "research" / "findings.db"
         if not db_path.exists():
             return []
@@ -139,8 +176,9 @@ class SynthesisController:
             tags = finding.get("tags", [])
 
             # Truncate evidence if too long
-            if len(evidence) > 200:
-                evidence = evidence[:197] + "..."
+            truncate_len = self.config.evidence_truncation_length
+            if len(evidence) > truncate_len:
+                evidence = evidence[: truncate_len - 3] + "..."
 
             lines.append(f"- Finding {i}:")
             lines.append(f"  Claim: {claim}")
@@ -357,6 +395,7 @@ Format as JSON array."""
         auto_fix: bool = False,
         min_confidence: float = 0.5,
         max_findings: int = 200,
+        progress_callback: Callable[[SynthesisProgress], None] | None = None,
     ) -> SynthesisResult:
         """
         Run full synthesis for a workstream.
@@ -368,21 +407,36 @@ Format as JSON array."""
             auto_fix: Whether to apply auto-fixes
             min_confidence: Minimum confidence for findings
             max_findings: Maximum number of findings
+            progress_callback: Optional callback for progress updates
 
         Returns:
             SynthesisResult with proposal and validation
         """
+
+        def report_progress(step: str, progress: int, message: str, **details: Any) -> None:
+            """Report progress if callback is configured."""
+            if progress_callback and self.config.enable_progress_tracking:
+                progress_callback(
+                    SynthesisProgress(
+                        step=step, progress=progress, message=message, details=details
+                    )
+                )
+
         # Log start
         await self.logger.log_event(
             stage="synthesis",
             event="start",
             data={"workstream": workstream, "project": self.project_slug},
         )
+        report_progress("start", 0, f"Starting synthesis for {workstream}")
 
         # Load kernel
+        report_progress("kernel", 10, "Loading project kernel...")
         kernel = await self.load_kernel()
+        report_progress("kernel", 20, "Kernel loaded successfully")
 
         # Load findings
+        report_progress("findings", 25, f"Loading research findings for {workstream}...")
         findings = await self.load_findings(workstream, min_confidence, max_findings)
 
         # Log findings loaded
@@ -391,19 +445,32 @@ Format as JSON array."""
             event="findings_loaded",
             data={"workstream": workstream, "findings_count": len(findings)},
         )
+        report_progress(
+            "findings", 35, f"Loaded {len(findings)} findings", findings_count=len(findings)
+        )
 
         # Run architect
         if not workstream_title:
             workstream_title = workstream.replace("-", " ").title()
 
+        report_progress("architect", 40, "Running architect agent to generate requirements...")
         proposal = await self.run_architect(kernel, findings, workstream, workstream_title)
+        report_progress("architect", 60, "Requirements document generated")
 
         # Validate structure
+        report_progress("validation", 65, "Validating document structure...")
         validation_errors = validate_element_structure(proposal)
+        report_progress(
+            "validation",
+            70,
+            f"Validation complete: {len(validation_errors)} issues found",
+            errors_count=len(validation_errors),
+        )
 
         # Run critic if requested
         critic_issues = None
         if run_critic:
+            report_progress("critic", 75, "Running critic review...")
             await self.logger.log_event(
                 stage="critic", event="start", data={"workstream": workstream}
             )
@@ -417,6 +484,12 @@ Format as JSON array."""
                     "critical_count": sum(1 for i in critic_issues if i.severity == "Critical"),
                 },
             )
+            report_progress(
+                "critic",
+                85,
+                f"Critic review complete: {len(critic_issues)} issues",
+                issues_count=len(critic_issues),
+            )
 
         # Apply auto-fixes if requested
         fixed_proposal = proposal
@@ -424,9 +497,11 @@ Format as JSON array."""
             validation_errors
             or (critic_issues and any(i.severity == "Critical" for i in critic_issues))
         ):
+            report_progress("autofix", 90, "Applying automatic fixes...")
             fixed_proposal = auto_fix_element_structure(proposal, validation_errors)
             # Re-validate after fixes
             validation_errors = validate_element_structure(fixed_proposal)
+            report_progress("autofix", 95, "Auto-fixes applied")
 
         # Generate diff preview
         element_path = self.project_path / "elements" / f"{workstream}.md"
@@ -465,6 +540,15 @@ Format as JSON array."""
             },
         )
 
+        report_progress(
+            "complete",
+            100,
+            "Synthesis complete",
+            ac_count=ac_count,
+            req_count=req_count,
+            validation_errors=len(validation_errors),
+        )
+
         return SynthesisResult(
             workstream=workstream,
             proposal=fixed_proposal,
@@ -475,23 +559,60 @@ Format as JSON array."""
 
     async def apply_synthesis(self, result: SynthesisResult) -> None:
         """
-        Apply synthesis result to element file.
+        Apply synthesis result to element file with rollback support.
 
         Args:
             result: Synthesis result to apply
+
+        Raises:
+            Exception: If application fails after backup
         """
         element_path = self.project_path / "elements" / f"{result.workstream}.md"
         element_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Apply atomically
-        atomic_write_text(element_path, result.proposal)
+        # Create backup if file exists
+        backup_content: str | None = None
+        if element_path.exists():
+            with open(element_path, encoding="utf-8") as f:
+                backup_content = f.read()
 
-        # Mark as applied
-        result.applied = True
+        try:
+            # Apply atomically
+            atomic_write_text(element_path, result.proposal)
 
-        # Log application
-        await self.logger.log_event(
-            stage="synthesis",
-            event="applied",
-            data={"workstream": result.workstream, "path": str(element_path)},
-        )
+            # Mark as applied
+            result.applied = True
+
+            # Log application
+            await self.logger.log_event(
+                stage="synthesis",
+                event="applied",
+                data={"workstream": result.workstream, "path": str(element_path)},
+            )
+        except Exception as e:
+            # Rollback on failure
+            if backup_content is not None:
+                try:
+                    atomic_write_text(element_path, backup_content)
+                    await self.logger.log_event(
+                        stage="synthesis",
+                        event="rollback",
+                        data={
+                            "workstream": result.workstream,
+                            "reason": str(e),
+                            "path": str(element_path),
+                        },
+                    )
+                except Exception as rollback_error:
+                    # Log critical failure
+                    await self.logger.log_event(
+                        stage="synthesis",
+                        event="rollback_failed",
+                        data={
+                            "workstream": result.workstream,
+                            "original_error": str(e),
+                            "rollback_error": str(rollback_error),
+                        },
+                    )
+                    raise
+            raise

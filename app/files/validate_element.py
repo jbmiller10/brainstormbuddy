@@ -1,6 +1,15 @@
 """Validation utilities for element markdown structure."""
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class ValidationLevel(Enum):
+    """Severity level for validation issues."""
+
+    ERROR = "error"
+    WARNING = "warning"
+    INFO = "info"
 
 
 @dataclass
@@ -10,6 +19,7 @@ class ValidationError:
     section: str
     message: str
     line_number: int | None = None
+    level: ValidationLevel = ValidationLevel.ERROR
 
 
 def validate_element_structure(content: str) -> list[ValidationError]:
@@ -99,22 +109,39 @@ def validate_element_structure(content: str) -> list[ValidationError]:
                     ac_content = line[5:].strip()
                     if ac_content.startswith(":"):
                         ac_content = ac_content[1:].strip()
-                    # Simple check for testable content - should have substance
+                    # Check for testable content with specific guidance
                     if len(ac_content) < 10:
                         errors.append(
                             ValidationError(
                                 "Acceptance Criteria",
-                                f"AC item appears incomplete or not testable at line {i}",
+                                f"AC item at line {i} appears incomplete. AC should describe testable outcomes (min 10 chars)",
                                 i,
+                                ValidationLevel.ERROR,
                             )
                         )
-                    # Recommend Given/When/Then format if not present
-                    if not any(
-                        word in ac_content
-                        for word in ["Given", "When", "Then", "should", "must", "will"]
+                    # Check for action words that indicate testability
+                    elif not any(
+                        word.lower() in ac_content.lower()
+                        for word in [
+                            "Given",
+                            "When",
+                            "Then",
+                            "should",
+                            "must",
+                            "will",
+                            "can",
+                            "verify",
+                            "ensure",
+                        ]
                     ):
-                        # This is just a warning, not an error
-                        pass  # Could add as info-level validation if needed
+                        errors.append(
+                            ValidationError(
+                                "Acceptance Criteria",
+                                f"AC item at line {i} may not be testable. Consider using Given/When/Then format or action verbs (should/must/will)",
+                                i,
+                                ValidationLevel.WARNING,
+                            )
+                        )
 
         if ac_section_start and not ac_found:
             errors.append(
@@ -137,13 +164,38 @@ def validate_element_structure(content: str) -> list[ValidationError]:
 
     if req_section_start:
         req_items = []
+        non_req_items = []
         for i in range(req_section_start, min(req_section_end, len(lines) + 1)):
             if i - 1 < len(lines):
                 line = lines[i - 1].strip()
-                if line.startswith("- REQ-"):
-                    req_items.append(line)
-        # This is a recommendation, not a hard requirement
-        # So we don't add an error if REQ- prefix is missing
+                if line.startswith("- "):
+                    if line.startswith("- REQ-"):
+                        req_items.append(line)
+                    else:
+                        non_req_items.append((i, line))
+
+        # Add info-level validation for non-REQ prefixed items
+        if non_req_items and req_items:
+            # If we have some REQ- items, suggest consistency
+            for line_num, _ in non_req_items[:3]:  # Limit to first 3 for brevity
+                errors.append(
+                    ValidationError(
+                        "Requirements",
+                        f"Consider using REQ- prefix for consistency (line {line_num})",
+                        line_num,
+                        ValidationLevel.INFO,
+                    )
+                )
+        elif non_req_items and not req_items:
+            # If no REQ- items at all, add a single info suggestion
+            errors.append(
+                ValidationError(
+                    "Requirements",
+                    "Consider using REQ- prefix for requirements (e.g., '- REQ-1: ...')",
+                    req_section_start,
+                    ValidationLevel.INFO,
+                )
+            )
 
     # Check for empty sections (just the heading with no content)
     for i, (section, line_num) in enumerate(found_sections):
@@ -164,7 +216,7 @@ def validate_element_structure(content: str) -> list[ValidationError]:
 
 def format_validation_errors(errors: list[ValidationError]) -> str:
     """
-    Format validation errors for display.
+    Format validation errors for display with level indicators.
 
     Args:
         errors: List of validation errors
@@ -175,12 +227,38 @@ def format_validation_errors(errors: list[ValidationError]) -> str:
     if not errors:
         return "✓ Document structure is valid"
 
-    lines = ["❌ Document validation failed:"]
-    for error in errors:
-        if error.line_number:
-            lines.append(f"  Line {error.line_number}: {error.message}")
-        else:
-            lines.append(f"  {error.section}: {error.message}")
+    # Separate by level
+    error_count = sum(1 for e in errors if e.level == ValidationLevel.ERROR)
+    warning_count = sum(1 for e in errors if e.level == ValidationLevel.WARNING)
+    info_count = sum(1 for e in errors if e.level == ValidationLevel.INFO)
+
+    if error_count > 0:
+        lines = [
+            f"❌ Document validation failed: {error_count} errors, {warning_count} warnings, {info_count} suggestions"
+        ]
+    elif warning_count > 0:
+        lines = [f"⚠️  Document has {warning_count} warnings and {info_count} suggestions"]
+    else:
+        lines = [f"ℹ️  Document has {info_count} suggestions for improvement"]
+
+    # Group by level
+    for level in [ValidationLevel.ERROR, ValidationLevel.WARNING, ValidationLevel.INFO]:
+        level_errors = [e for e in errors if e.level == level]
+        if level_errors:
+            lines.append("")
+            if level == ValidationLevel.ERROR:
+                lines.append("Errors:")
+            elif level == ValidationLevel.WARNING:
+                lines.append("Warnings:")
+            else:
+                lines.append("Suggestions:")
+
+            for error in level_errors:
+                prefix = "  • "
+                if error.line_number:
+                    lines.append(f"{prefix}Line {error.line_number}: {error.message}")
+                else:
+                    lines.append(f"{prefix}{error.section}: {error.message}")
 
     return "\n".join(lines)
 

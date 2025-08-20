@@ -343,7 +343,13 @@ class TestSynthesisController:
             assert isinstance(result, SynthesisResult)
             assert result.workstream == "ui-ux"
             assert "## Decisions" in result.proposal
-            assert len(result.validation_errors) == 0
+            # Check for actual errors (not warnings or info)
+            from app.files.validate_element import ValidationLevel
+
+            error_count = sum(
+                1 for e in result.validation_errors if e.level == ValidationLevel.ERROR
+            )
+            assert error_count == 0, f"Expected no errors, got {error_count}"
             assert result.critic_issues is None
 
     @pytest.mark.asyncio

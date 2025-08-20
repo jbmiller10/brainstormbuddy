@@ -1,6 +1,7 @@
 """Logging utilities for synthesis operations."""
 
 import contextlib
+import fcntl
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ class SynthesisLogger:
         data: dict[str, Any] | None = None,
     ) -> None:
         """
-        Log an event to the JSON Lines log file.
+        Log an event to the JSON Lines log file with file locking for atomicity.
 
         Args:
             stage: Stage name (synthesis, critic)
@@ -45,9 +46,16 @@ class SynthesisLogger:
             "data": data or {},
         }
 
-        # Append to log file
+        # Append to log file with exclusive lock for atomic operation
         with open(self.log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_entry) + "\n")
+            # Acquire exclusive lock to prevent concurrent writes
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.write(json.dumps(log_entry) + "\n")
+                f.flush()  # Ensure data is written to disk
+            finally:
+                # Release lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     async def log_decision(
         self,

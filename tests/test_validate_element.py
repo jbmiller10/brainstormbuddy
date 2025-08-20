@@ -192,13 +192,19 @@ class TestValidateElementStructure:
 - AC-: : This starts with colon after AC-
 """
 
+        from app.files.validate_element import ValidationLevel
+
         errors = validate_element_structure(content)
         # Should have errors for "AC-: Too short" (9 chars after removing "- AC-")
         # and "AC-: : This starts with colon" (strips the first colon, still long enough)
-        assert len(errors) == 1
-        assert any("AC item appears incomplete" in e.message for e in errors)
+        actual_errors = [e for e in errors if e.level == ValidationLevel.ERROR]
+        assert len(actual_errors) == 1
+        # Updated message format
+        assert any(
+            "appears incomplete" in e.message and "min 10 chars" in e.message for e in actual_errors
+        )
         # "AC-: Too short" → after removing "- AC-" → ": Too short" → after stripping colon → "Too short" (9 chars)
-        assert any(e.line_number == 18 for e in errors)
+        assert any(e.line_number == 18 for e in actual_errors)
 
 
 class TestAutoFixElementStructure:
