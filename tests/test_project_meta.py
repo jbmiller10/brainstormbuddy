@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from app.core.interfaces import ProjectMetaProtocol, Stage
-from app.files.project_meta import ProjectMeta
+from app.files.project_meta import VALID_STAGES, ProjectMeta, ProjectMetaConstants
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ def sample_project_data() -> dict[str, Any]:
         "description": "A test project",
         "tags": ["test", "sample"],
         "metadata": {
-            "version": "1.0.0",
-            "format": "brainstormbuddy-project",
+            "version": ProjectMetaConstants.VERSION,
+            "format": ProjectMetaConstants.FORMAT,
         },
     }
 
@@ -303,6 +303,13 @@ def test_set_project_stage_missing_project(monkeypatch: pytest.MonkeyPatch) -> N
 
         result = ProjectMeta.set_project_stage("nonexistent", "kernel")
         assert result is False
+
+
+def test_constants_usage() -> None:
+    """Test that constants are properly defined."""
+    assert ProjectMetaConstants.VERSION == "1.0.0"
+    assert ProjectMetaConstants.FORMAT == "brainstormbuddy-project"
+    assert {"capture", "clarify", "kernel", "outline", "research", "synthesis"} == VALID_STAGES
 
 
 def test_all_stage_values(monkeypatch: pytest.MonkeyPatch) -> None:

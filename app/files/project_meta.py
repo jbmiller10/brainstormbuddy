@@ -1,5 +1,6 @@
 """Project metadata operations with YAML handling."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,18 @@ import yaml
 from app.core.interfaces import Stage
 from app.files.atomic import atomic_write_text
 from app.files.slug import slugify
+
+logger = logging.getLogger(__name__)
+
+# Constants for project metadata
+VALID_STAGES: set[Stage] = {"capture", "clarify", "kernel", "outline", "research", "synthesis"}
+
+
+class ProjectMetaConstants:
+    """Constants for project metadata."""
+
+    VERSION = "1.0.0"
+    FORMAT = "brainstormbuddy-project"
 
 
 class ProjectMeta:
@@ -42,7 +55,11 @@ class ProjectMeta:
                 ProjectMeta.write_project_yaml(slug, data)
 
             return data  # type: ignore[no-any-return]
-        except (yaml.YAMLError, OSError):
+        except yaml.YAMLError as e:
+            logger.warning(f"Failed to parse YAML for project '{slug}': {e}")
+            return None
+        except OSError as e:
+            logger.warning(f"Failed to read project file for '{slug}': {e}")
             return None
 
     @staticmethod
@@ -68,8 +85,8 @@ class ProjectMeta:
             data["created"] = datetime.now().isoformat()
         if "metadata" not in data:
             data["metadata"] = {
-                "version": "1.0.0",
-                "format": "brainstormbuddy-project",
+                "version": ProjectMetaConstants.VERSION,
+                "format": ProjectMetaConstants.FORMAT,
             }
 
         # Convert to YAML string
@@ -91,15 +108,8 @@ class ProjectMeta:
             Success status
         """
         # Validate stage value
-        valid_stages: set[Stage] = {
-            "capture",
-            "clarify",
-            "kernel",
-            "outline",
-            "research",
-            "synthesis",
-        }
-        if stage not in valid_stages:
+        if stage not in VALID_STAGES:
+            logger.error(f"Invalid stage '{stage}' for project '{slug}'")
             return False
 
         # Read existing data
@@ -158,24 +168,16 @@ class ProjectMeta:
             return False
 
         # Validate stage value
-        valid_stages: set[Stage] = {
-            "capture",
-            "clarify",
-            "kernel",
-            "outline",
-            "research",
-            "synthesis",
-        }
-        if data["stage"] not in valid_stages:
+        if data["stage"] not in VALID_STAGES:
             return False
 
         # Validate metadata structure
         metadata = data.get("metadata")
         if not isinstance(metadata, dict):
             return False
-        if metadata.get("version") != "1.0.0":
+        if metadata.get("version") != ProjectMetaConstants.VERSION:
             return False
-        if metadata.get("format") != "brainstormbuddy-project":
+        if metadata.get("format") != ProjectMetaConstants.FORMAT:
             return False
 
         # Validate ISO timestamp format

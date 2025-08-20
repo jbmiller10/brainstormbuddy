@@ -1,18 +1,25 @@
 """Application state management with project switching support."""
 
 import contextlib
+import logging
 import weakref
 from collections.abc import Callable
 from threading import Lock
 
 from app.core.interfaces import AppStateProtocol, Reason
 
+logger = logging.getLogger(__name__)
+
 _instance: AppStateProtocol | None = None
 _lock = Lock()
 
 
 class AppState:
-    """Singleton implementation of AppStateProtocol for managing application state."""
+    """Singleton implementation of AppStateProtocol for managing application state.
+
+    Thread-safe: The singleton instance can be safely accessed from multiple threads.
+    Observers are notified synchronously in the calling thread.
+    """
 
     def __init__(self) -> None:
         """Initialize AppState with no active project."""
@@ -34,6 +41,8 @@ class AppState:
         """
         old_slug = self._active_project
         self._active_project = slug
+
+        logger.debug(f"Project changed: {old_slug} -> {slug} (reason: {reason})")
 
         # Notify all subscribers, cleaning up dead references
         dead_refs = []
@@ -73,11 +82,18 @@ class AppState:
 
         def unsubscribe() -> None:
             """Remove the callback from subscribers."""
-            # Find and remove the weak reference
-            for i, ref in enumerate(self._subscribers):
-                if ref() is callback:
-                    del self._subscribers[i]
-                    break
+            # Find and remove the weak reference with thread safety
+            try:
+                for i, ref in enumerate(list(self._subscribers)):
+                    if ref() is callback:
+                        with _lock:
+                            # Double-check the reference still exists
+                            if i < len(self._subscribers) and self._subscribers[i]() is callback:
+                                del self._subscribers[i]
+                        break
+            except (IndexError, RuntimeError):
+                # Handle case where list changes during iteration
+                pass
 
         return unsubscribe
 
