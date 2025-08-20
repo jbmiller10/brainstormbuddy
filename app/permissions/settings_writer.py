@@ -54,28 +54,50 @@ def write_project_settings(
         f.write("\n")  # Add trailing newline
 
     # Create hook stub files
-    _create_gate_hook(hooks_dir / "gate.py")
+    _create_gate_hook(hooks_dir / "gate.py", import_hooks_from)
     _create_format_md_hook(hooks_dir / "format_md.py", import_hooks_from)
 
     return config_dir
 
 
-def _create_gate_hook(hook_path: Path) -> None:
+def _create_gate_hook(hook_path: Path, import_hooks_from: str) -> None:
     """
-    Create the PreToolUse gate hook stub.
+    Create the PreToolUse gate hook that imports from hooks_lib.
 
     Args:
         hook_path: Path to the hook file
+        import_hooks_from: Python module path to import hooks from
     """
-    hook_content = '''#!/usr/bin/env python3
-"""Claude PreToolUse hook."""
+    hook_content = f'''#!/usr/bin/env python3
+"""Claude PreToolUse hook: validate tool use against security policies."""
 
-# TODO: Implement PreToolUse hook logic
-# This hook is called pre tool use
+from __future__ import annotations
+import json
+import sys
 
-def main():
+# Import validation function from the app's hooks library
+from {import_hooks_from}.gate import validate_tool_use
+
+
+def main() -> None:
     """Main hook entry point."""
-    pass
+    # stdin JSON: dict with tool_name and other tool parameters
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON: {{e}}", file=sys.stderr)
+        sys.exit(2)
+
+    # Validate the tool use
+    allowed, reason = validate_tool_use(payload)
+
+    if not allowed:
+        # Print reason to stderr and exit with code 2 to deny
+        print(f"Denied: {{reason}}", file=sys.stderr)
+        sys.exit(2)
+
+    # Allow the tool use
+    sys.exit(0)
 
 
 if __name__ == "__main__":
