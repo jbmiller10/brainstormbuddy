@@ -194,3 +194,83 @@ class CommandPalette(Container):
             # Show research import modal
             modal = ResearchImportModal(workstream="research", db_path=db_path)
             await self.app.push_screen_wait(modal)
+
+        # Handle synthesis command
+        elif command == "synthesis":
+            from pathlib import Path
+
+            from app.tui.widgets.agent_selector import AgentSelector
+
+            # Get project slug (default for now)
+            project_slug = "default-project"
+
+            # Check if kernel exists
+            kernel_path = Path("projects") / project_slug / "kernel.md"
+            if not kernel_path.exists():
+                viewer.write(
+                    "[red]Error: Kernel not found.[/red]\n"
+                    "[yellow]Please run the Kernel stage first to create the project kernel.[/yellow]\n"
+                )
+                return
+
+            # Get available workstreams from elements directory
+            elements_dir = Path("projects") / project_slug / "elements"
+            workstreams = []
+
+            # Check for existing element files
+            if elements_dir.exists():
+                for file in elements_dir.glob("*.md"):
+                    workstreams.append(file.stem)
+
+            # Also check outline for planned workstreams
+            outline_path = Path("projects") / project_slug / "outline.md"
+            if outline_path.exists():
+                # Parse outline for workstream headers
+                with open(outline_path, encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("## ") and "workstream" in line.lower():
+                            # Extract workstream slug from header
+                            ws_title = line[3:].strip()
+                            ws_slug = ws_title.lower().replace(" ", "-").replace(":", "")
+                            if ws_slug not in workstreams:
+                                workstreams.append(ws_slug)
+
+            # Default workstreams if none found
+            if not workstreams:
+                workstreams = ["ui-ux", "backend", "infrastructure", "research"]
+
+            # For now, use the first workstream
+            # In production, show a selector dialog
+            workstream = workstreams[0] if workstreams else "main"
+
+            # Show agent selector
+            viewer.write(f"[dim]Synthesizing workstream: {workstream}[/dim]\n")
+
+            # Get stage policy
+            policy = get_policy("synthesis")
+
+            # Show agent selector
+            viewer.write("[dim]Select an agent for synthesis (or press ESC to skip):[/dim]\n")
+
+            # Get available agents
+            from app.llm.agents import load_agent_specs
+
+            agents = load_agent_specs("app.llm.agentspecs")
+
+            selector = AgentSelector(
+                agents=agents,
+                stage_allowed=policy.allowed_tools,
+                stage_denied=policy.denied_tools,
+            )
+            selected_agent = await self.app.push_screen_wait(selector)
+
+            # Check if critic should be run
+            run_critic = True  # Default to running critic for synthesis
+
+            # Start synthesis session
+            self.app.run_worker(
+                controller.start_synthesis_session(
+                    project_slug, workstream, agent=selected_agent, run_critic=run_critic
+                ),
+                exclusive=True,
+            )
