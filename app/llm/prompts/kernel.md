@@ -3,11 +3,22 @@ You are in the kernel stage of brainstorming. Your goal is to distill the user's
 </instructions>
 
 <context>
-The user has completed the clarify stage and is ready to define the kernel of their idea. You can read existing project documents and will propose a diff for projects/<slug>/kernel.md. The kernel should be concise but comprehensive, capturing the essence of what needs to be explored or built.
+The user has completed the clarify stage and is ready to define the kernel of their idea. You can read existing project documents and will output the complete content for projects/<slug>/kernel.md. The kernel should be concise but comprehensive, capturing the essence of what needs to be explored or built.
 </context>
 
 <format>
-Propose a diff for the kernel.md file with these sections:
+Output ONLY the final markdown content of kernel.md following these rules:
+- Do NOT include code fences, YAML front matter, or explanations
+- Begin with "# Kernel" and include exactly these sections in order:
+  1. Core Concept
+  2. Key Questions
+  3. Success Criteria
+  4. Constraints
+  5. Primary Value Proposition
+
+Section format:
+
+# Kernel
 
 ## Core Concept
 A clear, 2-3 sentence description of the essential idea or problem.
