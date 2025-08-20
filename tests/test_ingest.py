@@ -339,3 +339,115 @@ def test_finding_dataclass() -> None:
 
     assert finding2.tags == ["ai", "ml"]
     assert finding2.workstream == "research"
+
+
+def test_parse_empty_line() -> None:
+    """Test that empty lines after bullet removal return None."""
+    text = """
+    -
+    -
+    - Valid | Evidence | https://url.com | 0.5
+    """
+
+    findings = parse_findings(text, "test")
+
+    # Only the valid line should be parsed
+    assert len(findings) == 1
+    assert findings[0].claim == "Valid"
+
+
+def test_parse_markdown_line_with_invalid_confidence() -> None:
+    """Test that lines with non-numeric confidence values are skipped."""
+    text = """
+    - Valid finding | Evidence | https://valid.com | 0.8
+    - Invalid confidence | Evidence | https://invalid.com | not_a_number
+    - Another valid | Evidence | https://valid2.com | 0.9
+    """
+
+    findings = parse_findings(text, "test")
+
+    # Only lines with valid confidence values should be parsed
+    assert len(findings) == 2
+    assert findings[0].url == "https://valid.com"
+    assert findings[1].url == "https://valid2.com"
+
+
+def test_json_arxiv_url_detection() -> None:
+    """Test that arxiv URLs in JSON are auto-detected as papers."""
+    text = """[
+        {
+            "claim": "ArXiv paper finding",
+            "evidence": "Research evidence",
+            "url": "https://arxiv.org/abs/2301.12345",
+            "confidence": 0.9
+        },
+        {
+            "claim": "Another arxiv paper",
+            "evidence": "More research",
+            "url": "http://ARXIV.org/pdf/2301.54321.pdf",
+            "confidence": 0.85
+        }
+    ]"""
+
+    findings = parse_findings(text, "research")
+
+    assert len(findings) == 2
+    # Both should be auto-detected as "paper" source_type
+    assert findings[0].source_type == "paper"
+    assert findings[1].source_type == "paper"
+
+
+def test_json_parsing_with_type_errors() -> None:
+    """Test that JSON objects with type errors are skipped."""
+    text = """[
+        {
+            "claim": "Valid finding",
+            "evidence": "Good evidence",
+            "url": "https://valid.com",
+            "confidence": 0.8
+        },
+        {
+            "claim": {},
+            "evidence": "Evidence",
+            "url": "https://dict-claim.com",
+            "confidence": 0.5
+        },
+        {
+            "claim": "Invalid confidence type",
+            "evidence": "Evidence",
+            "url": "https://bad-conf.com",
+            "confidence": "not_a_number"
+        },
+        {
+            "claim": "Another valid",
+            "evidence": "More evidence",
+            "url": "https://valid2.com",
+            "confidence": 0.9
+        }
+    ]"""
+
+    findings = parse_findings(text, "test")
+
+    # Entry with invalid confidence (string) should be skipped
+    # Dict as claim gets converted to string "{}" and is parsed
+    assert len(findings) == 3
+    assert findings[0].url == "https://valid.com"
+    assert findings[1].url == "https://dict-claim.com"
+    assert findings[1].claim == "{}"  # Dict converted to string
+    assert findings[2].url == "https://valid2.com"
+
+
+def test_markdown_line_index_error() -> None:
+    """Test that markdown lines causing IndexError are skipped."""
+    text = """
+    - Valid | Evidence | https://valid.com | 0.8
+    - | | |
+    - Another valid | Evidence | https://valid2.com | 0.9
+    """
+
+    findings = parse_findings(text, "test")
+
+    # Only valid lines should be parsed
+    assert len(findings) == 2
+    assert findings[0].url == "https://valid.com"
+    assert findings[1].url == "https://valid2.com"

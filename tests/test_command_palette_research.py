@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -120,3 +120,174 @@ def test_research_import_modal_can_be_imported() -> None:
     assert hasattr(ResearchImportModal, "compose")
     assert hasattr(ResearchImportModal, "handle_import")
     assert hasattr(ResearchImportModal, "refresh_table")
+
+
+def test_command_palette_compose_creates_ui() -> None:
+    """Test that compose() creates expected UI components."""
+    from textual.widgets import Input, OptionList
+
+    palette = CommandPalette()
+
+    # Call compose and convert to list
+    widgets = list(palette.compose())
+
+    # Should have Input and OptionList
+    assert len(widgets) == 2
+
+    # Check Input widget
+    assert isinstance(widgets[0], Input)
+    assert widgets[0].id == "command-input"
+    assert widgets[0].placeholder == "Type a command..."
+
+    # Check OptionList widget
+    assert isinstance(widgets[1], OptionList)
+    assert widgets[1].id == "command-list"
+
+    # Check that options were added to the list
+    # The OptionList should have been populated with commands
+    option_count = len(palette.commands)
+    assert option_count > 0
+
+
+def test_command_palette_show_method() -> None:
+    """Test that show() method adds visible class and focuses input."""
+    palette = CommandPalette()
+
+    # Mock query_one to return a mock Input widget
+    input_mock = MagicMock()
+    input_mock.focus = MagicMock()
+
+    with (
+        patch.object(palette, "query_one", return_value=input_mock),
+        patch.object(palette, "add_class") as add_class_mock,
+    ):
+        palette.show()
+
+        # Verify visible class was added
+        add_class_mock.assert_called_once_with("visible")
+
+        # Verify input was focused
+        input_mock.focus.assert_called_once()
+
+
+def test_command_palette_hide_method() -> None:
+    """Test that hide() method removes visible class."""
+    palette = CommandPalette()
+
+    with patch.object(palette, "remove_class") as remove_class_mock:
+        palette.hide()
+
+        # Verify visible class was removed
+        remove_class_mock.assert_called_once_with("visible")
+
+
+def test_command_palette_action_close() -> None:
+    """Test that action_close() calls hide."""
+    palette = CommandPalette()
+
+    with patch.object(palette, "hide") as hide_mock:
+        palette.action_close()
+
+        # Verify hide was called
+        hide_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_domain_settings_command_no_existing_settings() -> None:
+    """Test domain settings command when no settings file exists."""
+    palette = CommandPalette()
+
+    # Mock the app's push_screen_wait method
+    mock_app = MagicMock()
+    mock_app.push_screen_wait = AsyncMock(return_value=True)
+
+    # Mock Path.exists to return False (no existing settings)
+    with (
+        patch.object(CommandPalette, "app", new=mock_app),
+        patch("pathlib.Path.exists", return_value=False),
+        patch("app.tui.widgets.domain_editor.DomainEditor") as editor_mock,
+    ):
+        # Execute the domain settings command
+        await palette.execute_command("domain settings")
+
+        # Verify DomainEditor was created with empty lists
+        editor_mock.assert_called_once()
+        call_args = editor_mock.call_args
+        assert call_args[0][0] == Path(".") / ".claude"  # config_dir
+        assert call_args[0][1] == []  # empty allow_domains
+        assert call_args[0][2] == []  # empty deny_domains
+
+        # Verify the editor was pushed to screen
+        mock_app.push_screen_wait.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_domain_settings_command_with_existing_settings() -> None:
+    """Test domain settings command when settings file exists."""
+    import json
+    from unittest.mock import mock_open
+
+    palette = CommandPalette()
+
+    # Mock existing settings content
+    existing_settings = {
+        "permissions": {
+            "webDomains": {"allow": ["allowed.com", "example.com"], "deny": ["blocked.com"]}
+        }
+    }
+
+    # Mock the app's push_screen_wait method
+    mock_app = MagicMock()
+    mock_app.push_screen_wait = AsyncMock(return_value=True)
+
+    # Mock file operations
+    with (
+        patch.object(CommandPalette, "app", new=mock_app),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data=json.dumps(existing_settings))),
+        patch("json.load", return_value=existing_settings),
+        patch("app.tui.widgets.domain_editor.DomainEditor") as editor_mock,
+    ):
+        # Execute the domain settings command
+        await palette.execute_command("domain settings")
+
+        # Verify DomainEditor was created with existing domain lists
+        editor_mock.assert_called_once()
+        call_args = editor_mock.call_args
+        assert call_args[0][0] == Path(".") / ".claude"  # config_dir
+        assert call_args[0][1] == ["allowed.com", "example.com"]  # allow_domains
+        assert call_args[0][2] == ["blocked.com"]  # deny_domains
+
+        # Verify the editor was pushed to screen
+        mock_app.push_screen_wait.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_domain_settings_command_missing_permissions_key() -> None:
+    """Test domain settings command when settings exist but without permissions key."""
+    import json
+    from unittest.mock import mock_open
+
+    palette = CommandPalette()
+
+    # Mock settings without permissions key
+    existing_settings = {"other": "data"}
+
+    mock_app = MagicMock()
+    mock_app.push_screen_wait = AsyncMock(return_value=True)
+
+    with (
+        patch.object(CommandPalette, "app", new=mock_app),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("builtins.open", mock_open(read_data=json.dumps(existing_settings))),
+        patch("json.load", return_value=existing_settings),
+        patch("app.tui.widgets.domain_editor.DomainEditor") as editor_mock,
+    ):
+        # Execute the domain settings command
+        await palette.execute_command("domain settings")
+
+        # Verify DomainEditor was created with empty lists (fallback)
+        editor_mock.assert_called_once()
+        call_args = editor_mock.call_args
+        assert call_args[0][1] == []  # empty allow_domains
+        assert call_args[0][2] == []  # empty deny_domains

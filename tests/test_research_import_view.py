@@ -317,3 +317,90 @@ def test_action_close() -> None:
     with patch.object(modal, "dismiss", MagicMock()) as dismiss_mock:
         modal.action_close()
         dismiss_mock.assert_called_with(True)
+
+
+def test_compose_method_exists() -> None:
+    """Test that compose() method exists and modal has expected structure."""
+    modal = ResearchImportModal(workstream="test-stream")
+
+    # Verify the modal has the compose method and expected attributes
+    assert hasattr(modal, "compose")
+    assert modal.workstream == "test-stream"
+
+    # The compose method would create UI components including:
+    # - Container with title and subtitle
+    # - TextArea for paste area
+    # - Input widgets for filters
+    # - DataTable for findings
+    # - Buttons for actions
+    # These are created when compose() runs within a Textual app context
+
+
+def test_modal_attributes() -> None:
+    """Test that ResearchImportModal has expected attributes."""
+    modal = ResearchImportModal(workstream="custom-workstream")
+
+    # Verify initialization
+    assert modal.workstream == "custom-workstream"
+    assert hasattr(modal, "db_path")
+    assert hasattr(modal, "findings")
+    assert hasattr(modal, "status_message")
+
+    # Verify methods exist
+    assert hasattr(modal, "compose")
+    assert hasattr(modal, "handle_import")
+    assert hasattr(modal, "refresh_table")
+    assert hasattr(modal, "update_status")
+
+
+@pytest.mark.asyncio
+async def test_handle_import_exception_handling(temp_db_path: Path) -> None:
+    """Test exception handling in handle_import method."""
+    modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
+
+    # Mock widgets
+    text_area_mock = MagicMock(spec=TextArea)
+    text_area_mock.text = "- Test | Evidence | https://url.com | 0.5"
+
+    # Mock parse_findings to raise an exception
+    with (
+        patch.object(
+            modal,
+            "query_one",
+            MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock),
+        ),
+        patch.object(modal, "update_status", MagicMock()) as update_status_mock,
+        patch("app.tui.views.research.parse_findings", side_effect=Exception("Parse error")),
+    ):
+        await modal.handle_import()
+
+        # Verify error status was called
+        update_status_mock.assert_called_with("Import failed: Parse error", is_error=True)
+
+
+@pytest.mark.asyncio
+async def test_handle_import_database_exception(temp_db_path: Path) -> None:
+    """Test exception handling when database operations fail."""
+    modal = ResearchImportModal(workstream="test", db_path=temp_db_path)
+
+    # Mock widgets
+    text_area_mock = MagicMock(spec=TextArea)
+    text_area_mock.text = "- Test | Evidence | https://url.com | 0.5"
+
+    # Mock ResearchDB to raise an exception
+    with (
+        patch.object(
+            modal,
+            "query_one",
+            MagicMock(side_effect=lambda _selector, _widget_type: text_area_mock),
+        ),
+        patch.object(modal, "update_status", MagicMock()) as update_status_mock,
+        patch("app.tui.views.research.ResearchDB") as db_mock,
+    ):
+        # Make the database context manager raise an exception
+        db_mock.return_value.__aenter__.side_effect = Exception("Database error")
+
+        await modal.handle_import()
+
+        # Verify error status was called
+        update_status_mock.assert_called_with("Import failed: Database error", is_error=True)
