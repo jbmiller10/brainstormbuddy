@@ -71,7 +71,7 @@ def validate_tool_use(payload: dict[str, Any]) -> tuple[bool, str]:
                 if denied.startswith("*."):
                     # Wildcard domain
                     suffix = denied[2:]
-                    if domain.endswith(suffix) or domain == suffix[1:]:
+                    if domain == suffix or domain.endswith("." + suffix):
                         return False, f"Domain {domain} matches denied pattern {denied}"
                 elif domain == denied:
                     return False, f"Domain {domain} is explicitly denied"
@@ -83,7 +83,7 @@ def validate_tool_use(payload: dict[str, Any]) -> tuple[bool, str]:
                     if allow.startswith("*."):
                         # Wildcard domain
                         suffix = allow[2:]
-                        if domain.endswith(suffix) or domain == suffix[1:]:
+                        if domain == suffix or domain.endswith("." + suffix):
                             allowed = True
                             break
                     elif domain == allow:
