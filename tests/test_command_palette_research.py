@@ -132,6 +132,44 @@ def test_on_option_list_option_selected_parses_command() -> None:
                 created_coro.close()
 
 
+def test_on_option_list_option_selected_malformed_option() -> None:
+    """Test that malformed options (without colon) are handled gracefully."""
+    from textual.widgets import OptionList
+
+    palette = CommandPalette()
+    palette.hide = Mock()  # type: ignore[method-assign]
+
+    # Mock OptionList.OptionSelected event with malformed option (no colon)
+    event = MagicMock(spec=OptionList.OptionSelected)
+    mock_option = MagicMock()
+    mock_option.prompt = "malformed option without colon"
+    event.option = mock_option
+
+    # Mock app
+    mock_app = MagicMock()
+    mock_app.run_worker = MagicMock()
+
+    # Mock log.warning to verify it gets called
+    with (
+        patch.object(CommandPalette, "app", new=mock_app),
+        patch("textual.log") as mock_log,
+    ):
+        # Trigger the event handler
+        palette.on_option_list_option_selected(event)
+
+        # Verify execute_command was NOT called (no run_worker call)
+        mock_app.run_worker.assert_not_called()
+
+        # Verify palette was NOT hidden
+        palette.hide.assert_not_called()
+
+        # Verify warning was logged
+        mock_log.warning.assert_called_once()
+        warning_msg = mock_log.warning.call_args[0][0]
+        assert "Unexpected option format" in warning_msg
+        assert "malformed option without colon" in warning_msg
+
+
 @pytest.mark.asyncio
 async def test_on_input_submitted_calls_hide() -> None:
     """Test that input submission hides the palette."""
