@@ -2,8 +2,10 @@
 
 from pathlib import Path
 
+from app.core.state import get_app_state
 from app.files.diff import apply_patch, compute_patch, generate_diff_preview
 from app.files.markdown import extract_section_paragraph
+from app.files.project_meta import ProjectMeta
 from app.files.workstream import create_workstream_batch
 from app.llm.agents import AgentSpec, load_agent_specs
 from app.llm.claude_client import (
@@ -263,14 +265,31 @@ class SessionController:
         self.viewer.write("\n[yellow]Changes rejected. Kernel file remains unchanged.[/yellow]\n")
         self.pending_kernel_content = None
 
-    async def generate_workstreams(self, project_slug: str = "default-project") -> None:
+    async def generate_workstreams(self) -> None:
         """
-        Generate workstream documents (outline and elements) for a project.
+        Generate workstream documents (outline and elements) for the active project.
+        """
+        # Get active project from AppState
+        app_state = get_app_state()
+        project_slug = app_state.active_project
 
-        Args:
-            project_slug: The project identifier/slug
-        """
+        if not project_slug:
+            # Clear viewer and show error
+            self.viewer.clear()
+            self.viewer.write("[red]Error: No active project selected.[/red]\n")
+            self.viewer.write("[yellow]Please select a project first.[/yellow]\n")
+            return
+
         self.project_slug = project_slug
+
+        # Check project stage
+        project_meta = ProjectMeta.read_project_yaml(project_slug)
+        if project_meta and project_meta.get("stage") != "kernel":
+            # Show warning but continue
+            self.viewer.write(
+                f"[yellow]Warning: Project is in '{project_meta.get('stage')}' stage, not 'kernel'.\n"
+                "Generating workstreams anyway...[/yellow]\n\n"
+            )
 
         # Clear viewer and show starting message
         self.viewer.clear()
