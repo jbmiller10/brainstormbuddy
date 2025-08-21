@@ -33,6 +33,13 @@ class WizardStep(Enum):
 class NewProjectWizard(Screen[bool]):
     """Multi-step wizard for creating a new project."""
 
+    # Configuration constants
+    CLARIFY_QUESTIONS_COUNT = 5
+    MAX_RETRY_ATTEMPTS = 2
+    MIN_KERNEL_LENGTH = 100
+    MAX_PROJECT_NAME_LENGTH = 100
+    PROJECT_NAME_PATTERN = r"^[\w\-]+[\w\s\-]*[\w\-]+$"
+
     DEFAULT_CSS = """
     NewProjectWizard {
         align: center middle;
@@ -262,15 +269,15 @@ class NewProjectWizard(Screen[bool]):
         )
 
     def focus_input(self) -> None:
-        """Focus the project name input."""
+        """Focus the project name input with error logging."""
         try:
             input_widget = self.query_one("#project-name-input", Input)
             input_widget.focus()
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.debug(f"Failed to focus input: {e}")
 
     def focus_textarea(self) -> None:
-        """Focus the active textarea."""
+        """Focus the active textarea with error logging."""
         try:
             if self.current_step == WizardStep.BRAINDUMP:
                 textarea = self.query_one("#braindump-textarea", TextArea)
@@ -279,8 +286,8 @@ class NewProjectWizard(Screen[bool]):
             else:
                 return
             textarea.focus()
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.debug(f"Failed to focus textarea: {e}")
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press events."""
@@ -292,15 +299,22 @@ class NewProjectWizard(Screen[bool]):
             self.action_cancel()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle input changes."""
+        """Handle input changes with improved validation."""
         if event.input.id == "project-name-input":
             self.project_name = event.value
-            # Validate input in real-time
-            if event.value and not re.match(r"^[\w\s\-]+$", event.value):
-                self.notify(
-                    "Project name can only contain letters, numbers, spaces, and hyphens",
-                    severity="warning",
-                )
+            # Validate input in real-time with improved regex
+            value = event.value.strip()
+            if value:
+                if len(value) > self.MAX_PROJECT_NAME_LENGTH:
+                    self.notify(
+                        f"Project name too long (max {self.MAX_PROJECT_NAME_LENGTH} characters)",
+                        severity="warning",
+                    )
+                elif len(value) >= 2 and not re.match(self.PROJECT_NAME_PATTERN, value):
+                    self.notify(
+                        "Project name must start and end with letters/numbers, can contain spaces/hyphens",
+                        severity="warning",
+                    )
 
     async def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Handle textarea changes."""
@@ -317,15 +331,27 @@ class NewProjectWizard(Screen[bool]):
                 self.notify("Please enter a project name", severity="error")
                 return
 
-            # Additional validation for filesystem safety
-            if not re.match(r"^[\w\s\-]+$", self.project_name.strip()):
+            # Additional validation for filesystem safety with improved regex
+            name = self.project_name.strip()
+            if len(name) > self.MAX_PROJECT_NAME_LENGTH:
                 self.notify(
-                    "Project name contains invalid characters. Use only letters, numbers, spaces, and hyphens.",
+                    f"Project name too long (max {self.MAX_PROJECT_NAME_LENGTH} characters)",
+                    severity="error",
+                )
+                return
+            if not re.match(self.PROJECT_NAME_PATTERN, name):
+                self.notify(
+                    "Project name must start and end with letters/numbers, can contain spaces/hyphens",
                     severity="error",
                 )
                 return
 
-            self.project_slug = ensure_unique_slug(slugify(self.project_name))
+            # Generate unique slug with error handling
+            try:
+                self.project_slug = ensure_unique_slug(slugify(self.project_name))
+            except Exception as e:
+                self.notify(f"Failed to generate unique project identifier: {e}", severity="error")
+                return
             self.current_step = WizardStep.BRAINDUMP
 
         elif self.current_step == WizardStep.BRAINDUMP:
@@ -337,10 +363,10 @@ class NewProjectWizard(Screen[bool]):
             # Generate clarifying questions with retry
             self.notify("Generating clarifying questions...")
             questions_generated = False
-            for attempt in range(2):  # Try twice
+            for attempt in range(self.MAX_RETRY_ATTEMPTS):
                 try:
                     self.clarify_questions = self.controller.generate_clarify_questions(
-                        self.braindump, count=5
+                        self.braindump, count=self.CLARIFY_QUESTIONS_COUNT
                     )
                     questions_generated = True
                     break
@@ -383,7 +409,7 @@ class NewProjectWizard(Screen[bool]):
             # Generate kernel proposal with retry
             self.notify("Generating project kernel...")
             kernel_generated = False
-            for attempt in range(2):  # Try twice
+            for attempt in range(self.MAX_RETRY_ATTEMPTS):
                 try:
                     self.kernel_content = self.controller.orchestrate_kernel_generation(
                         self.braindump, self.answers
@@ -412,6 +438,14 @@ class NewProjectWizard(Screen[bool]):
             if not kernel_generated:
                 return
 
+            # Validate kernel content length
+            if len(self.kernel_content.strip()) < self.MIN_KERNEL_LENGTH:
+                self.notify(
+                    f"Kernel content too short (minimum {self.MIN_KERNEL_LENGTH} characters). Regenerating...",
+                    severity="warning",
+                )
+                self.kernel_content = self._generate_kernel_template()
+
             self.current_step = WizardStep.KERNEL_PROPOSAL
 
         elif self.current_step == WizardStep.KERNEL_PROPOSAL:
@@ -420,10 +454,13 @@ class NewProjectWizard(Screen[bool]):
                 modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
                 approved = await self.app.push_screen_wait(modal)
 
-                if approved:
+                if approved is True:
                     await self.create_project()
-                else:
+                elif approved is False:
                     self.notify("Project creation cancelled", severity="warning")
+                else:  # None or unexpected value (e.g., modal dismissed with ESC)
+                    self.notify("Action cancelled", severity="information")
+                    return
             except Exception as e:
                 self.notify(f"Error showing approval dialog: {e}", severity="error")
                 return

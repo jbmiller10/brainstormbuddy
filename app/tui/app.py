@@ -68,9 +68,13 @@ class BrainstormBuddyApp(App[None]):
             # Pop all screens except the base screen
             while len(self.screen_stack) > 1:
                 self.pop_screen()
-        except Exception:
-            # If something goes wrong, just switch to welcome
-            pass
+        except (IndexError, AttributeError) as e:
+            # Handle specific exceptions that might occur during screen stack manipulation
+            self.log.warning(f"Error clearing screen stack: {e}")
+            # Continue to switch to welcome screen anyway
+        except Exception as e:
+            # Log unexpected errors but don't crash
+            self.log.error(f"Unexpected error during screen navigation: {e}")
 
         # Clear active project and switch to welcome screen
         app_state = get_app_state()
