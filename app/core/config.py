@@ -14,12 +14,16 @@ class Settings(BaseSettings):
     # Onboarding validation constraints
     # Minimum project name length to ensure meaningful names
     min_project_name_length: int = 3
+    # Maximum project name length to prevent overly long names
+    max_project_name_length: int = 100
     # Maximum braindump length to prevent UI performance issues
     max_braindump_length: int = 10000
     # Minimum braindump length to ensure substantive content
     min_braindump_length: int = 10
     # Number of clarifying questions to generate during onboarding
     onboarding_questions_count: int = 5
+    # Use fake LLM client for testing (until real client is implemented)
+    use_fake_llm_client: bool = True
 
 
 @lru_cache(maxsize=1)

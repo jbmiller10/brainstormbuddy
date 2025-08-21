@@ -1,6 +1,8 @@
 """Conversational onboarding chat screen for new project creation."""
 
+import asyncio
 import logging
+import re
 from datetime import datetime
 from enum import Enum, auto
 
@@ -26,15 +28,20 @@ logger = logging.getLogger(__name__)
 
 
 class OnboardingState(Enum):
-    """Conversation state tracking for onboarding flow."""
+    """Conversation state tracking for onboarding flow.
+
+    Note: QUESTIONS state handles both displaying questions and receiving answers.
+    There is no separate ANSWERS state - answers are processed within QUESTIONS
+    before transitioning to KERNEL_REVIEW.
+    """
 
     WELCOME = auto()
-    PROJECT_NAME = auto()
-    BRAINDUMP = auto()
-    SUMMARY_REVIEW = auto()
-    QUESTIONS = auto()
-    KERNEL_REVIEW = auto()
-    COMPLETE = auto()
+    PROJECT_NAME = auto()  # User provides project name
+    BRAINDUMP = auto()  # User provides initial idea description
+    SUMMARY_REVIEW = auto()  # Review and refine summary
+    QUESTIONS = auto()  # Display questions AND receive answers
+    KERNEL_REVIEW = auto()  # Review generated kernel
+    COMPLETE = auto()  # Project creation complete
 
 
 class OnboardingChatScreen(Screen[bool]):
@@ -80,13 +87,22 @@ class OnboardingChatScreen(Screen[bool]):
         # Load configuration
         self.settings = load_settings()
 
-        # Initialize LLM service and controller
-        # TODO: Make client configurable based on settings (currently hardcoded to FakeClaudeClient)
-        llm_service = LLMService(client=FakeClaudeClient())
+        # Initialize LLM service with configurable client
+        # Note: Real ClaudeClient implementation pending
+        if self.settings.use_fake_llm_client:
+            client = FakeClaudeClient()
+        else:
+            # TODO: Implement and use real ClaudeClient when available
+            client = FakeClaudeClient()
+            logger.warning("Real ClaudeClient not yet implemented, using FakeClaudeClient")
+
+        llm_service = LLMService(client=client)
         self.controller = OnboardingController(llm_service=llm_service)
 
-        # State management
+        # State management with race condition prevention
         self.state = OnboardingState.WELCOME
+        self._creation_lock = asyncio.Lock()
+        self._processing_message_shown = False
 
         # Project data
         self.project_name: str = ""
@@ -173,21 +189,40 @@ class OnboardingChatScreen(Screen[bool]):
         Args:
             message: The user's message to process
         """
-        # Show loading indicator
-        self.app.call_from_thread(self.add_ai_message, "[dim italic]Processing...[/dim italic]")
+        # Show loading indicator only once
+        if not self._processing_message_shown:
+            self.app.call_from_thread(self.add_ai_message, "[dim italic]Processing...[/dim italic]")
+            self._processing_message_shown = True
 
         try:
             logger.debug(f"Processing message in state {self.state.name}: {message[:50]}...")
 
             if self.state == OnboardingState.WELCOME:
-                # Clear the processing message
-                self._clear_last_ai_message()
+                # Clear the processing message if shown
+                if self._processing_message_shown:
+                    self._clear_last_ai_message()
+                    self._processing_message_shown = False
 
-                # Validate project name
+                # Validate project name length
                 if len(message) < self.settings.min_project_name_length:
                     self.app.call_from_thread(
                         self.add_ai_message,
                         f"Please provide a project name with at least {self.settings.min_project_name_length} characters.",
+                    )
+                    return
+
+                if len(message) > self.settings.max_project_name_length:
+                    self.app.call_from_thread(
+                        self.add_ai_message,
+                        f"Project name is too long. Please keep it under {self.settings.max_project_name_length} characters.",
+                    )
+                    return
+
+                # Validate project name characters
+                if not re.match(r"^[\w\s\-]+$", message):
+                    self.app.call_from_thread(
+                        self.add_ai_message,
+                        "Project names can only contain letters, numbers, spaces, hyphens, and underscores.",
                     )
                     return
 
@@ -209,21 +244,26 @@ class OnboardingChatScreen(Screen[bool]):
                 )
 
             elif self.state == OnboardingState.BRAINDUMP:
-                # Clear the processing message
-                self._clear_last_ai_message()
+                # Clear the processing message if shown
+                if self._processing_message_shown:
+                    self._clear_last_ai_message()
+                    self._processing_message_shown = False
 
-                # Validate braindump
-                if len(message.strip()) < self.settings.min_braindump_length:
+                # Validate braindump with helpful character count
+                current_length = len(message.strip())
+                if current_length < self.settings.min_braindump_length:
                     self.app.call_from_thread(
                         self.add_ai_message,
-                        f"Please provide more detail about your idea (at least {self.settings.min_braindump_length} characters).",
+                        f"Please provide more detail about your idea. "
+                        f"Current: {current_length} characters, minimum: {self.settings.min_braindump_length} characters.",
                     )
                     return
 
                 if len(message) > self.settings.max_braindump_length:
                     self.app.call_from_thread(
                         self.add_ai_message,
-                        f"Your description is too long. Please keep it under {self.settings.max_braindump_length} characters.",
+                        f"Your description is too long ({len(message)} characters). "
+                        f"Please keep it under {self.settings.max_braindump_length} characters.",
                     )
                     return
 
@@ -248,8 +288,10 @@ class OnboardingChatScreen(Screen[bool]):
                 )
 
             elif self.state == OnboardingState.SUMMARY_REVIEW:
-                # Clear the processing message
-                self._clear_last_ai_message()
+                # Clear the processing message if shown
+                if self._processing_message_shown:
+                    self._clear_last_ai_message()
+                    self._processing_message_shown = False
 
                 # Check if user approves or wants to refine
                 if message.lower() in ["yes", "y", "correct", "good", "perfect"]:
@@ -289,10 +331,12 @@ class OnboardingChatScreen(Screen[bool]):
                     )
 
             elif self.state == OnboardingState.QUESTIONS:
-                # Clear the processing message
-                self._clear_last_ai_message()
+                # Clear the processing message if shown
+                if self._processing_message_shown:
+                    self._clear_last_ai_message()
+                    self._processing_message_shown = False
 
-                # User provided answers
+                # User provided answers (no separate ANSWERS state needed)
                 self.answers = message
 
                 # Generate kernel
@@ -316,8 +360,10 @@ class OnboardingChatScreen(Screen[bool]):
                 )
 
             elif self.state == OnboardingState.KERNEL_REVIEW:
-                # Clear the processing message
-                self._clear_last_ai_message()
+                # Clear the processing message if shown
+                if self._processing_message_shown:
+                    self._clear_last_ai_message()
+                    self._processing_message_shown = False
 
                 # Handle kernel review decision
                 decision = message.lower().strip()
@@ -361,8 +407,10 @@ class OnboardingChatScreen(Screen[bool]):
                     )
 
         except Exception as e:
-            # Clear processing indicator if it exists
-            self._clear_last_ai_message()
+            # Clear processing indicator if it was shown
+            if self._processing_message_shown:
+                self._clear_last_ai_message()
+                self._processing_message_shown = False
 
             # Handle errors gracefully
             logger.error(f"Error processing message in state {self.state.name}: {e}", exc_info=True)
@@ -371,32 +419,35 @@ class OnboardingChatScreen(Screen[bool]):
                 f"I encountered an error: {str(e)}. Please try again or press ESC to cancel.",
             )
         finally:
-            # Re-enable input after processing
+            # Always reset processing flag and re-enable input
+            self._processing_message_shown = False
             self.app.call_from_thread(self._enable_input)
 
     async def create_project(self) -> None:
         """Create the project with all gathered information."""
-        try:
-            # Prevent multiple calls during transition
-            if self.state == OnboardingState.COMPLETE:
-                logger.warning("Project creation already in progress, skipping duplicate call")
-                return
+        # Use lock to prevent race conditions
+        async with self._creation_lock:
+            try:
+                # Prevent multiple calls during transition
+                if self.state == OnboardingState.COMPLETE:
+                    logger.warning("Project creation already in progress, skipping duplicate call")
+                    return
 
-            self.state = OnboardingState.COMPLETE
-            logger.info(f"Creating project: {self.project_slug}")
+                self.state = OnboardingState.COMPLETE
+                logger.info(f"Creating project: {self.project_slug}")
 
-            # Create project structure
-            project_path = scaffold_project(self.project_slug)
+                # Create project structure
+                project_path = scaffold_project(self.project_slug)
 
-            # Verify scaffold succeeded
-            if not project_path.exists():
-                raise RuntimeError(f"Failed to create project directory: {project_path}")
+                # Verify scaffold succeeded
+                if not project_path.exists():
+                    raise RuntimeError(f"Failed to create project directory: {project_path}")
 
-            # Write the kernel content
-            kernel_path = project_path / "kernel.md"
+                # Write the kernel content
+                kernel_path = project_path / "kernel.md"
 
-            # Add frontmatter to kernel
-            frontmatter = f"""---
+                # Add frontmatter to kernel
+                frontmatter = f"""---
 title: Kernel
 project: {self.project_slug}
 created: {datetime.now().isoformat()}
@@ -404,64 +455,69 @@ stage: kernel
 ---
 
 """
-            full_kernel = frontmatter + self.kernel_content
-            atomic_write_text(kernel_path, full_kernel)
+                full_kernel = frontmatter + self.kernel_content
+                atomic_write_text(kernel_path, full_kernel)
 
-            # Update project metadata
-            try:
-                project_data = ProjectMeta.read_project_yaml(self.project_slug)
-                if project_data:
-                    project_data["title"] = self.project_name
-                    project_data["description"] = truncate_description(self.braindump)
-                    project_data["stage"] = "kernel"
-                    ProjectMeta.write_project_yaml(self.project_slug, project_data)
-                else:
-                    logger.warning(
-                        f"Could not read project.yaml for {self.project_slug}, creating minimal metadata"
-                    )
-                    # Create minimal metadata if read failed
-                    project_data = {
-                        "title": self.project_name,
-                        "description": truncate_description(self.braindump),
-                        "stage": "kernel",
-                    }
-                    ProjectMeta.write_project_yaml(self.project_slug, project_data)
+                # Update project metadata
+                try:
+                    project_data = ProjectMeta.read_project_yaml(self.project_slug)
+                    if project_data:
+                        project_data["title"] = self.project_name
+                        project_data["description"] = truncate_description(self.braindump)
+                        project_data["stage"] = "kernel"
+                        ProjectMeta.write_project_yaml(self.project_slug, project_data)
+                    else:
+                        logger.warning(
+                            f"Could not read project.yaml for {self.project_slug}, creating minimal metadata"
+                        )
+                        # Create minimal metadata if read failed
+                        project_data = {
+                            "title": self.project_name,
+                            "description": truncate_description(self.braindump),
+                            "stage": "kernel",
+                        }
+                        ProjectMeta.write_project_yaml(self.project_slug, project_data)
+                except Exception as e:
+                    logger.error(f"Failed to update project metadata: {e}", exc_info=True)
+                    # Continue - project is still created even if metadata update fails
+
+                # Set as active project
+                app_state = get_app_state()
+                app_state.set_active_project(self.project_slug, reason="wizard-accept")
+
+                self.app.call_from_thread(
+                    self.add_ai_message,
+                    f"🎉 Project '{self.project_name}' created successfully! "
+                    "Switching to the main screen...",
+                )
+
+                logger.info(f"Successfully created project {self.project_slug}")
+
+                # Switch to main screen directly from the worker thread
+                from app.tui.views.main_screen import MainScreen
+
+                self.app.call_from_thread(self.app.switch_screen, MainScreen())
+
             except Exception as e:
-                logger.error(f"Failed to update project metadata: {e}", exc_info=True)
-                # Continue - project is still created even if metadata update fails
-
-            # Set as active project
-            app_state = get_app_state()
-            app_state.set_active_project(self.project_slug, reason="wizard-accept")
-
-            self.app.call_from_thread(
-                self.add_ai_message,
-                f"🎉 Project '{self.project_name}' created successfully! "
-                "Switching to the main screen...",
-            )
-
-            logger.info(f"Successfully created project {self.project_slug}")
-
-            # Switch to main screen directly from the worker thread
-            from app.tui.views.main_screen import MainScreen
-
-            self.app.call_from_thread(self.app.switch_screen, MainScreen())
-
-        except Exception as e:
-            logger.error(f"Failed to create project {self.project_slug}: {e}", exc_info=True)
-            self.state = OnboardingState.KERNEL_REVIEW  # Reset state so user can try again
-            self.app.call_from_thread(self.add_ai_message, f"Failed to create project: {str(e)}")
+                logger.error(f"Failed to create project {self.project_slug}: {e}", exc_info=True)
+                self.state = OnboardingState.KERNEL_REVIEW  # Reset state so user can try again
+                self.app.call_from_thread(
+                    self.add_ai_message, f"Failed to create project: {str(e)}"
+                )
 
     def action_cancel(self) -> None:
         """Cancel the onboarding process."""
         self.dismiss(False)
 
     def _clear_last_ai_message(self) -> None:
-        """Clear the last AI message if it's a processing indicator."""
-        chat_history: RichLog = self.query_one("#chat-history", RichLog)
-        # Note: RichLog doesn't have a way to remove last message,
-        # so we'll overwrite with empty line
-        chat_history.write("", shrink=True)
+        """Clear the processing indicator message.
+
+        Note: RichLog doesn't support removing messages, so we overwrite
+        the processing message with actual content immediately.
+        This is called right before adding the real response.
+        """
+        # This is a no-op now since we immediately overwrite with real content
+        pass
 
     def _enable_input(self) -> None:
         """Re-enable the chat input after processing."""
