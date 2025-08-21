@@ -296,16 +296,16 @@ class NewProjectWizard(Screen[bool]):
             try:
                 self.project_slug = ensure_unique_slug(slugify(self.project_name))
                 # Log onboarding started
-                await self.logger.log_onboarding_started(self.project_slug, self.project_name)
+                self.logger.log_onboarding_started(self.project_slug, self.project_name)
             except TimeoutError:
                 self.notify("Project creation is locked, please try again", severity="error")
-                await self.logger.log_error(
+                self.logger.log_error(
                     self.project_slug or "unknown", "project_creation_locked", "project_name"
                 )
                 return
             except Exception as e:
                 self.notify(f"Error creating project identifier: {str(e)[:50]}", severity="error")
-                await self.logger.log_error(
+                self.logger.log_error(
                     self.project_slug or "unknown", "slug_generation_failed", "project_name", str(e)
                 )
                 return
@@ -343,7 +343,7 @@ class NewProjectWizard(Screen[bool]):
                     break
                 except Exception as e:
                     self.notify(f"Failed to generate questions: {e}", severity="error")
-                    await self.logger.log_error(
+                    self.logger.log_error(
                         self.project_slug, "question_generation_failed", "braindump", str(e)
                     )
                     return
@@ -362,8 +362,10 @@ class NewProjectWizard(Screen[bool]):
                 self.notify("Please answer the questions", severity="error")
                 return
 
-            # Log answers collected
-            await self.logger.log_answers_collected(self.project_slug, self.answers)
+            # Log answers collected with question context
+            self.logger.log_answers_collected(
+                self.project_slug, self.answers, self.clarify_questions
+            )
 
             # Generate kernel proposal with retry
             self.notify("Generating project kernel...")
@@ -392,7 +394,7 @@ class NewProjectWizard(Screen[bool]):
                         self.notify(f"Generation failed, retrying: {e}", severity="warning")
                         continue
                     self.notify(f"Failed to generate kernel: {e}", severity="error")
-                    await self.logger.log_error(
+                    self.logger.log_error(
                         self.project_slug, "kernel_generation_failed", "answers", str(e)
                     )
                     return
@@ -417,21 +419,17 @@ class NewProjectWizard(Screen[bool]):
                 approved = await self.app.push_screen_wait(modal)
 
                 if approved is True:
-                    await self.logger.log_proposal_decision(
-                        self.project_slug, True, self.kernel_content
-                    )
+                    self.logger.log_proposal_decision(self.project_slug, True, self.kernel_content)
                     await self.create_project()
                 elif approved is False:
-                    await self.logger.log_proposal_decision(
-                        self.project_slug, False, self.kernel_content
-                    )
+                    self.logger.log_proposal_decision(self.project_slug, False, self.kernel_content)
                     self.notify("Project creation cancelled", severity="warning")
                 else:  # None or unexpected value (e.g., modal dismissed with ESC)
                     self.notify("Action cancelled", severity="information")
                     return
             except Exception as e:
                 self.notify(f"Error showing approval dialog: {e}", severity="error")
-                await self.logger.log_error(
+                self.logger.log_error(
                     self.project_slug, "approval_dialog_error", "kernel_proposal", str(e)
                 )
                 return
@@ -509,7 +507,7 @@ stage: kernel
             app_state.set_active_project(self.project_slug, reason="wizard-accept")
 
             # Log successful scaffolding
-            await self.logger.log_project_scaffolded(self.project_slug, project_path)
+            self.logger.log_project_scaffolded(self.project_slug, project_path)
 
             self.notify(
                 f"Project '{self.project_name}' created successfully!", severity="information"
@@ -522,7 +520,7 @@ stage: kernel
 
         except Exception as e:
             self.notify(f"Failed to create project: {e}", severity="error")
-            await self.logger.log_error(
+            self.logger.log_error(
                 self.project_slug, "project_creation_failed", "create_project", str(e)
             )
 

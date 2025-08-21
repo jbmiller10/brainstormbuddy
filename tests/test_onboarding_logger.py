@@ -6,8 +6,6 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-import pytest
-
 from app.tui.controllers.onboarding_logger import OnboardingLogger
 
 
@@ -37,13 +35,12 @@ class TestOnboardingLogger:
             # Cleanup
             del os.environ["LOG_ONBOARDING_VERBOSE"]
 
-    @pytest.mark.asyncio
-    async def test_log_event(self) -> None:
+    def test_log_event(self) -> None:
         """Test logging a basic event."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
 
-            await logger.log_event(
+            logger.log_event(
                 event="onboarding_started",
                 project_slug="test-project",
                 data={"step": "initial"},
@@ -60,13 +57,12 @@ class TestOnboardingLogger:
             assert entry["data"]["step"] == "initial"
             assert "timestamp" in entry
 
-    @pytest.mark.asyncio
-    async def test_content_redaction_default(self) -> None:
+    def test_content_redaction_default(self) -> None:
         """Test that content is redacted by default."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
 
-            await logger.log_onboarding_started("test-project", "My Project Name")
+            logger.log_onboarding_started("test-project", "My Project Name")
 
             entries = logger.read_log()
             assert len(entries) == 1
@@ -78,14 +74,13 @@ class TestOnboardingLogger:
             assert "content" not in project_name_data
             assert project_name_data["content_length"] == len("My Project Name")
 
-    @pytest.mark.asyncio
-    async def test_content_verbose_mode(self) -> None:
+    def test_content_verbose_mode(self) -> None:
         """Test that content is included in verbose mode."""
         with tempfile.TemporaryDirectory() as tmpdir:
             os.environ["LOG_ONBOARDING_VERBOSE"] = "1"
             logger = OnboardingLogger(tmpdir)
 
-            await logger.log_onboarding_started("test-project", "My Project Name")
+            logger.log_onboarding_started("test-project", "My Project Name")
 
             entries = logger.read_log()
             assert len(entries) == 1
@@ -100,8 +95,7 @@ class TestOnboardingLogger:
             # Cleanup
             del os.environ["LOG_ONBOARDING_VERBOSE"]
 
-    @pytest.mark.asyncio
-    async def test_log_clarify_questions(self) -> None:
+    def test_log_clarify_questions(self) -> None:
         """Test logging clarify questions event."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
@@ -109,7 +103,7 @@ class TestOnboardingLogger:
             questions = ["1. What is the purpose?", "2. Who are the users?"]
             braindump = "I want to build an app"
 
-            await logger.log_clarify_questions_shown("test-project", questions, braindump)
+            logger.log_clarify_questions_shown("test-project", questions, braindump)
 
             entries = logger.read_log()
             assert len(entries) == 1
@@ -119,8 +113,7 @@ class TestOnboardingLogger:
             # Questions should not be included in non-verbose mode
             assert "questions" not in entries[0]["data"]
 
-    @pytest.mark.asyncio
-    async def test_log_clarify_questions_verbose(self) -> None:
+    def test_log_clarify_questions_verbose(self) -> None:
         """Test logging clarify questions in verbose mode."""
         with tempfile.TemporaryDirectory() as tmpdir:
             os.environ["LOG_ONBOARDING_VERBOSE"] = "1"
@@ -129,7 +122,7 @@ class TestOnboardingLogger:
             questions = ["1. What is the purpose?", "2. Who are the users?"]
             braindump = "I want to build an app"
 
-            await logger.log_clarify_questions_shown("test-project", questions, braindump)
+            logger.log_clarify_questions_shown("test-project", questions, braindump)
 
             entries = logger.read_log()
             assert len(entries) == 1
@@ -139,8 +132,7 @@ class TestOnboardingLogger:
             # Cleanup
             del os.environ["LOG_ONBOARDING_VERBOSE"]
 
-    @pytest.mark.asyncio
-    async def test_log_kernel_generated(self) -> None:
+    def test_log_kernel_generated(self) -> None:
         """Test logging kernel generation."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
@@ -162,7 +154,7 @@ Test concept.
 ## Primary Value Proposition
 Value."""
 
-            await logger.log_kernel_generated("test-project", kernel_content)
+            logger.log_kernel_generated("test-project", kernel_content)
 
             entries = logger.read_log()
             assert len(entries) == 1
@@ -172,19 +164,16 @@ Value."""
             # Content should be redacted
             assert "content_hash" in entries[0]["data"]["kernel"]
 
-    @pytest.mark.asyncio
-    async def test_log_proposal_decision(self) -> None:
+    def test_log_proposal_decision(self) -> None:
         """Test logging proposal approval/rejection."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
 
             # Test approval
-            await logger.log_proposal_decision(
-                "test-project", approved=True, kernel_content="kernel"
-            )
+            logger.log_proposal_decision("test-project", approved=True, kernel_content="kernel")
 
             # Test rejection
-            await logger.log_proposal_decision("test-project", approved=False)
+            logger.log_proposal_decision("test-project", approved=False)
 
             entries = logger.read_log()
             assert len(entries) == 2
@@ -193,27 +182,25 @@ Value."""
             assert entries[1]["event"] == "proposal_rejected"
             assert entries[1]["data"]["approved"] is False
 
-    @pytest.mark.asyncio
-    async def test_log_project_scaffolded(self) -> None:
+    def test_log_project_scaffolded(self) -> None:
         """Test logging project scaffolding."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
 
             project_path = Path("/projects/test-project")
-            await logger.log_project_scaffolded("test-project", project_path)
+            logger.log_project_scaffolded("test-project", project_path)
 
             entries = logger.read_log()
             assert len(entries) == 1
             assert entries[0]["event"] == "project_scaffolded"
             assert entries[0]["data"]["project_path"] == str(project_path)
 
-    @pytest.mark.asyncio
-    async def test_log_error(self) -> None:
+    def test_log_error(self) -> None:
         """Test logging errors."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
 
-            await logger.log_error(
+            logger.log_error(
                 "test-project",
                 error_code="kernel_generation_failed",
                 last_successful_step="answers",
@@ -228,14 +215,52 @@ Value."""
             # Details should be redacted in non-verbose mode
             assert entries[0]["data"]["details"]["redacted"] is True
 
-    @pytest.mark.asyncio
-    async def test_log_error_verbose(self) -> None:
+    def test_log_answers_with_questions(self) -> None:
+        """Test logging answers with question context."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = OnboardingLogger(tmpdir)
+
+            questions = ["1. What is the purpose?", "2. Who are the users?"]
+            answers = "Purpose is X. Users are Y."
+
+            logger.log_answers_collected("test-project", answers, questions)
+
+            entries = logger.read_log()
+            assert len(entries) == 1
+            assert entries[0]["event"] == "answers_collected"
+            assert entries[0]["data"]["question_count"] == 2
+            # Questions should not be included in non-verbose mode
+            assert "questions" not in entries[0]["data"]
+            assert "answers" in entries[0]["data"]
+            assert "content_hash" in entries[0]["data"]["answers"]
+
+    def test_log_answers_with_questions_verbose(self) -> None:
+        """Test logging answers with question context in verbose mode."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ["LOG_ONBOARDING_VERBOSE"] = "1"
+            logger = OnboardingLogger(tmpdir)
+
+            questions = ["1. What is the purpose?", "2. Who are the users?"]
+            answers = "Purpose is X. Users are Y."
+
+            logger.log_answers_collected("test-project", answers, questions)
+
+            entries = logger.read_log()
+            assert len(entries) == 1
+            assert entries[0]["data"]["question_count"] == 2
+            assert entries[0]["data"]["questions"] == questions
+            assert entries[0]["data"]["answers"]["content"] == answers
+
+            # Cleanup
+            del os.environ["LOG_ONBOARDING_VERBOSE"]
+
+    def test_log_error_verbose(self) -> None:
         """Test logging errors in verbose mode."""
         with tempfile.TemporaryDirectory() as tmpdir:
             os.environ["LOG_ONBOARDING_VERBOSE"] = "1"
             logger = OnboardingLogger(tmpdir)
 
-            await logger.log_error(
+            logger.log_error(
                 "test-project",
                 error_code="kernel_generation_failed",
                 last_successful_step="answers",
@@ -250,8 +275,7 @@ Value."""
             # Cleanup
             del os.environ["LOG_ONBOARDING_VERBOSE"]
 
-    @pytest.mark.asyncio
-    async def test_daily_log_file(self) -> None:
+    def test_daily_log_file(self) -> None:
         """Test that log files are created daily."""
         with tempfile.TemporaryDirectory() as tmpdir:
             logger1 = OnboardingLogger(tmpdir)
@@ -260,34 +284,35 @@ Value."""
             # Both loggers should use the same daily file
             assert logger1.log_file == logger2.log_file
 
-            await logger1.log_event("event1", "project1")
-            await logger2.log_event("event2", "project2")
+            logger1.log_event("event1", "project1")
+            logger2.log_event("event2", "project2")
 
             entries = logger1.read_log()
             assert len(entries) == 2
             assert entries[0]["event"] == "event1"
             assert entries[1]["event"] == "event2"
 
-    @pytest.mark.asyncio
-    async def test_concurrent_logging(self) -> None:
+    def test_concurrent_logging(self) -> None:
         """Test that concurrent log writes don't corrupt the file."""
-        import asyncio
+        import threading
 
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = OnboardingLogger(tmpdir)
 
-            # Create multiple concurrent log tasks
-            tasks = []
+            # Create multiple concurrent log threads
+            threads = []
             for i in range(10):
-                tasks.append(
-                    logger.log_event(
-                        event=f"event_{i}",
-                        project_slug=f"project_{i}",
-                        data={"index": i},
-                    )
+                thread = threading.Thread(
+                    target=logger.log_event,
+                    args=(f"event_{i}", f"project_{i}"),
+                    kwargs={"data": {"index": i}},
                 )
+                threads.append(thread)
+                thread.start()
 
-            await asyncio.gather(*tasks)
+            # Wait for all threads to complete
+            for thread in threads:
+                thread.join()
 
             entries = logger.read_log()
             assert len(entries) == 10

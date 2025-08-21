@@ -58,7 +58,7 @@ class OnboardingLogger:
 
         return result
 
-    async def log_event(
+    def log_event(
         self,
         event: str,
         project_slug: str,
@@ -108,16 +108,16 @@ class OnboardingLogger:
                 # Release lock
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
-    async def log_onboarding_started(self, project_slug: str, project_name: str) -> None:
+    def log_onboarding_started(self, project_slug: str, project_name: str) -> None:
         """Log onboarding start event."""
-        await self.log_event(
+        self.log_event(
             event="onboarding_started",
             project_slug=project_slug,
             data={"project_name": self._redact_content(project_name)},
             redact_fields=[],
         )
 
-    async def log_clarify_questions_shown(
+    def log_clarify_questions_shown(
         self, project_slug: str, questions: list[str], braindump: str
     ) -> None:
         """Log clarifying questions shown event."""
@@ -129,23 +129,33 @@ class OnboardingLogger:
         if self.verbose:
             data["questions"] = questions
 
-        await self.log_event(
+        self.log_event(
             event="clarify_questions_shown",
             project_slug=project_slug,
             data=data,
         )
 
-    async def log_answers_collected(self, project_slug: str, answers: str) -> None:
-        """Log answers collected event."""
-        await self.log_event(
+    def log_answers_collected(
+        self, project_slug: str, answers: str, questions: list[str] | None = None
+    ) -> None:
+        """Log answers collected event with optional question context."""
+        data: dict[str, Any] = {"answers": self._redact_content(answers)}
+
+        # Include question context for correlation
+        if questions:
+            data["question_count"] = len(questions)
+            if self.verbose:
+                data["questions"] = questions
+
+        self.log_event(
             event="answers_collected",
             project_slug=project_slug,
-            data={"answers": self._redact_content(answers)},
+            data=data,
         )
 
-    async def log_kernel_generated(self, project_slug: str, kernel_content: str) -> None:
+    def log_kernel_generated(self, project_slug: str, kernel_content: str) -> None:
         """Log kernel generation event."""
-        await self.log_event(
+        self.log_event(
             event="kernel_generated",
             project_slug=project_slug,
             data={
@@ -154,7 +164,7 @@ class OnboardingLogger:
             },
         )
 
-    async def log_proposal_decision(
+    def log_proposal_decision(
         self, project_slug: str, approved: bool, kernel_content: str | None = None
     ) -> None:
         """Log kernel proposal approval/rejection."""
@@ -164,21 +174,21 @@ class OnboardingLogger:
         if kernel_content:
             data["kernel"] = self._redact_content(kernel_content)
 
-        await self.log_event(
+        self.log_event(
             event=event,
             project_slug=project_slug,
             data=data,
         )
 
-    async def log_project_scaffolded(self, project_slug: str, project_path: Path) -> None:
+    def log_project_scaffolded(self, project_slug: str, project_path: Path) -> None:
         """Log project scaffolding completion."""
-        await self.log_event(
+        self.log_event(
             event="project_scaffolded",
             project_slug=project_slug,
             data={"project_path": str(project_path)},
         )
 
-    async def log_error(
+    def log_error(
         self,
         project_slug: str,
         error_code: str,
@@ -194,7 +204,7 @@ class OnboardingLogger:
         if details:
             data["details"] = self._redact_content(details) if self.verbose else {"redacted": True}
 
-        await self.log_event(
+        self.log_event(
             event="error",
             project_slug=project_slug,
             data=data,
