@@ -385,22 +385,28 @@ class TestNewProjectWizard:
         wizard.kernel_content = "# Kernel content"
         wizard.project_slug = "test-project"
 
-        # Create a mock app and directly patch wizard's push_screen_wait method
+        # Create mock objects
         mock_push_screen_wait = AsyncMock(return_value=True)
         mock_create_project = AsyncMock()
         mock_app = Mock()
         mock_app.push_screen_wait = mock_push_screen_wait
 
+        # Ensure the app property returns our mock without accessing context
         with (
             patch.object(wizard, "create_project", mock_create_project),
             patch.object(wizard, "update_step_content"),
             patch("app.tui.views.new_project_wizard.KernelApprovalModal"),
-            patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
         ):
-            await wizard.action_next_step()
+            # Override the app property getter to avoid context access
+            type(wizard).app = property(lambda _: mock_app)
+            try:
+                await wizard.action_next_step()
 
-            mock_push_screen_wait.assert_called_once()
-            mock_create_project.assert_called_once()
+                mock_push_screen_wait.assert_called_once()
+                mock_create_project.assert_called_once()
+            finally:
+                # Clean up the property override
+                del type(wizard).app
 
     @pytest.mark.asyncio
     async def test_action_next_step_kernel_rejection(
@@ -421,7 +427,7 @@ class TestNewProjectWizard:
         wizard.kernel_content = "# Kernel content"
         wizard.project_slug = "test-project"
 
-        # Create a mock app and directly patch wizard's push_screen_wait method
+        # Create mock objects
         mock_push_screen_wait = AsyncMock(return_value=False)
         mock_notify = Mock()
         mock_app = Mock()
@@ -431,12 +437,19 @@ class TestNewProjectWizard:
             patch.object(wizard, "notify", mock_notify),
             patch.object(wizard, "update_step_content"),
             patch("app.tui.views.new_project_wizard.KernelApprovalModal"),
-            patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
         ):
-            await wizard.action_next_step()
+            # Override the app property getter to avoid context access
+            type(wizard).app = property(lambda _: mock_app)
+            try:
+                await wizard.action_next_step()
 
-            mock_push_screen_wait.assert_called_once()
-            mock_notify.assert_called_once_with("Project creation cancelled", severity="warning")
+                mock_push_screen_wait.assert_called_once()
+                mock_notify.assert_called_once_with(
+                    "Project creation cancelled", severity="warning"
+                )
+            finally:
+                # Clean up the property override
+                del type(wizard).app
 
     @pytest.mark.asyncio
     async def test_create_project_success(
@@ -649,16 +662,18 @@ class TestNewProjectWizard:
         mock_screen.focus_next = Mock()
         mock_screen.focus_previous = Mock()
 
-        # Patch the screen property at the class level
-        with patch.object(
-            NewProjectWizard, "screen", new_callable=PropertyMock, return_value=mock_screen
-        ):
+        # Override the screen property getter to avoid context access
+        type(wizard).screen = property(lambda _: mock_screen)
+        try:
             # Test focus navigation
             wizard.action_focus_next()
             mock_screen.focus_next.assert_called_once()
 
             wizard.action_focus_previous()
             mock_screen.focus_previous.assert_called_once()
+        finally:
+            # Clean up the property override
+            del type(wizard).screen
 
     @pytest.mark.asyncio
     async def test_resource_cleanup_on_unmount(
