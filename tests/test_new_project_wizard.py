@@ -370,7 +370,7 @@ class TestNewProjectWizard:
 
     @pytest.mark.asyncio
     async def test_action_next_step_kernel_approval(self, mock_onboarding_controller: Mock) -> None:
-        """Test kernel approval step behavior."""
+        """Test that kernel approval step handles missing app context gracefully."""
         with patch(
             "app.tui.views.new_project_wizard.OnboardingController",
             return_value=mock_onboarding_controller,
@@ -385,25 +385,34 @@ class TestNewProjectWizard:
         wizard.kernel_content = "# Kernel content"
         wizard.project_slug = "test-project"
 
-        # Instead of trying to mock Textual's app property, verify the error handling
-        with (
-            patch.object(wizard, "notify") as mock_notify,
-            patch.object(wizard, "update_step_content"),
-        ):
-            await wizard.action_next_step()
+        # Mock notify to prevent it from accessing app
+        wizard.notify = Mock()
 
-            # Since app is not available, it should handle the exception
-            mock_notify.assert_called_once()
-            # Verify error was logged
-            wizard.logger.log_error.assert_called_once_with(
-                "test-project", "approval_dialog_error", "kernel_proposal", ANY
-            )
+        # Mock update_step_content to prevent any side effects
+        wizard.update_step_content = Mock()
+
+        # Now action_next_step should handle the missing app context
+        await wizard.action_next_step()
+
+        # The exception handler should have called notify with an error message
+        wizard.notify.assert_called_once()
+        error_msg = wizard.notify.call_args[0][0]
+        assert "Error showing approval dialog" in error_msg
+
+        # And logged the error
+        wizard.logger.log_error.assert_called_once_with(
+            "test-project", "approval_dialog_error", "kernel_proposal", ANY
+        )
 
     @pytest.mark.asyncio
-    async def test_action_next_step_kernel_error_handling(
+    async def test_action_next_step_kernel_rejection(
         self, mock_onboarding_controller: Mock
     ) -> None:
-        """Test kernel proposal error handling when app is not available."""
+        """Test that kernel rejection step handles missing app context gracefully.
+
+        This is essentially the same as the approval test since both go through
+        the same error handling path when app context is missing.
+        """
         with patch(
             "app.tui.views.new_project_wizard.OnboardingController",
             return_value=mock_onboarding_controller,
@@ -416,22 +425,26 @@ class TestNewProjectWizard:
 
         wizard.current_step = WizardStep.KERNEL_PROPOSAL
         wizard.kernel_content = "# Kernel content"
-        wizard.project_slug = "test-project"
+        wizard.project_slug = "test-project-reject"
 
-        # Test that error is handled gracefully when app is not available
-        with (
-            patch.object(wizard, "notify") as mock_notify,
-            patch.object(wizard, "update_step_content"),
-        ):
-            await wizard.action_next_step()
+        # Mock notify to prevent it from accessing app
+        wizard.notify = Mock()
 
-            # Should show error notification
-            assert mock_notify.called
-            error_msg = mock_notify.call_args[0][0]
-            assert "Error showing approval dialog" in error_msg
+        # Mock update_step_content to prevent any side effects
+        wizard.update_step_content = Mock()
 
-            # Should log the error
-            wizard.logger.log_error.assert_called_once()
+        # Now action_next_step should handle the missing app context
+        await wizard.action_next_step()
+
+        # The exception handler should have called notify with an error message
+        wizard.notify.assert_called_once()
+        error_msg = wizard.notify.call_args[0][0]
+        assert "Error showing approval dialog" in error_msg
+
+        # And logged the error
+        wizard.logger.log_error.assert_called_once_with(
+            "test-project-reject", "approval_dialog_error", "kernel_proposal", ANY
+        )
 
     @pytest.mark.asyncio
     async def test_create_project_success(
