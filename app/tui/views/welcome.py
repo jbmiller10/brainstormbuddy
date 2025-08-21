@@ -11,68 +11,27 @@ from textual.widgets import Button, Footer, Header, Label, ListItem, ListView, S
 
 from app.core.state import get_app_state
 from app.files.project_meta import ProjectMeta
+from app.tui.styles import get_common_css
 
 
 class WelcomeScreen(Screen[None]):
     """Welcome screen that lists existing projects and allows creating new ones."""
 
-    DEFAULT_CSS = """
-    WelcomeScreen {
-        align: center middle;
-    }
-
-    WelcomeScreen .container {
-        width: 80%;
-        height: 80%;
-        max-width: 100;
-        border: thick $primary;
-        background: $surface;
-        padding: 2;
-    }
-
-    WelcomeScreen .title {
-        text-align: center;
-        text-style: bold;
-        margin-bottom: 1;
-    }
-
-    WelcomeScreen .subtitle {
-        text-align: center;
-        color: $text-muted;
-        margin-bottom: 2;
-    }
-
-    WelcomeScreen .project-list {
-        height: 1fr;
-        margin-bottom: 2;
-        border: solid $primary;
-    }
-
-    WelcomeScreen .empty-state {
-        align: center middle;
-        height: 100%;
-        color: $text-muted;
-        text-align: center;
-    }
-
-    WelcomeScreen .button-container {
-        height: 3;
-        align: center middle;
-    }
-
+    # Use shared styles with some customizations
+    DEFAULT_CSS = get_common_css("WelcomeScreen", center_align=True) + """
     WelcomeScreen Button {
-        width: 24;
-        margin: 0 1;
+        width: 24;  /* Wider buttons for welcome screen */
     }
 
-    WelcomeScreen .create-button {
-        background: $success;
+    WelcomeScreen .container-medium {
+        /* Use medium container for welcome screen */
     }
     """
 
     BINDINGS = [
         Binding("n", "create_project", "New Project", priority=True),
         Binding("enter", "select_project", "Select", show=False),
+        Binding("m", "load_more", "Load More", show=False),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -80,6 +39,9 @@ class WelcomeScreen(Screen[None]):
         """Initialize the welcome screen."""
         super().__init__()
         self.projects: list[dict[str, str]] = []
+        self.displayed_count = 0
+        self.page_size = 30  # Number of projects to display at once
+        self.has_more = False
 
     def compose(self) -> ComposeResult:
         """Compose the welcome screen UI."""
@@ -105,21 +67,15 @@ class WelcomeScreen(Screen[None]):
         self.refresh_projects()
 
     def refresh_projects(self) -> None:
-        """Scan projects directory and populate the list."""
+        """Scan projects directory and populate the list with pagination."""
         self.projects = self.find_projects()
         list_view = self.query_one("#project-list", ListView)
         list_view.clear()
+        self.displayed_count = 0
 
         if self.projects:
-            for project in self.projects:
-                item = ListItem(
-                    Static(
-                        f"[bold]{project['title']}[/bold] ({project['slug']})\n"
-                        f"[dim]{project.get('description', 'No description')}[/dim]"
-                    ),
-                    id=f"project-{project['slug']}",
-                )
-                list_view.append(item)
+            # Display first page of projects
+            self._display_page(list_view)
         else:
             list_view.append(
                 ListItem(
@@ -127,6 +83,42 @@ class WelcomeScreen(Screen[None]):
                         "[dim italic]No projects found. Create your first project![/dim italic]"
                     ),
                     id="empty-state",
+                )
+            )
+
+    def _display_page(self, list_view: ListView) -> None:
+        """Display next page of projects."""
+        start_idx = self.displayed_count
+        end_idx = min(start_idx + self.page_size, len(self.projects))
+
+        for idx in range(start_idx, end_idx):
+            project = self.projects[idx]
+            # Lazy load description - truncate if too long
+            description = project.get('description', 'No description')
+            if len(description) > 100:
+                description = description[:97] + "..."
+
+            item = ListItem(
+                Static(
+                    f"[bold]{project['title']}[/bold] ({project['slug']})\n"
+                    f"[dim]{description}[/dim]"
+                ),
+                id=f"project-{project['slug']}",
+            )
+            list_view.append(item)
+
+        self.displayed_count = end_idx
+        self.has_more = self.displayed_count < len(self.projects)
+
+        # Add "Load More" indicator if there are more projects
+        if self.has_more:
+            list_view.append(
+                ListItem(
+                    Static(
+                        f"[dim italic]Showing {self.displayed_count} of {len(self.projects)} projects. "
+                        f"Press 'M' to load more...[/dim italic]"
+                    ),
+                    id="load-more-indicator",
                 )
             )
 
@@ -196,13 +188,35 @@ class WelcomeScreen(Screen[None]):
 
         self.app.push_screen(NewProjectWizard())
 
+    def action_load_more(self) -> None:
+        """Load more projects if available."""
+        if not self.has_more:
+            return
+
+        list_view = self.query_one("#project-list", ListView)
+
+        # Remove the "Load More" indicator
+        try:
+            for item in list_view.children:
+                if isinstance(item, ListItem) and item.id == "load-more-indicator":
+                    item.remove()
+                    break
+        except Exception:
+            pass
+
+        # Display next page
+        self._display_page(list_view)
+
+        # Scroll to the newly added items
+        list_view.scroll_end(animate=True)
+
     def action_select_project(self) -> None:
         """Select the currently highlighted project."""
         list_view = self.query_one("#project-list", ListView)
         if (
             list_view.highlighted_child
             and list_view.highlighted_child.id
-            and list_view.highlighted_child.id != "empty-state"
+            and list_view.highlighted_child.id not in ["empty-state", "load-more-indicator"]
         ):
             slug = list_view.highlighted_child.id.replace("project-", "")
             self.select_project(slug)

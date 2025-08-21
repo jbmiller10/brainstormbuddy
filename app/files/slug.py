@@ -4,6 +4,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+from app.files.lock import slug_generation_lock
+
 
 def slugify(title: str) -> str:
     """
@@ -132,6 +134,9 @@ def ensure_unique_slug(base_slug: str, base_path: Path | str = "projects") -> st
     """
     Ensure a slug is unique by appending a suffix if necessary.
 
+    Uses file locking to prevent race conditions when multiple processes
+    try to create projects simultaneously.
+
     Args:
         base_slug: The desired slug
         base_path: Base directory to check for collisions (default: "projects")
@@ -151,21 +156,23 @@ def ensure_unique_slug(base_slug: str, base_path: Path | str = "projects") -> st
     # Validate the base slug first
     base_slug = enforce_slug(base_slug)
 
-    # Convert base_path to Path object
-    base = Path(base_path) if isinstance(base_path, str) else base_path
+    # Use file lock to prevent race conditions
+    with slug_generation_lock(base_slug):
+        # Convert base_path to Path object
+        base = Path(base_path) if isinstance(base_path, str) else base_path
 
-    # Check if the base slug is already unique
-    if not (base / base_slug).exists():
-        return base_slug
+        # Check if the base slug is already unique
+        if not (base / base_slug).exists():
+            return base_slug
 
-    # Find a unique suffix
-    counter = 2
-    while True:
-        candidate = f"{base_slug}-{counter}"
-        if not (base / candidate).exists():
-            return candidate
-        counter += 1
+        # Find a unique suffix
+        counter = 2
+        while True:
+            candidate = f"{base_slug}-{counter}"
+            if not (base / candidate).exists():
+                return candidate
+            counter += 1
 
-        # Safety check to prevent infinite loops
-        if counter > 1000:
-            raise ValueError(f"Could not find unique slug after 1000 attempts for: {base_slug}")
+            # Safety check to prevent infinite loops
+            if counter > 1000:
+                raise ValueError(f"Could not find unique slug after 1000 attempts for: {base_slug}")

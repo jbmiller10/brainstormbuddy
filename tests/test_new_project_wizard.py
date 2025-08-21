@@ -1,5 +1,6 @@
 """Tests for NewProjectWizard."""
 
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
@@ -86,29 +87,27 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        # Mock update_step_content to avoid DOM queries
-        wizard.update_step_content = Mock()
-
         # Test backward transitions
-        wizard.current_step = WizardStep.PROJECT_NAME
-        wizard.action_prev_step()  # Should stay at PROJECT_NAME
-        assert wizard.current_step == WizardStep.PROJECT_NAME
+        with patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.PROJECT_NAME
+            wizard.action_prev_step()  # Should stay at PROJECT_NAME
+            assert wizard.current_step == WizardStep.PROJECT_NAME
 
-        wizard.current_step = WizardStep.BRAINDUMP
-        wizard.action_prev_step()
-        assert wizard.current_step == WizardStep.PROJECT_NAME
+            wizard.current_step = WizardStep.BRAINDUMP
+            wizard.action_prev_step()
+            assert wizard.current_step == WizardStep.PROJECT_NAME
 
-        wizard.current_step = WizardStep.CLARIFY_QUESTIONS
-        wizard.action_prev_step()
-        assert wizard.current_step == WizardStep.BRAINDUMP
+            wizard.current_step = WizardStep.CLARIFY_QUESTIONS
+            wizard.action_prev_step()
+            assert wizard.current_step == WizardStep.BRAINDUMP
 
-        wizard.current_step = WizardStep.ANSWERS
-        wizard.action_prev_step()
-        assert wizard.current_step == WizardStep.CLARIFY_QUESTIONS
+            wizard.current_step = WizardStep.ANSWERS
+            wizard.action_prev_step()
+            assert wizard.current_step == WizardStep.CLARIFY_QUESTIONS
 
-        wizard.current_step = WizardStep.KERNEL_PROPOSAL
-        wizard.action_prev_step()
-        assert wizard.current_step == WizardStep.ANSWERS
+            wizard.current_step = WizardStep.KERNEL_PROPOSAL
+            wizard.action_prev_step()
+            assert wizard.current_step == WizardStep.ANSWERS
 
     def test_action_cancel(self, mock_onboarding_controller: Mock) -> None:
         """Test cancellation dismisses wizard."""
@@ -118,9 +117,9 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.dismiss = Mock()
-        wizard.action_cancel()
-        wizard.dismiss.assert_called_once_with(False)
+        with patch.object(wizard, 'dismiss') as mock_dismiss:
+            wizard.action_cancel()
+            mock_dismiss.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_on_input_changed(self, mock_onboarding_controller: Mock) -> None:
@@ -174,15 +173,14 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.PROJECT_NAME
-        wizard.project_name = ""  # Empty name
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.PROJECT_NAME
+            wizard.project_name = ""  # Empty name
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        wizard.notify.assert_called_once_with("Please enter a project name", severity="error")
-        assert wizard.current_step == WizardStep.PROJECT_NAME  # Should not advance
+            mock_notify.assert_called_once_with("Please enter a project name", severity="error")
+            assert wizard.current_step == WizardStep.PROJECT_NAME  # Should not advance
 
     @pytest.mark.asyncio
     async def test_action_next_step_project_name_success(
@@ -198,14 +196,14 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.PROJECT_NAME
-        wizard.project_name = "Test Project"
+        with patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.PROJECT_NAME
+            wizard.project_name = "Test Project"
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        assert wizard.project_slug == "test-project"
-        assert wizard.current_step == WizardStep.BRAINDUMP
+            assert wizard.project_slug == "test-project"
+            assert wizard.current_step == WizardStep.BRAINDUMP
 
     @pytest.mark.asyncio
     async def test_action_next_step_braindump_validation(
@@ -218,15 +216,14 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.BRAINDUMP
-        wizard.braindump = ""  # Empty braindump
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.BRAINDUMP
+            wizard.braindump = ""  # Empty braindump
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        wizard.notify.assert_called_once_with("Please describe your idea", severity="error")
-        assert wizard.current_step == WizardStep.BRAINDUMP  # Should not advance
+            mock_notify.assert_called_once_with("Please describe your idea", severity="error")
+            assert wizard.current_step == WizardStep.BRAINDUMP  # Should not advance
 
     @pytest.mark.asyncio
     async def test_action_next_step_generate_questions_success(
@@ -239,19 +236,18 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.BRAINDUMP
-        wizard.braindump = "My great idea"
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.BRAINDUMP
+            wizard.braindump = "My great idea"
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        wizard.notify.assert_called_once_with("Generating clarifying questions...")
-        mock_onboarding_controller.generate_clarify_questions.assert_called_once_with(
-            "My great idea", count=5
-        )
-        assert len(wizard.clarify_questions) == 5
-        assert wizard.current_step == WizardStep.CLARIFY_QUESTIONS
+            mock_notify.assert_called_once_with("Generating clarifying questions...")
+            mock_onboarding_controller.generate_clarify_questions.assert_called_once_with(
+                "My great idea", count=5
+            )
+            assert len(wizard.clarify_questions) == 5
+            assert wizard.current_step == WizardStep.CLARIFY_QUESTIONS
 
     @pytest.mark.asyncio
     async def test_action_next_step_generate_questions_failure(
@@ -266,18 +262,17 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.BRAINDUMP
-        wizard.braindump = "My idea"
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.BRAINDUMP
+            wizard.braindump = "My idea"
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        # Should show error and not advance
-        assert wizard.notify.call_count == 2  # Info message + error message
-        error_call = wizard.notify.call_args_list[1]
-        assert "Failed to generate questions" in error_call[0][0]
-        assert wizard.current_step == WizardStep.BRAINDUMP
+            # Should show error and not advance
+            assert mock_notify.call_count == 2  # Info message + error message
+            error_call = mock_notify.call_args_list[1]
+            assert "Failed to generate questions" in error_call[0][0]
+            assert wizard.current_step == WizardStep.BRAINDUMP
 
     @pytest.mark.asyncio
     async def test_action_next_step_answers_validation(
@@ -290,15 +285,14 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.ANSWERS
-        wizard.answers = ""  # Empty answers
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.ANSWERS
+            wizard.answers = ""  # Empty answers
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        wizard.notify.assert_called_once_with("Please answer the questions", severity="error")
-        assert wizard.current_step == WizardStep.ANSWERS  # Should not advance
+            mock_notify.assert_called_once_with("Please answer the questions", severity="error")
+            assert wizard.current_step == WizardStep.ANSWERS  # Should not advance
 
     @pytest.mark.asyncio
     async def test_action_next_step_generate_kernel_success(
@@ -311,20 +305,19 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.ANSWERS
-        wizard.braindump = "My idea"
-        wizard.answers = "Detailed answers"
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.ANSWERS
+            wizard.braindump = "My idea"
+            wizard.answers = "Detailed answers"
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        wizard.notify.assert_called_once_with("Generating project kernel...")
-        mock_onboarding_controller.orchestrate_kernel_generation.assert_called_once_with(
-            "My idea", "Detailed answers"
-        )
-        assert "# Kernel" in wizard.kernel_content
-        assert wizard.current_step == WizardStep.KERNEL_PROPOSAL
+            mock_notify.assert_called_once_with("Generating project kernel...")
+            mock_onboarding_controller.orchestrate_kernel_generation.assert_called_once_with(
+                "My idea", "Detailed answers"
+            )
+            assert "# Kernel" in wizard.kernel_content
+            assert wizard.current_step == WizardStep.KERNEL_PROPOSAL
 
     @pytest.mark.asyncio
     async def test_action_next_step_generate_kernel_failure(
@@ -341,19 +334,18 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.ANSWERS
-        wizard.braindump = "My idea"
-        wizard.answers = "Answers"
+        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+            wizard.current_step = WizardStep.ANSWERS
+            wizard.braindump = "My idea"
+            wizard.answers = "Answers"
 
-        await wizard.action_next_step()
+            await wizard.action_next_step()
 
-        # Should show error and not advance (with retry logic: info + retry warning + final error)
-        assert wizard.notify.call_count == 3  # Info message + retry warning + final error
-        final_error_call = wizard.notify.call_args_list[-1]
-        assert "Failed to generate kernel" in final_error_call[0][0]
-        assert wizard.current_step == WizardStep.ANSWERS
+            # Should show error and not advance (with retry logic: info + retry warning + final error)
+            assert mock_notify.call_count == 3  # Info message + retry warning + final error
+            final_error_call = mock_notify.call_args_list[-1]
+            assert "Failed to generate kernel" in final_error_call[0][0]
+            assert wizard.current_step == WizardStep.ANSWERS
 
     @pytest.mark.asyncio
     async def test_action_next_step_kernel_approval(self, mock_onboarding_controller: Mock) -> None:
@@ -366,19 +358,18 @@ class TestNewProjectWizard:
 
         mock_app = MagicMock()
         mock_app.push_screen_wait = AsyncMock(return_value=True)  # User approves
-        wizard.create_project = AsyncMock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.KERNEL_PROPOSAL
-        wizard.kernel_content = "# Kernel content"
-        wizard.project_slug = "test-project"
+        
+        with patch.object(wizard, 'create_project') as mock_create, \
+             patch.object(wizard, 'update_step_content'), \
+             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app):
+            wizard.current_step = WizardStep.KERNEL_PROPOSAL
+            wizard.kernel_content = "# Kernel content"
+            wizard.project_slug = "test-project"
 
-        with patch.object(
-            NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app
-        ):
             await wizard.action_next_step()
 
-        mock_app.push_screen_wait.assert_called_once()
-        wizard.create_project.assert_called_once()
+            mock_app.push_screen_wait.assert_called_once()
+            mock_create.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_action_next_step_kernel_rejection(
@@ -393,19 +384,18 @@ class TestNewProjectWizard:
 
         mock_app = MagicMock()
         mock_app.push_screen_wait = AsyncMock(return_value=False)  # User rejects
-        wizard.notify = Mock()
-        wizard.update_step_content = Mock()
-        wizard.current_step = WizardStep.KERNEL_PROPOSAL
-        wizard.kernel_content = "# Kernel content"
-        wizard.project_slug = "test-project"
+        
+        with patch.object(wizard, 'notify') as mock_notify, \
+             patch.object(wizard, 'update_step_content'), \
+             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app):
+            wizard.current_step = WizardStep.KERNEL_PROPOSAL
+            wizard.kernel_content = "# Kernel content"
+            wizard.project_slug = "test-project"
 
-        with patch.object(
-            NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app
-        ):
             await wizard.action_next_step()
 
-        mock_app.push_screen_wait.assert_called_once()
-        wizard.notify.assert_called_once_with("Project creation cancelled", severity="warning")
+            mock_app.push_screen_wait.assert_called_once()
+            mock_notify.assert_called_once_with("Project creation cancelled", severity="warning")
 
     @pytest.mark.asyncio
     async def test_create_project_success(
@@ -428,19 +418,19 @@ class TestNewProjectWizard:
 
         mock_app = MagicMock()
         mock_app.switch_screen = Mock()
-        wizard.notify = Mock()
-        wizard.project_slug = "test-project"
-        wizard.project_name = "Test Project"
-        wizard.braindump = "Amazing idea for testing"
-        wizard.kernel_content = "# Kernel\n\nContent"
-
+        
         with (
+            patch.object(wizard, 'notify') as mock_notify,
             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
             patch("app.tui.views.new_project_wizard.scaffold_project") as mock_scaffold,
             patch("app.tui.views.new_project_wizard.atomic_write_text") as mock_write,
             patch("app.tui.views.new_project_wizard.ProjectMeta") as mock_meta,
             patch("app.tui.views.new_project_wizard.get_app_state", return_value=mock_app_state),
         ):
+            wizard.project_slug = "test-project"
+            wizard.project_name = "Test Project"
+            wizard.braindump = "Amazing idea for testing"
+            wizard.kernel_content = "# Kernel\n\nContent"
             mock_scaffold.return_value = projects_dir / "test-project"
             mock_meta.read_project_yaml.return_value = {"stage": "capture"}
 
@@ -451,8 +441,8 @@ class TestNewProjectWizard:
         mock_app_state.set_active_project.assert_called_once_with(
             "test-project", reason="wizard-accept"
         )
-        wizard.notify.assert_called_once()
-        assert "successfully" in wizard.notify.call_args[0][0]
+        mock_notify.assert_called_once()
+        assert "successfully" in mock_notify.call_args[0][0]
         mock_app.switch_screen.assert_called_once()
 
     @pytest.mark.asyncio
@@ -468,17 +458,16 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.notify = Mock()
-        wizard.project_slug = "test-project"
-
-        with patch(
-            "app.tui.views.new_project_wizard.scaffold_project",
-            side_effect=Exception("Filesystem error"),
-        ):
+        with patch.object(wizard, 'notify') as mock_notify, \
+             patch(
+                "app.tui.views.new_project_wizard.scaffold_project",
+                side_effect=Exception("Filesystem error"),
+             ):
+            wizard.project_slug = "test-project"
             await wizard.create_project()
 
-        wizard.notify.assert_called_once()
-        assert "Failed to create project" in wizard.notify.call_args[0][0]
+            mock_notify.assert_called_once()
+            assert "Failed to create project" in mock_notify.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_on_button_pressed(self, mock_onboarding_controller: Mock) -> None:
@@ -489,25 +478,25 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        wizard.action_next_step = AsyncMock()
-        wizard.action_prev_step = Mock()
-        wizard.action_cancel = Mock()
+        with patch.object(wizard, 'action_next_step') as mock_next, \
+             patch.object(wizard, 'action_prev_step') as mock_prev, \
+             patch.object(wizard, 'action_cancel') as mock_cancel:
 
-        # Test next button
-        event = Mock()
-        event.button.id = "next-button"
-        await wizard.on_button_pressed(event)
-        wizard.action_next_step.assert_called_once()
+            # Test next button
+            event = Mock()
+            event.button.id = "next-button"
+            await wizard.on_button_pressed(event)
+            mock_next.assert_called_once()
 
-        # Test back button
-        event.button.id = "back-button"
-        await wizard.on_button_pressed(event)
-        wizard.action_prev_step.assert_called_once()
+            # Test back button
+            event.button.id = "back-button"
+            await wizard.on_button_pressed(event)
+            mock_prev.assert_called_once()
 
-        # Test cancel button
-        event.button.id = "cancel-button"
-        await wizard.on_button_pressed(event)
-        wizard.action_cancel.assert_called_once()
+            # Test cancel button
+            event.button.id = "cancel-button"
+            await wizard.on_button_pressed(event)
+            mock_cancel.assert_called_once()
 
     def test_unique_slug_generation(
         self, mock_onboarding_controller: Mock, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -577,3 +566,166 @@ class TestNewProjectWizard:
             wizard.kernel_content = "# Kernel"
             wizard.render_kernel_step(container)
             assert container.mount.called
+
+    def test_input_validation_patterns(self, mock_onboarding_controller: Mock) -> None:
+        """Test project name validation patterns."""
+        with patch(
+            "app.tui.views.new_project_wizard.OnboardingController",
+            return_value=mock_onboarding_controller,
+        ):
+            wizard = NewProjectWizard()
+
+        # Test single character names (should be valid now)
+        assert re.match(wizard.PROJECT_NAME_PATTERN, "A")
+        assert re.match(wizard.PROJECT_NAME_PATTERN, "1")
+        assert re.match(wizard.PROJECT_NAME_PATTERN, "_")
+
+        # Test normal names
+        assert re.match(wizard.PROJECT_NAME_PATTERN, "My Project")
+        assert re.match(wizard.PROJECT_NAME_PATTERN, "test-project-123")
+        assert re.match(wizard.PROJECT_NAME_PATTERN, "Project_2024")
+
+        # Test invalid names
+        assert not re.match(wizard.PROJECT_NAME_PATTERN, "")
+        assert not re.match(wizard.PROJECT_NAME_PATTERN, " ")
+        assert not re.match(wizard.PROJECT_NAME_PATTERN, "-project")
+        assert not re.match(wizard.PROJECT_NAME_PATTERN, "project-")
+        assert not re.match(wizard.PROJECT_NAME_PATTERN, " project ")
+
+    def test_keyboard_shortcuts(self, mock_onboarding_controller: Mock) -> None:
+        """Test keyboard shortcut actions."""
+        with patch(
+            "app.tui.views.new_project_wizard.OnboardingController",
+            return_value=mock_onboarding_controller,
+        ):
+            wizard = NewProjectWizard()
+
+        # Mock the screen object using PropertyMock
+        mock_screen = Mock()
+        mock_screen.focus_next = Mock()
+        mock_screen.focus_previous = Mock()
+
+        with patch.object(
+            NewProjectWizard, "screen", new_callable=PropertyMock, return_value=mock_screen
+        ):
+            # Test focus navigation
+            wizard.action_focus_next()
+            mock_screen.focus_next.assert_called_once()
+
+            wizard.action_focus_previous()
+            mock_screen.focus_previous.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resource_cleanup_on_unmount(
+        self, mock_onboarding_controller: Mock, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Test resource cleanup when wizard is unmounted."""
+        monkeypatch.chdir(tmp_path)
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        with patch(
+            "app.tui.views.new_project_wizard.OnboardingController",
+            return_value=mock_onboarding_controller,
+        ):
+            wizard = NewProjectWizard()
+
+        wizard.project_slug = "test-project"
+        wizard._partial_project_created = True
+
+        # Create a partial project (no kernel.md)
+        partial_project = projects_dir / "test-project"
+        partial_project.mkdir()
+
+        # Mock logger using PropertyMock
+        mock_log = Mock()
+        mock_log.debug = Mock()
+        mock_log.warning = Mock()
+
+        with patch.object(
+            NewProjectWizard, "log", new_callable=PropertyMock, return_value=mock_log
+        ):
+            await wizard.on_unmount()
+
+            # Should clean up the partial project
+            assert not partial_project.exists()
+            mock_log.debug.assert_called_once()
+
+            # Controller is kept (not None since we don't null it anymore)
+            assert wizard.controller is not None
+
+    def test_fallback_questions_generation(self, mock_onboarding_controller: Mock) -> None:
+        """Test dynamic fallback question generation."""
+        with patch(
+            "app.tui.views.new_project_wizard.OnboardingController",
+            return_value=mock_onboarding_controller,
+        ):
+            wizard = NewProjectWizard()
+
+        # Test with technical braindump
+        wizard.braindump = "I want to build an API system with database integration"
+        questions = wizard._generate_fallback_questions()
+        assert len(questions) == 5
+        assert "technical requirements" in questions[2].lower()
+
+        # Test with user-focused braindump
+        wizard.braindump = "A tool for team collaboration and customer engagement"
+        questions = wizard._generate_fallback_questions()
+        assert "users" in questions[1].lower() or "benefit" in questions[1].lower()
+
+        # Test with timeline mention
+        wizard.braindump = "Need this by next week's deadline"
+        questions = wizard._generate_fallback_questions()
+        assert "timeline" in questions[3].lower() or "milestones" in questions[3].lower()
+
+    def test_kernel_template_generation(self, mock_onboarding_controller: Mock) -> None:
+        """Test dynamic kernel template generation."""
+        with patch(
+            "app.tui.views.new_project_wizard.OnboardingController",
+            return_value=mock_onboarding_controller,
+        ):
+            wizard = NewProjectWizard()
+
+        wizard.braindump = "Build a task management system. It should help teams collaborate."
+        wizard.answers = "Line 1: Focus on developers\nLine 2: Real-time sync\nLine 3: Mobile support"
+
+        kernel = wizard._generate_kernel_template()
+
+        # Should include first sentence as core concept
+        assert "Build a task management system" in kernel
+
+        # Should include answer lines as key points
+        assert "Focus on developers" in kernel
+        assert "Real-time sync" in kernel
+
+        # Should have all required sections
+        assert "## Core Concept" in kernel
+        assert "## Key Questions" in kernel
+        assert "## Success Criteria" in kernel
+        assert "## Constraints" in kernel
+        assert "## Primary Value Proposition" in kernel
+
+    @pytest.mark.asyncio
+    async def test_lock_timeout_handling(
+        self, mock_onboarding_controller: Mock
+    ) -> None:
+        """Test handling of lock timeout during slug generation."""
+        with patch(
+            "app.tui.views.new_project_wizard.OnboardingController",
+            return_value=mock_onboarding_controller,
+        ):
+            wizard = NewProjectWizard()
+
+        with patch.object(wizard, 'notify') as mock_notify, \
+             patch(
+                "app.tui.views.new_project_wizard.ensure_unique_slug",
+                side_effect=TimeoutError("Lock timeout"),
+             ):
+            wizard.project_name = "Test Project"
+            wizard.current_step = WizardStep.PROJECT_NAME
+            await wizard.action_next_step()
+
+            mock_notify.assert_called_once_with(
+                "Project creation is locked, please try again", severity="error"
+            )
+            assert wizard.current_step == WizardStep.PROJECT_NAME  # Should not advance

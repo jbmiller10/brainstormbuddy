@@ -16,6 +16,7 @@ from app.files.project_meta import ProjectMeta
 from app.files.scaffold import scaffold_project
 from app.files.slug import ensure_unique_slug, slugify
 from app.tui.controllers.onboarding_controller import OnboardingController
+from app.tui.styles import get_common_css
 from app.tui.widgets.kernel_approval import KernelApprovalModal
 
 
@@ -38,93 +39,19 @@ class NewProjectWizard(Screen[bool]):
     MAX_RETRY_ATTEMPTS = 2
     MIN_KERNEL_LENGTH = 100
     MAX_PROJECT_NAME_LENGTH = 100
-    PROJECT_NAME_PATTERN = r"^[\w\-]+[\w\s\-]*[\w\-]+$"
+    # Allow single character names and be more permissive with special chars
+    PROJECT_NAME_PATTERN = r"^[\w][\w\s\-]*[\w]$|^[\w]$"
 
-    DEFAULT_CSS = """
-    NewProjectWizard {
-        align: center middle;
-    }
-
-    NewProjectWizard .container {
-        width: 90%;
-        height: 90%;
-        max-width: 120;
-        border: thick $primary;
-        background: $surface;
-        padding: 2;
-    }
-
-    NewProjectWizard .title {
-        text-align: center;
-        text-style: bold;
-        margin-bottom: 1;
-    }
-
-    NewProjectWizard .step-indicator {
-        text-align: center;
-        color: $text-muted;
-        margin-bottom: 2;
-    }
-
-    NewProjectWizard .content-area {
-        height: 1fr;
-        margin-bottom: 2;
-        padding: 1;
-    }
-
-    NewProjectWizard .instructions {
-        margin-bottom: 1;
-        color: $text;
-    }
-
-    NewProjectWizard .questions-container {
-        padding: 1;
-        border: solid $primary;
-        background: $panel;
-    }
-
-    NewProjectWizard .question-item {
-        margin-bottom: 1;
-        padding: 0 1;
-    }
-
-    NewProjectWizard Input {
-        width: 100%;
-        margin-bottom: 1;
-    }
-
-    NewProjectWizard TextArea {
-        width: 100%;
-        height: 100%;
-    }
-
-    NewProjectWizard .button-container {
-        height: 3;
-        align: center middle;
-    }
-
-    NewProjectWizard Button {
-        width: 16;
-        margin: 0 1;
-    }
-
-    NewProjectWizard .next-button {
-        background: $success;
-    }
-
-    NewProjectWizard .back-button {
-        background: $warning;
-    }
-
-    NewProjectWizard .cancel-button {
-        background: $error;
-    }
-    """
+    # Use shared styles for consistent appearance
+    DEFAULT_CSS = get_common_css("NewProjectWizard", center_align=True)
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", priority=True),
         Binding("ctrl+n", "next_step", "Next", show=False),
         Binding("ctrl+b", "prev_step", "Back", show=False),
+        Binding("ctrl+enter", "next_step", "Next", show=False),
+        Binding("tab", "focus_next", "Next Field", show=False),
+        Binding("shift+tab", "focus_previous", "Previous Field", show=False),
     ]
 
     def __init__(self) -> None:
@@ -140,6 +67,7 @@ class NewProjectWizard(Screen[bool]):
         self.clarify_questions: list[str] = []
         self.answers: str = ""
         self.kernel_content: str = ""
+        self._partial_project_created: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose the wizard UI."""
@@ -177,6 +105,22 @@ class NewProjectWizard(Screen[bool]):
     def on_mount(self) -> None:
         """Initialize the first step when mounted."""
         self.update_step_content()
+
+    async def on_unmount(self) -> None:
+        """Clean up resources when unmounting."""
+        # If project was partially created but wizard was cancelled, clean up
+        if self._partial_project_created and self.project_slug:
+            try:
+                import shutil
+                from pathlib import Path
+
+                project_path = Path("projects") / self.project_slug
+                if project_path.exists() and not (project_path / "kernel.md").exists():
+                    # Only remove if kernel.md doesn't exist (incomplete project)
+                    shutil.rmtree(project_path)
+                    self.log.debug(f"Cleaned up incomplete project: {self.project_slug}")
+            except Exception as e:
+                self.log.warning(f"Failed to clean up incomplete project: {e}")
 
     def update_step_content(self) -> None:
         """Update the content area based on current step."""
@@ -310,9 +254,9 @@ class NewProjectWizard(Screen[bool]):
                         f"Project name too long (max {self.MAX_PROJECT_NAME_LENGTH} characters)",
                         severity="warning",
                     )
-                elif len(value) >= 2 and not re.match(self.PROJECT_NAME_PATTERN, value):
+                elif not re.match(self.PROJECT_NAME_PATTERN, value):
                     self.notify(
-                        "Project name must start and end with letters/numbers, can contain spaces/hyphens",
+                        "Project name must start and end with letters/numbers/underscore",
                         severity="warning",
                     )
 
@@ -341,7 +285,7 @@ class NewProjectWizard(Screen[bool]):
                 return
             if not re.match(self.PROJECT_NAME_PATTERN, name):
                 self.notify(
-                    "Project name must start and end with letters/numbers, can contain spaces/hyphens",
+                    "Project name must start and end with letters/numbers/underscore",
                     severity="error",
                 )
                 return
@@ -349,8 +293,11 @@ class NewProjectWizard(Screen[bool]):
             # Generate unique slug with error handling
             try:
                 self.project_slug = ensure_unique_slug(slugify(self.project_name))
+            except TimeoutError:
+                self.notify("Project creation is locked, please try again", severity="error")
+                return
             except Exception as e:
-                self.notify(f"Failed to generate unique project identifier: {e}", severity="error")
+                self.notify(f"Error creating project identifier: {str(e)[:50]}", severity="error")
                 return
             self.current_step = WizardStep.BRAINDUMP
 
@@ -375,17 +322,11 @@ class NewProjectWizard(Screen[bool]):
                         self.notify("Request timed out, retrying...", severity="warning")
                         continue
                     self.notify(
-                        "Unable to generate questions automatically. Using default questions.",
-                        severity="warning",
+                        "Using contextual questions based on your braindump",
+                        severity="information",
                     )
-                    # Fallback to default questions
-                    self.clarify_questions = [
-                        "1. What specific problem are you trying to solve?",
-                        "2. Who is your target audience or users?",
-                        "3. What are the key features or capabilities?",
-                        "4. What is your expected timeline?",
-                        "5. How will you measure success?",
-                    ]
+                    # Generate dynamic fallback questions based on braindump content
+                    self.clarify_questions = self._generate_fallback_questions()
                     questions_generated = True
                     break
                 except Exception as e:
@@ -421,10 +362,10 @@ class NewProjectWizard(Screen[bool]):
                         self.notify("Request timed out, retrying...", severity="warning")
                         continue
                     self.notify(
-                        "Unable to generate kernel automatically. Using template.",
-                        severity="warning",
+                        "Creating kernel from your inputs",
+                        severity="information",
                     )
-                    # Fallback to template
+                    # Fallback to dynamic template
                     self.kernel_content = self._generate_kernel_template()
                     kernel_generated = True
                     break
@@ -484,9 +425,21 @@ class NewProjectWizard(Screen[bool]):
         """Cancel the wizard."""
         # Confirm cancellation if there's data
         if self.project_name or self.braindump:
-            # For now, just dismiss. In future, could add confirmation dialog
-            pass
+            # Mark that we're cancelling to trigger cleanup
+            self._partial_project_created = False
         self.dismiss(False)
+
+    def action_focus_next(self) -> None:
+        """Focus the next input field."""
+        import contextlib
+        with contextlib.suppress(Exception):
+            self.screen.focus_next()
+
+    def action_focus_previous(self) -> None:
+        """Focus the previous input field."""
+        import contextlib
+        with contextlib.suppress(Exception):
+            self.screen.focus_previous()
 
     async def create_project(self) -> None:
         """Create the project with all the gathered information."""
@@ -536,26 +489,71 @@ stage: kernel
             self.notify(f"Failed to create project: {e}", severity="error")
 
     def _generate_kernel_template(self) -> str:
-        """Generate a fallback kernel template when LLM fails."""
+        """Generate a dynamic kernel template based on user inputs."""
+        # Extract first sentence as core concept
+        first_sentence = (
+            self.braindump.split(".")[0] if "." in self.braindump else self.braindump[:200]
+        )
+
+        # Extract key points from answers
+        answer_lines = self.answers.split("\n")
+        key_points = [line.strip() for line in answer_lines[:3] if line.strip()]
+
         return f"""# Kernel
 
 ## Core Concept
-{self.braindump[:500]}...
+{first_sentence.strip()}.
+
+{self.braindump[:500] if len(self.braindump) > len(first_sentence) else ''}
 
 ## Key Questions
-Based on your answers:
-{self.answers[:500]}...
+Based on your clarifications:
+{chr(10).join('- ' + point for point in key_points) if key_points else self.answers[:500]}
 
 ## Success Criteria
-- [Define specific, measurable goals]
-- [Add key performance indicators]
-- [Include timeline milestones]
+- Complete implementation of described functionality
+- User satisfaction with the solution
+- Meeting identified requirements
 
 ## Constraints
-- [Technical limitations]
-- [Resource constraints]
-- [Time boundaries]
+- Available resources and timeline
+- Technical requirements as specified
+- Scope as defined in the braindump
 
 ## Primary Value Proposition
-[The main value this project delivers]
+{first_sentence.strip()} - delivering value through effective implementation.
 """
+
+    def _generate_fallback_questions(self) -> list[str]:
+        """Generate contextual fallback questions based on braindump."""
+        # Analyze braindump for keywords to create more relevant questions
+        braindump_lower = self.braindump.lower()
+        questions = []
+
+        # Always start with problem definition
+        questions.append("1. What specific problem does this solve?")
+
+        # Check for user/audience mentions
+        if any(word in braindump_lower for word in ["user", "customer", "people", "team"]):
+            questions.append("2. Who are the primary users and what are their needs?")
+        else:
+            questions.append("2. Who will benefit from this project?")
+
+        # Check for technical terms
+        if any(
+            word in braindump_lower for word in ["api", "database", "system", "app", "software"]
+        ):
+            questions.append("3. What are the technical requirements and integrations?")
+        else:
+            questions.append("3. What are the key features or capabilities?")
+
+        # Check for time-related words
+        if any(word in braindump_lower for word in ["deadline", "timeline", "when", "date"]):
+            questions.append("4. What is the specific timeline and key milestones?")
+        else:
+            questions.append("4. What is your expected timeline?")
+
+        # Always end with success metrics
+        questions.append("5. How will you measure success?")
+
+        return questions[: self.CLARIFY_QUESTIONS_COUNT]
