@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from enum import Enum
 
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
@@ -107,6 +108,8 @@ class NewProjectWizard(Screen[bool]):
     def on_mount(self) -> None:
         """Initialize the first step when mounted."""
         self.update_step_content()
+        # Ensure initial focus is set
+        self.set_timer(0.1, self.focus_input)
 
     async def on_unmount(self) -> None:
         """Clean up resources when unmounting."""
@@ -184,13 +187,10 @@ class NewProjectWizard(Screen[bool]):
             Label("[dim]You'll answer them all together in the next step[/dim]"),
         )
 
-        with container:
-            questions_container = Container(classes="questions-container")
-            for question in self.clarify_questions:
-                questions_container.mount(
-                    Static(f"[bold]{question}[/bold]", classes="question-item")
-                )
-            container.mount(questions_container)
+        questions_container = Container(classes="questions-container")
+        container.mount(questions_container)
+        for question in self.clarify_questions:
+            questions_container.mount(Static(f"[bold]{question}[/bold]", classes="question-item"))
 
     def render_answers_step(self, container: VerticalScroll) -> None:
         """Render the answers input step."""
@@ -414,27 +414,31 @@ class NewProjectWizard(Screen[bool]):
 
         elif self.current_step == WizardStep.KERNEL_PROPOSAL:
             # Show kernel approval modal with error handling
-            try:
-                modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
-                approved = await self.app.push_screen_wait(modal)
-
-                if approved is True:
-                    self.logger.log_proposal_decision(self.project_slug, True, self.kernel_content)
-                    await self.create_project()
-                elif approved is False:
-                    self.logger.log_proposal_decision(self.project_slug, False, self.kernel_content)
-                    self.notify("Project creation cancelled", severity="warning")
-                else:  # None or unexpected value (e.g., modal dismissed with ESC)
-                    self.notify("Action cancelled", severity="information")
-                    return
-            except Exception as e:
-                self.notify(f"Error showing approval dialog: {e}", severity="error")
-                self.logger.log_error(
-                    self.project_slug, "approval_dialog_error", "kernel_proposal", str(e)
-                )
-                return
+            # Use worker to handle the modal display
+            self.show_kernel_approval_modal()
 
         self.update_step_content()
+
+    @work
+    async def show_kernel_approval_modal(self) -> None:
+        """Show the kernel approval modal in a worker thread."""
+        try:
+            modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
+            approved = await self.app.push_screen_wait(modal)
+
+            if approved is True:
+                self.logger.log_proposal_decision(self.project_slug, True, self.kernel_content)
+                await self.create_project()
+            elif approved is False:
+                self.logger.log_proposal_decision(self.project_slug, False, self.kernel_content)
+                self.notify("Project creation cancelled", severity="warning")
+            else:  # None or unexpected value (e.g., modal dismissed with ESC)
+                self.notify("Action cancelled", severity="information")
+        except Exception as e:
+            self.notify(f"Error showing approval dialog: {e}", severity="error")
+            self.logger.log_error(
+                self.project_slug, "approval_dialog_error", "kernel_proposal", str(e)
+            )
 
     def action_prev_step(self) -> None:
         """Move to the previous wizard step."""
@@ -462,14 +466,14 @@ class NewProjectWizard(Screen[bool]):
         import contextlib
 
         with contextlib.suppress(Exception):
-            self.screen.focus_next()
+            self.focus_next()
 
     def action_focus_previous(self) -> None:
         """Focus the previous input field."""
         import contextlib
 
         with contextlib.suppress(Exception):
-            self.screen.focus_previous()
+            self.focus_previous()
 
     async def create_project(self) -> None:
         """Create the project with all the gathered information."""
