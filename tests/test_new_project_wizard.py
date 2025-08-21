@@ -386,17 +386,18 @@ class TestNewProjectWizard:
         wizard.project_slug = "test-project"
 
         # Mock notify to prevent it from accessing app
-        wizard.notify = Mock()
+        mock_notify = Mock()
+        wizard.notify = mock_notify  # type: ignore[method-assign]
 
         # Mock update_step_content to prevent any side effects
-        wizard.update_step_content = Mock()
+        wizard.update_step_content = Mock()  # type: ignore[method-assign]
 
         # Now action_next_step should handle the missing app context
         await wizard.action_next_step()
 
         # The exception handler should have called notify with an error message
-        wizard.notify.assert_called_once()  # type: ignore[attr-defined]
-        error_msg = wizard.notify.call_args[0][0]  # type: ignore[attr-defined]
+        mock_notify.assert_called_once()
+        error_msg = mock_notify.call_args[0][0]
         assert "Error showing approval dialog" in error_msg
 
         # And logged the error
@@ -428,17 +429,18 @@ class TestNewProjectWizard:
         wizard.project_slug = "test-project-reject"
 
         # Mock notify to prevent it from accessing app
-        wizard.notify = Mock()
+        mock_notify = Mock()
+        wizard.notify = mock_notify  # type: ignore[method-assign]
 
         # Mock update_step_content to prevent any side effects
-        wizard.update_step_content = Mock()
+        wizard.update_step_content = Mock()  # type: ignore[method-assign]
 
         # Now action_next_step should handle the missing app context
         await wizard.action_next_step()
 
         # The exception handler should have called notify with an error message
-        wizard.notify.assert_called_once()  # type: ignore[attr-defined]
-        error_msg = wizard.notify.call_args[0][0]  # type: ignore[attr-defined]
+        mock_notify.assert_called_once()
+        error_msg = mock_notify.call_args[0][0]
         assert "Error showing approval dialog" in error_msg
 
         # And logged the error
