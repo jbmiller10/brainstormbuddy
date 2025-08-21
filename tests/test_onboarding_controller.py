@@ -1,20 +1,28 @@
 """Tests for onboarding controller."""
 
-from collections.abc import AsyncGenerator
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.llm.claude_client import Event, MessageDone, TextDelta
+from app.llm.llm_service import LLMService
 from app.tui.controllers.onboarding_controller import OnboardingController
 
 
 @pytest.mark.asyncio
 async def test_generate_clarify_questions_returns_five() -> None:
     """Test that generate_clarify_questions returns exactly 5 questions."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = """I see you want to build a todo app.
 
+1. What features are most important for your todo app?
+2. Who is the target audience?
+3. What platforms will it run on?
+4. What is your timeline?
+5. Do you have any technical constraints?"""
+
+    controller = OnboardingController(llm_service=mock_llm_service)
     questions = controller.generate_clarify_questions("I want to build a todo app")
 
     assert len(questions) == 5
@@ -27,8 +35,15 @@ async def test_generate_clarify_questions_returns_five() -> None:
 @pytest.mark.asyncio
 async def test_generate_clarify_questions_custom_count() -> None:
     """Test that generate_clarify_questions respects custom count parameter."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = """I see you want to build an app.
 
+1. What is the main purpose?
+2. Who will use it?
+3. What features do you need?"""
+
+    controller = OnboardingController(llm_service=mock_llm_service)
     questions = controller.generate_clarify_questions("I want to build an app", count=3)
 
     assert len(questions) == 3
@@ -40,7 +55,9 @@ async def test_generate_clarify_questions_custom_count() -> None:
 @pytest.mark.asyncio
 async def test_validate_kernel_structure_valid() -> None:
     """Test kernel validation accepts valid structure."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     valid_kernel = """# Kernel
 
@@ -67,7 +84,9 @@ The main value proposition."""
 @pytest.mark.asyncio
 async def test_validate_kernel_structure_missing_section() -> None:
     """Test kernel validation rejects structure with missing section."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     # Missing Constraints section
     invalid_kernel = """# Kernel
@@ -90,7 +109,9 @@ The main value proposition."""
 @pytest.mark.asyncio
 async def test_validate_kernel_structure_wrong_order() -> None:
     """Test kernel validation rejects structure with wrong section order."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     # Constraints and Success Criteria swapped
     invalid_kernel = """# Kernel
@@ -116,7 +137,9 @@ The main value proposition."""
 @pytest.mark.asyncio
 async def test_validate_kernel_structure_no_header() -> None:
     """Test kernel validation rejects structure without # Kernel header."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     invalid_kernel = """## Core Concept
 This is the core concept.
@@ -139,8 +162,28 @@ The main value proposition."""
 @pytest.mark.asyncio
 async def test_orchestrate_kernel_generation_success() -> None:
     """Test successful kernel generation."""
-    controller = OnboardingController()
+    # Create a mock LLM service that returns valid kernel
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = """# Kernel
 
+## Core Concept
+A simple, user-friendly todo app.
+
+## Key Questions
+1. What features are essential?
+2. How will users interact?
+
+## Success Criteria
+- Easy to use
+- Fast performance
+
+## Constraints
+Time and budget limitations.
+
+## Primary Value Proposition
+Helps users manage tasks efficiently."""
+
+    controller = OnboardingController(llm_service=mock_llm_service)
     kernel = controller.orchestrate_kernel_generation(
         braindump="I want to build a todo app", answers_text="It should be simple and user-friendly"
     )
@@ -154,34 +197,44 @@ async def test_orchestrate_kernel_generation_success() -> None:
 @pytest.mark.asyncio
 async def test_orchestrate_kernel_generation_retry_on_invalid() -> None:
     """Test that kernel generation retries on invalid structure."""
-
-    # Create a mock client that returns invalid then valid kernel
-    mock_client = MagicMock()
+    # Create a mock LLM service that returns invalid then valid kernel
+    mock_llm_service = AsyncMock(spec=LLMService)
     call_count = 0
 
-    async def mock_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[Event, None]:
+    async def mock_generate_response(*_args: Any, **_kwargs: Any) -> str:
         nonlocal call_count
         call_count += 1
 
         if call_count == 1:
-            # First call: return invalid structure (missing section)
-            yield TextDelta("# Kernel\n\n")
-            yield TextDelta("## Core Concept\nSome concept\n\n")
-            yield TextDelta("## Key Questions\n1. Question?\n\n")
-            # Missing Success Criteria, Constraints, Primary Value Proposition
-            yield MessageDone()
+            # First call: return invalid structure (missing sections)
+            return """# Kernel
+
+## Core Concept
+Some concept
+
+## Key Questions
+1. Question?"""
         else:
             # Second call: return valid structure
-            yield TextDelta("# Kernel\n\n")
-            yield TextDelta("## Core Concept\nSome concept\n\n")
-            yield TextDelta("## Key Questions\n1. Question?\n\n")
-            yield TextDelta("## Success Criteria\n- Criteria\n\n")
-            yield TextDelta("## Constraints\nConstraints\n\n")
-            yield TextDelta("## Primary Value Proposition\nValue prop\n")
-            yield MessageDone()
+            return """# Kernel
 
-    mock_client.stream = mock_stream
-    controller = OnboardingController(client=mock_client)
+## Core Concept
+Some concept
+
+## Key Questions
+1. Question?
+
+## Success Criteria
+- Criteria
+
+## Constraints
+Constraints
+
+## Primary Value Proposition
+Value prop"""
+
+    mock_llm_service.generate_response = mock_generate_response
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     kernel = controller.orchestrate_kernel_generation(
         braindump="Test idea", answers_text="Test answers"
@@ -195,7 +248,9 @@ async def test_orchestrate_kernel_generation_retry_on_invalid() -> None:
 @pytest.mark.asyncio
 async def test_strip_code_fences() -> None:
     """Test that code fences are properly stripped."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     # Test with fences
     fenced = """```markdown
@@ -223,7 +278,9 @@ Content here"""
 @pytest.mark.asyncio
 async def test_extract_numbered_questions() -> None:
     """Test extraction of numbered questions from text."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     text = """I see you want to explore this idea.
 
@@ -254,7 +311,9 @@ These will help clarify your thinking."""
 @pytest.mark.asyncio
 async def test_extract_numbered_questions_preserves_original_numbering() -> None:
     """Test that original question numbering is preserved."""
-    controller = OnboardingController()
+    # Create a mock LLM service
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     # Test with non-sequential numbering
     text = """Questions for clarification:
@@ -283,19 +342,109 @@ async def test_class_constants_defined() -> None:
 @pytest.mark.asyncio
 async def test_specific_exception_handling() -> None:
     """Test that specific exceptions are handled appropriately."""
-    from unittest.mock import MagicMock
+    # Create a mock LLM service that raises exceptions
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.side_effect = TimeoutError("Request timed out")
 
-    # Create a mock client that raises specific exceptions
-    mock_client = MagicMock()
-
-    async def mock_stream_timeout(*_args: Any, **_kwargs: Any) -> AsyncGenerator[Event, None]:
-        raise TimeoutError("Request timed out")
-        yield  # pragma: no cover
-
-    mock_client.stream = mock_stream_timeout
-    controller = OnboardingController(client=mock_client)
+    controller = OnboardingController(llm_service=mock_llm_service)
 
     # Should gracefully handle timeout and return default questions
     questions = controller.generate_clarify_questions("Test idea")
     assert len(questions) == 5
     assert all("What specific problem" in q for q in questions)
+
+
+@pytest.mark.asyncio
+async def test_start_session() -> None:
+    """Test that start_session initializes a new session."""
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
+
+    await controller.start_session("MyProject")
+
+    assert len(controller.transcript) == 1
+    assert "Starting new project: MyProject" in controller.transcript[0]
+
+
+@pytest.mark.asyncio
+async def test_summarize_braindump() -> None:
+    """Test braindump summarization."""
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = "This is a summary of your idea."
+
+    controller = OnboardingController(llm_service=mock_llm_service)
+    summary = await controller.summarize_braindump("I have an idea for an app")
+
+    assert summary == "This is a summary of your idea."
+    assert "User Braindump: I have an idea for an app" in controller.transcript
+    assert "Assistant Summary: This is a summary of your idea." in controller.transcript
+
+
+@pytest.mark.asyncio
+async def test_refine_summary() -> None:
+    """Test summary refinement based on feedback."""
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = "This is a refined summary."
+
+    controller = OnboardingController(llm_service=mock_llm_service)
+    controller.transcript.append("User Braindump: Initial idea")
+    controller.transcript.append("Assistant Summary: Initial summary")
+
+    refined = await controller.refine_summary("Actually, I meant something else")
+
+    assert refined == "This is a refined summary."
+    assert "User Feedback: Actually, I meant something else" in controller.transcript
+    assert "Assistant Refined Summary: This is a refined summary." in controller.transcript
+
+
+@pytest.mark.asyncio
+async def test_generate_clarifying_questions_async() -> None:
+    """Test async clarifying questions generation."""
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = """Let me ask some questions:
+
+1. What is the main goal?
+2. Who is the target audience?
+3. What are the constraints?
+4. What is the timeline?
+5. What is the budget?"""
+
+    controller = OnboardingController(llm_service=mock_llm_service)
+    questions = await controller.generate_clarifying_questions(5)
+
+    assert len(questions) == 5
+    assert questions[0] == "1. What is the main goal?"
+    assert "Assistant Questions:" in controller.transcript[-1]
+
+
+@pytest.mark.asyncio
+async def test_synthesize_kernel() -> None:
+    """Test kernel synthesis from transcript."""
+    mock_llm_service = AsyncMock(spec=LLMService)
+    mock_llm_service.generate_response.return_value = """# Kernel
+
+## Core Concept
+The core concept here.
+
+## Key Questions
+1. Question one?
+2. Question two?
+
+## Success Criteria
+- Criterion one
+- Criterion two
+
+## Constraints
+Some constraints.
+
+## Primary Value Proposition
+The value proposition."""
+
+    controller = OnboardingController(llm_service=mock_llm_service)
+    controller.transcript.append("User Braindump: My idea")
+    controller.transcript.append("Assistant Questions: Some questions")
+
+    kernel = await controller.synthesize_kernel("My answers")
+
+    assert controller.validate_kernel_structure(kernel)
+    assert "User Answers: My answers" in controller.transcript

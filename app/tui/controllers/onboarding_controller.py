@@ -6,8 +6,7 @@ import contextlib
 import re
 
 from app.core.interfaces import OnboardingControllerProtocol
-from app.llm.claude_client import ClaudeClient, FakeClaudeClient, MessageDone, TextDelta
-from app.llm.sessions import get_policy
+from app.llm.llm_service import LLMService
 from app.tui.controllers.onboarding_logger import OnboardingLogger
 
 
@@ -18,123 +17,83 @@ class OnboardingController(OnboardingControllerProtocol):
     MAX_KERNEL_ATTEMPTS = 3
     DEFAULT_QUESTION_COUNT = 5
 
-    def __init__(self, client: ClaudeClient | None = None) -> None:
+    def __init__(self, llm_service: LLMService) -> None:
         """
         Initialize onboarding controller.
 
         Args:
-            client: Claude client for LLM operations (defaults to FakeClaudeClient)
+            llm_service: LLM service for AI interactions
         """
-        self.client = client or FakeClaudeClient()
+        self.llm_service = llm_service
+        self.transcript: list[str] = []
         self.logger = OnboardingLogger()
 
-    def _run_async_stream(
-        self,
-        prompt: str,
-        system_prompt: str,
-        allowed_tools: list[str],
-        denied_tools: list[str],
-        permission_mode: str,
-    ) -> str:
+    async def start_session(self, project_name: str) -> None:
         """
-        Helper to run async streaming in sync context.
+        Initialize a new onboarding session.
 
         Args:
-            prompt: User prompt to send to LLM
-            system_prompt: System prompt for context
-            allowed_tools: List of allowed tool names
-            denied_tools: List of denied tool names
-            permission_mode: Permission mode for tool usage
+            project_name: Name of the project being created
+        """
+        self.transcript.clear()
+        welcome_message = f"Starting new project: {project_name}"
+        self.transcript.append(f"System: {welcome_message}")
+
+    async def summarize_braindump(self, braindump: str) -> str:
+        """
+        Generate initial summary from user's braindump.
+
+        Args:
+            braindump: User's initial braindump text
 
         Returns:
-            Complete response text from LLM
-
-        Raises:
-            asyncio.TimeoutError: If the LLM request times out
-            ConnectionError: If there's a network connection issue
-            RuntimeError: If there's an async context issue
+            2-3 sentence summary of the braindump
         """
-        full_response = ""
+        self.transcript.append(f"User Braindump: {braindump}")
 
-        async def _stream() -> None:
-            nonlocal full_response
-            async for event in self.client.stream(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                allowed_tools=allowed_tools,
-                denied_tools=denied_tools,
-                permission_mode=permission_mode,
-            ):
-                if isinstance(event, TextDelta):
-                    full_response += event.text
-                elif isinstance(event, MessageDone):
-                    break
+        summary = await self.llm_service.generate_response(
+            transcript=self.transcript, system_prompt_name="summarize"
+        )
 
-        # Run the async function
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an async context, use thread executor
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, _stream())
-                    future.result()
-            else:
-                # If no loop is running, use asyncio.run
-                asyncio.run(_stream())
-        except TimeoutError as e:
-            raise TimeoutError("LLM request timed out") from e
-        except (ConnectionError, OSError) as e:
-            raise ConnectionError(f"Network connection failed: {e}") from e
-        except RuntimeError as e:
-            raise RuntimeError(f"Async context error: {e}") from e
+        self.transcript.append(f"Assistant Summary: {summary}")
+        return summary
 
-        return full_response
-
-    def generate_clarify_questions(
-        self, braindump: str, *, count: int = 5, project_slug: str = ""
-    ) -> list[str]:
+    async def refine_summary(self, feedback: str) -> str:
         """
-        Generate exactly `count` clarifying questions (default 5).
+        Refine summary based on user feedback.
 
         Args:
-            braindump: Initial user braindump text
+            feedback: User's feedback on the initial summary
+
+        Returns:
+            Refined summary incorporating user feedback
+        """
+        self.transcript.append(f"User Feedback: {feedback}")
+
+        refined_summary = await self.llm_service.generate_response(
+            transcript=self.transcript, system_prompt_name="refine_summary"
+        )
+
+        self.transcript.append(f"Assistant Refined Summary: {refined_summary}")
+        return refined_summary
+
+    async def generate_clarifying_questions(self, count: int = 5) -> list[str]:
+        """
+        Generate clarifying questions based on conversation so far.
+
+        Args:
             count: Number of questions to generate (default 5)
-            project_slug: Project slug for logging context
 
         Returns:
-            List of exactly `count` clarifying questions
+            List of numbered clarifying questions
         """
-        # Get clarify stage policy
-        policy = get_policy("clarify")
-
-        # Read system prompt
-        with open(policy.system_prompt_path, encoding="utf-8") as f:
-            system_prompt = f.read()
-
-        # Adjust prompt to request specific number of questions
-        if count != self.DEFAULT_QUESTION_COUNT:
-            system_prompt = system_prompt.replace("3-7", str(count))
-            system_prompt = system_prompt.replace("(3-7 total)", f"({count} total)")
-
-        # Collect response from LLM
-        try:
-            full_response = self._run_async_stream(
-                prompt=braindump,
-                system_prompt=system_prompt,
-                allowed_tools=policy.allowed_tools,
-                denied_tools=policy.denied_tools,
-                permission_mode=policy.permission_mode,
-            )
-        except (TimeoutError, ConnectionError, RuntimeError) as e:
-            # Log specific error for debugging (in production, use proper logging)
-            print(f"LLM request failed with {type(e).__name__}: {e}")
-            # Fallback to default questions if LLM fails
-            return [
-                f"{i + 1}. What specific problem are you trying to solve?" for i in range(count)
-            ]
+        # Generate questions using the clarify prompt
+        response = await self.llm_service.generate_response(
+            transcript=self.transcript, system_prompt_name="clarify"
+        )
 
         # Parse numbered questions from response
-        questions = self._extract_numbered_questions(full_response, count)
+        questions = self._extract_numbered_questions(response, count)
 
         # Ensure we have exactly `count` questions
         if len(questions) < count:
@@ -144,6 +103,99 @@ class OnboardingController(OnboardingControllerProtocol):
         elif len(questions) > count:
             # Trim to requested count
             questions = questions[:count]
+
+        # Add questions to transcript
+        self.transcript.append(f"Assistant Questions: {', '.join(questions)}")
+
+        return questions
+
+    async def synthesize_kernel(self, answers: str) -> str:
+        """
+        Generate kernel from complete conversation transcript.
+
+        Args:
+            answers: User's answers to clarifying questions
+
+        Returns:
+            Complete kernel.md markdown content
+
+        Raises:
+            ValueError: If kernel structure is invalid after retries
+        """
+        self.transcript.append(f"User Answers: {answers}")
+
+        # Try up to MAX_KERNEL_ATTEMPTS times
+        for attempt in range(self.MAX_KERNEL_ATTEMPTS):
+            try:
+                kernel_content = await self.llm_service.generate_response(
+                    transcript=self.transcript, system_prompt_name="kernel_from_transcript"
+                )
+
+                # Strip any code fences if present
+                kernel_content = self._strip_code_fences(kernel_content)
+
+                # Validate structure
+                if self.validate_kernel_structure(kernel_content):
+                    return kernel_content
+
+                # If invalid, add feedback to transcript for retry
+                if attempt < self.MAX_KERNEL_ATTEMPTS - 1:
+                    self.transcript.append(
+                        "System: Previous kernel was invalid. Please ensure the kernel includes "
+                        "exactly these 5 sections in order: Core Concept, Key Questions, "
+                        "Success Criteria, Constraints, Primary Value Proposition."
+                    )
+            except Exception as e:
+                if attempt == self.MAX_KERNEL_ATTEMPTS - 1:
+                    raise ValueError(
+                        f"Failed to generate kernel after {self.MAX_KERNEL_ATTEMPTS} attempts: {e}"
+                    ) from e
+                # Add error feedback for retry
+                self.transcript.append(f"System: Generation failed: {e}. Retrying...")
+
+        # If we get here, all attempts failed
+        raise ValueError(
+            f"Failed to generate valid kernel structure after {self.MAX_KERNEL_ATTEMPTS} attempts"
+        )
+
+    def generate_clarify_questions(
+        self, braindump: str, *, count: int = 5, project_slug: str = ""
+    ) -> list[str]:
+        """
+        Generate exactly `count` clarifying questions (default 5).
+
+        This is a synchronous wrapper for backward compatibility.
+        New code should use generate_clarifying_questions() instead.
+
+        Args:
+            braindump: Initial user braindump text
+            count: Number of questions to generate (default 5)
+            project_slug: Project slug for logging context
+
+        Returns:
+            List of exactly `count` clarifying questions
+        """
+        # Add braindump to transcript if not already there
+        if not any("Braindump" in entry for entry in self.transcript):
+            self.transcript.append(f"User Braindump: {braindump}")
+
+        # Run async method synchronously
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, create a new event loop in a thread
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.generate_clarifying_questions(count))
+                    questions = future.result()
+            else:
+                # If no loop is running, use asyncio.run
+                questions = asyncio.run(self.generate_clarifying_questions(count))
+        except Exception as e:
+            # Fallback to default questions if async fails
+            print(f"LLM request failed: {e}")
+            questions = [
+                f"{i + 1}. What specific problem are you trying to solve?" for i in range(count)
+            ]
 
         # Log the event (fire-and-forget, non-blocking)
         if project_slug:
@@ -158,6 +210,9 @@ class OnboardingController(OnboardingControllerProtocol):
         """
         Generate kernel.md content from braindump and a single consolidated answer string.
 
+        This is a synchronous wrapper for backward compatibility.
+        New code should use synthesize_kernel() instead.
+
         Args:
             braindump: Initial user braindump text
             answers_text: Consolidated answers to clarifying questions
@@ -169,67 +224,30 @@ class OnboardingController(OnboardingControllerProtocol):
         Raises:
             ValueError: If kernel structure is invalid after retries
         """
-        # Get kernel stage policy
-        policy = get_policy("kernel")
+        # Ensure braindump is in transcript
+        if not any("Braindump" in entry for entry in self.transcript):
+            self.transcript.append(f"User Braindump: {braindump}")
 
-        # Read system prompt
-        with open(policy.system_prompt_path, encoding="utf-8") as f:
-            system_prompt = f.read()
+        # Run async method synchronously
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, create a new event loop in a thread
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.synthesize_kernel(answers_text))
+                    kernel_content = future.result()
+            else:
+                # If no loop is running, use asyncio.run
+                kernel_content = asyncio.run(self.synthesize_kernel(answers_text))
 
-        # Combine braindump and answers into prompt
-        combined_prompt = f"""Initial idea:
-{braindump}
+            # Log successful generation (fire-and-forget, non-blocking)
+            if project_slug:
+                with contextlib.suppress(Exception):
+                    self.logger.log_kernel_generated(project_slug, kernel_content)
 
-Clarified details:
-{answers_text}
-
-Please create a kernel document that captures the essence of this concept."""
-
-        # Try up to MAX_KERNEL_ATTEMPTS times
-        for attempt in range(self.MAX_KERNEL_ATTEMPTS):
-            try:
-                full_response = self._run_async_stream(
-                    prompt=combined_prompt,
-                    system_prompt=system_prompt,
-                    allowed_tools=policy.allowed_tools,
-                    denied_tools=policy.denied_tools,
-                    permission_mode=policy.permission_mode,
-                )
-            except (TimeoutError, ConnectionError, RuntimeError) as e:
-                if attempt == self.MAX_KERNEL_ATTEMPTS - 1:
-                    raise ValueError(
-                        f"Failed to generate kernel after {self.MAX_KERNEL_ATTEMPTS} attempts: {e}"
-                    ) from e
-                print(f"Attempt {attempt + 1} failed with {type(e).__name__}: {e}, retrying...")
-                continue
-
-            # Strip any code fences if present
-            full_response = self._strip_code_fences(full_response)
-
-            # Validate structure
-            if self.validate_kernel_structure(full_response):
-                # Log successful generation (fire-and-forget, non-blocking)
-                if project_slug:
-                    with contextlib.suppress(Exception):
-                        self.logger.log_kernel_generated(project_slug, full_response)
-                return full_response
-
-            # If invalid, adjust prompt for retry
-            combined_prompt = f"""{combined_prompt}
-
-IMPORTANT: The kernel must include exactly these 5 sections in order:
-1. Core Concept
-2. Key Questions
-3. Success Criteria
-4. Constraints
-5. Primary Value Proposition
-
-Start with "# Kernel" and use ## for section headers."""
-
-        # If we get here, all attempts failed
-        raise ValueError(
-            f"Failed to generate valid kernel structure after {self.MAX_KERNEL_ATTEMPTS} attempts"
-        )
+            return kernel_content
+        except Exception as e:
+            raise ValueError(f"Failed to generate kernel: {e}") from e
 
     def validate_kernel_structure(self, kernel_content: str) -> bool:
         """

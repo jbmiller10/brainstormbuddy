@@ -395,8 +395,8 @@ class TestNewProjectWizard:
         await wizard.action_next_step()
 
         # The exception handler should have called notify with an error message
-        wizard.notify.assert_called_once()
-        error_msg = wizard.notify.call_args[0][0]
+        wizard.notify.assert_called_once()  # type: ignore[attr-defined]
+        error_msg = wizard.notify.call_args[0][0]  # type: ignore[attr-defined]
         assert "Error showing approval dialog" in error_msg
 
         # And logged the error
@@ -437,8 +437,8 @@ class TestNewProjectWizard:
         await wizard.action_next_step()
 
         # The exception handler should have called notify with an error message
-        wizard.notify.assert_called_once()
-        error_msg = wizard.notify.call_args[0][0]
+        wizard.notify.assert_called_once()  # type: ignore[attr-defined]
+        error_msg = wizard.notify.call_args[0][0]  # type: ignore[attr-defined]
         assert "Error showing approval dialog" in error_msg
 
         # And logged the error
