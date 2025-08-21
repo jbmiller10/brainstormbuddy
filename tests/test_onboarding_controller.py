@@ -186,7 +186,8 @@ Helps users manage tasks efficiently."""
     controller = OnboardingController(llm_service=mock_llm_service)
 
     # Create an async function that returns the kernel content
-    async def mock_synthesize_kernel(_answers: str) -> str:
+    async def mock_synthesize_kernel(answers: str) -> str:
+        _ = answers  # Mock function, parameter not used but required for signature match
         return kernel_content
 
     # Mock the async synthesize_kernel to avoid thread execution issues
@@ -228,7 +229,8 @@ Value prop"""
     controller = OnboardingController(llm_service=mock_llm_service)
 
     # Create an async function that returns the valid kernel
-    async def mock_synthesize_kernel(_answers: str) -> str:
+    async def mock_synthesize_kernel(answers: str) -> str:  # noqa: ARG001
+        _ = answers  # Mock function, parameter not used but required for signature match
         return valid_kernel
 
     # Mock synthesize_kernel to return valid kernel
