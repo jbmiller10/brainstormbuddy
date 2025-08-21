@@ -6,7 +6,8 @@ You are operating inside a **Python, terminal-first brainstorming app** (“Brai
 ---
 
 ## Ground rules
-
+* You **DO NOT** need to maintain backwards compatability. This application is pre-release.
+* **ALWAYS** prioritize avoidance of tech debt. Do not leave dead code behind if it is superceded. Remove stale comments, etc,  if you encounter them.
 * Be explicit and concrete. Prefer numbered steps and checklists.
 * Keep diffs small, focused, and reviewable. Show a plan, then the diff. Avoid drive-by refactors.
 * Always run (or print) lint + typecheck + tests after edits and report results.

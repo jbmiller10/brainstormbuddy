@@ -1,11 +1,11 @@
-"""Textual App for Brainstorm Buddy with three-pane layout."""
+"""Textual App for Brainstorm Buddy with screen-based navigation."""
 
-from textual.app import App, ComposeResult
+from textual.app import App
 from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.widgets import Footer, Header
 
-from app.tui.widgets import CommandPalette, ContextPanel, FileTree, SessionViewer
+from app.core.state import get_app_state
+from app.tui.views.main_screen import MainScreen
+from app.tui.views.welcome import WelcomeScreen
 
 
 class BrainstormBuddyApp(App[None]):
@@ -30,23 +30,58 @@ class BrainstormBuddyApp(App[None]):
 
     BINDINGS = [
         Binding(":", "command_palette", "Command", priority=True),
+        Binding("ctrl+h", "go_home", "Home", show=False),
         Binding("q", "quit", "Quit"),
     ]
 
-    def compose(self) -> ComposeResult:
-        """Compose the app with three-pane layout."""
-        yield Header()
-        with Horizontal():
-            yield FileTree()
-            yield SessionViewer()
-            yield ContextPanel()
-        yield Footer()
-        yield CommandPalette()
+    def on_mount(self) -> None:
+        """Initialize the app with the welcome screen."""
+        from pathlib import Path
+
+        # Check if there's already an active project
+        app_state = get_app_state()
+        if app_state.active_project:
+            # Verify project still exists before navigation
+            project_path = Path(f"projects/{app_state.active_project}")
+            if project_path.exists() and (project_path / "project.yaml").exists():
+                # Go directly to main screen if project is valid
+                self.push_screen(MainScreen())
+            else:
+                # Clear orphaned active project
+                app_state.set_active_project(None, reason="reset")
+                # Show welcome screen for project selection
+                self.push_screen(WelcomeScreen())
+        else:
+            # Show welcome screen for project selection
+            self.push_screen(WelcomeScreen())
 
     def action_command_palette(self) -> None:
         """Show the command palette."""
-        palette = self.query_one("#command-palette", CommandPalette)
-        palette.show()
+        # Command palette is now per-screen
+        if hasattr(self.screen, "show_command_palette"):
+            self.screen.show_command_palette()
+
+    def action_go_home(self) -> None:
+        """Return to the welcome screen."""
+        # Safely clear all screens and go back to welcome
+        try:
+            # Pop all screens except the base screen
+            while len(self.screen_stack) > 1:
+                self.pop_screen()
+        except (IndexError, AttributeError) as e:
+            # Handle specific exceptions that might occur during screen stack manipulation
+            self.log.warning(f"Error clearing screen stack: {e}")
+            # Continue to switch to welcome screen anyway
+        except Exception as e:
+            # Log unexpected errors but don't crash
+            self.log.error(f"Unexpected error during screen navigation: {e}")
+
+        # Clear active project and switch to welcome screen
+        app_state = get_app_state()
+        if app_state.active_project:
+            app_state.set_active_project(None, reason="reset")
+
+        self.switch_screen(WelcomeScreen())
 
 
 def main() -> None:

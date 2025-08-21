@@ -8,48 +8,14 @@ from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Static
 
+from app.tui.styles import get_modal_css
+
 
 class KernelApprovalModal(ModalScreen[bool]):
     """Modal for reviewing and approving kernel changes."""
 
-    DEFAULT_CSS = """
-    KernelApprovalModal {
-        align: center middle;
-    }
-
-    KernelApprovalModal > Container {
-        background: $surface;
-        width: 90%;
-        height: 80%;
-        border: thick $primary;
-        padding: 1;
-    }
-
-    KernelApprovalModal .diff-container {
-        height: 1fr;
-        margin-bottom: 1;
-        border: solid $primary;
-        padding: 1;
-    }
-
-    KernelApprovalModal .button-container {
-        height: 3;
-        align: center middle;
-    }
-
-    KernelApprovalModal Button {
-        margin: 0 1;
-        width: 16;
-    }
-
-    KernelApprovalModal .accept-button {
-        background: $success;
-    }
-
-    KernelApprovalModal .reject-button {
-        background: $warning;
-    }
-    """
+    # Use shared modal styles
+    DEFAULT_CSS = get_modal_css("KernelApprovalModal")
 
     BINDINGS = [
         Binding("y", "accept", "Accept", priority=True),

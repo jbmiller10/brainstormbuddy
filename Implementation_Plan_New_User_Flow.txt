@@ -1,0 +1,676 @@
+<roadmap name="GuidedOnboarding+StatefulUI" version="1.1">
+
+  <context>
+    We want a guided flow that takes a new user from 0 → approved kernel.md, while making the app
+    stateful (active project awareness) and contextual (panes reflect the selected project).
+    We also shift kernel generation from "diff output" to "full-file output".
+  </context>
+
+  <!-- ========================================================= -->
+  <!-- 1) FOUNDATION: App state + metadata helpers               -->
+  <!-- ========================================================= -->
+
+  <ticket id="B1" order="1" epic="Stateful Architecture">
+    <title>AppState wiring (single source of truth for active project)</title>
+    <why>
+      Multiple widgets need the current project; prop-drilling is brittle. A tiny pub/sub AppState
+      keeps panes in sync and simplifies defaults across commands.
+    </why>
+    <what>
+      Create AppState with get/set active_project and simple subscriptions. Expose a singleton via app.
+
+      Pseudocode for observer pattern:
+      - AppState maintains list of observers
+      - on_active_project_changed() notifies all observers
+      - Observers implement interface: on_active_project_changed(project_slug: str|None)
+      - Use singleton pattern: get_app_state() returns single instance
+    </what>
+    <changes>
+      <create file="app/core/state.py">
+        AppState class with:
+        - active_project: str|None
+        - subscribe(observer) / unsubscribe(observer) methods
+        - notify() to trigger observer callbacks
+        - Singleton accessor function
+      </create>
+      <modify file="app/tui/app.py">Initialize AppState singleton and provide to screens/widgets</modify>
+      <modify file="app/tui/views/main_screen.py">Read AppState instead of hardcoded assumptions</modify>
+    </changes>
+    <dependencies/>
+    <acceptance_criteria>
+      <ac>Setting AppState.active_project triggers subscribers to refresh.</ac>
+      <ac>Singleton pattern ensures single instance across app.</ac>
+      <ac>Observers can subscribe/unsubscribe without memory leaks.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>Subscription leaks → Ensure unsubscribe on unmount.</risk>
+      <risk>Missing AppState in legacy code → Add graceful fallback to None.</risk>
+    </risks>
+  </ticket>
+
+  <ticket id="A3" order="2" epic="Onboarding">
+    <title>Project lifecycle helpers (project.yaml read/write, stage updates)</title>
+    <why>
+      Wizard and panels must read/write stage atomically and consistently.
+    </why>
+    <what>
+      Helpers to read/write project.yaml and set stage with atomic writes.
+
+      Expected YAML structure (following app/files/scaffold.py:52-67):
+      - name: project slug
+      - created: ISO timestamp
+      - stage: capture|clarify|kernel|outline|research|synthesis
+      - description: text
+      - tags: list
+      - metadata: version and format fields
+
+      Must reuse app/files/atomic.atomic_write_text for all writes.
+    </what>
+    <changes>
+      <create file="app/files/project_meta.py">
+        - read_project_yaml(slug) → dict with validation
+        - write_project_yaml(slug, data) → atomic write
+        - set_project_stage(slug, stage) → read, update stage, write atomically
+        - validate_project_yaml(data) → bool (checks required fields)
+      </create>
+    </changes>
+    <dependencies>
+      <on>B1</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>set_project_stage(slug, "kernel") writes stage atomically and idempotently.</ac>
+      <ac>Invalid YAML returns None with logged error, not exception.</ac>
+      <ac>All writes use atomic_write_text from app/files/atomic.py.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>Concurrent writes → reuse atomic patterns from app/files/atomic.py</risk>
+      <risk>Missing YAML → return None, let caller handle gracefully</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 2) PROMPT/POLICY ALIGNMENT                                -->
+  <!-- ========================================================= -->
+
+  <ticket id="F1" order="3" epic="Prompt & Policy">
+    <title>Kernel prompt outputs full content (no diff)</title>
+    <why>
+      Full-file output is simpler for onboarding; diffs confuse new users and add failure cases.
+    </why>
+    <what>
+      Revise kernel prompt to require a complete kernel.md with exact sections and word cap.
+
+      Current prompt at app/llm/prompts/kernel.md:10 says "Propose a diff".
+      Replace with instruction to output ONLY markdown content, no diff markers.
+    </what>
+    <changes>
+      <modify file="app/llm/prompts/kernel.md">
+        Replace lines 10-11 with:
+        "Output a complete kernel.md file in markdown format (no diff markers).
+        Start your response with '# Kernel' and include only the markdown content:"
+
+        Keep section list and 250 word limit.
+      </modify>
+    </changes>
+    <remove>
+      <file path="app/llm/prompts/kernel.md">
+        <pattern>Propose a diff for the kernel.md file with these sections:</pattern>
+      </file>
+    </remove>
+    <dependencies/>
+    <acceptance_criteria>
+      <ac>Generated output contains only markdown for kernel.md (no unified diff markers).</ac>
+      <ac>Output starts with "# Kernel" heading.</ac>
+      <ac>All 5 required sections present: Core Concept, Key Questions, Success Criteria, Constraints, Primary Value Proposition.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>LLM may append extra fluff → enforce explicit section list and cap in prompt.</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 3) CONTROLLER for onboarding chain                        -->
+  <!-- ========================================================= -->
+
+  <ticket id="D1" order="4" epic="Session & LLM Orchestration">
+    <title>Onboarding Controller (Clarify → Kernel chain)</title>
+    <why>
+      Centralize prompt discipline and telemetry; avoid UI carrying orchestration logic.
+    </why>
+    <what>
+      Controller that: runs clarify via policy "clarify", collects user answers, then generates full kernel via policy "kernel".
+
+      Implementation details:
+      - Use app.llm.sessions.get_policy("clarify") for clarify stage
+      - Generate exactly 5 numbered questions
+      - Collect answers as dict[int, str] mapping
+      - Use app.llm.sessions.get_policy("kernel") for kernel generation
+      - Validate output has all 5 sections (retry up to 2 times if missing)
+    </what>
+    <changes>
+      <create file="app/tui/controllers/onboarding_controller.py">
+        - generate_clarify_questions(braindump) → list[str] (5 questions)
+        - orchestrate_kernel_generation(braindump, answers: dict[int, str]) → str(kernel_md)
+        - validate_kernel_structure(content) → bool (checks for 5 sections)
+        - Max retries: 2 with explicit section requirements in retry prompt
+      </create>
+    </changes>
+    <dependencies>
+      <on>F1</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Returns a valid full kernel.md with sections: Core Concept, Key Questions, Success Criteria, Constraints, Primary Value Proposition.</ac>
+      <ac>Retries up to 2 times if sections missing, with clear requirements in retry.</ac>
+      <ac>Uses existing session policies from app/llm/sessions.py.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>Prompt drift → add minimal structure check before returning; retry once if missing sections.</risk>
+      <risk>Clarify questions too generic → include braindump context in question generation.</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 4) CLEAN START: Neutral viewer                            -->
+  <!-- ========================================================= -->
+
+  <ticket id="C3" order="5" epic="Dynamic UI">
+    <title>SessionViewer starts neutral (remove legacy banner)</title>
+    <why>
+      Legacy banner contradicts wizard narrative and adds noise.
+    </why>
+    <what>
+      Start with an empty viewer; only show content when sessions/wizard write to it.
+
+      Current implementation: app/tui/widgets/session_viewer.py lines 21-29
+      Action: Remove entire on_mount() method, not just its contents.
+    </what>
+    <changes>
+      <modify file="app/tui/widgets/session_viewer.py">
+        Delete entire on_mount() method (lines 21-29)
+      </modify>
+    </changes>
+    <remove>
+      <file path="app/tui/widgets/session_viewer.py">
+        <pattern>def on_mount(self) -> None:</pattern>
+        <pattern>self.write("[bold cyan]Welcome to Brainstorm Buddy[/bold cyan]")</pattern>
+        <pattern>self.write("• [yellow]Capture[/yellow] → [yellow]Clarify[/yellow] →")</pattern>
+        <pattern>self.write("[dim]Press ':' to open the command palette[/dim]")</pattern>
+      </file>
+    </remove>
+    <dependencies/>
+    <acceptance_criteria>
+      <ac>Viewer is blank until content is written by a flow.</ac>
+      <ac>No welcome message or pipeline text appears on startup.</ac>
+    </acceptance_criteria>
+    <risks/>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 5) ENTRY: Welcome screen                                  -->
+  <!-- ========================================================= -->
+
+  <ticket id="A1" order="6" epic="Onboarding">
+    <title>WelcomeScreen (select or create project; establish AppState)</title>
+    <why>
+      Remove cognitive load; ensure active project is set before entering 3‑pane UI.
+    </why>
+    <what>
+      New WelcomeScreen that lists projects with project.yaml and offers "Create New Project".
+
+      Project detection logic:
+      - Scan projects/ directory for subdirs containing project.yaml
+      - Return list of project slugs (directory names)
+      - Show empty state with "Create New Project" if no projects found
+      - On selection, set AppState.active_project and push MainScreen
+    </what>
+    <changes>
+      <create file="app/tui/views/welcome.py">
+        WelcomeScreen with:
+        - find_projects() → list[str] (scans for dirs with project.yaml)
+        - List widget showing found projects
+        - "Create New Project" button
+        - Emits project_selected or create_new_project events
+      </create>
+      <modify file="app/tui/app.py">Boot to WelcomeScreen; on select set AppState.active_project and push MainScreen</modify>
+      <modify file="app/tui/views/main_screen.py">Assume active_project is set</modify>
+    </changes>
+    <dependencies>
+      <on>B1</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>App boots into WelcomeScreen; selecting a project opens MainScreen with that project active.</ac>
+      <ac>Empty state shows clear "Create New Project" option when no projects exist.</ac>
+      <ac>Project list updates if projects are added/removed externally.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>No projects present → show empty state with Create flow.</risk>
+      <risk>Invalid project.yaml → skip that directory in listing.</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 6) WIZARD: New Project                                     -->
+  <!-- ========================================================= -->
+
+  <ticket id="A2" order="7" epic="Onboarding">
+    <title>NewProjectWizard (name → braindump → clarify Qs → kernel proposal → approve)</title>
+    <why>
+      Keep new users in one flow; produce a full kernel.md proposal they can approve without diffing.
+    </why>
+    <what>
+      Multi‑step wizard; final Accept scaffolds project, writes kernel.md, sets stage: kernel, opens project.
+
+      Wizard steps:
+      1. Project name input (becomes slug)
+      2. Braindump textarea
+      3. Show exactly 5 numbered clarify questions
+      4. Single textarea for consolidated answer (not 5 separate inputs)
+      5. Show full kernel proposal (markdown preview, not diff)
+      6. Accept/Reject buttons
+
+      KernelApproval widget adaptation:
+      - Add mode parameter: "diff" | "proposal"
+      - In proposal mode, render markdown directly without diff UI
+    </what>
+    <changes>
+      <create file="app/tui/views/new_project_wizard.py">
+        Textual modal/screen with:
+        - Step tracking and navigation
+        - Store answers as dict[int, str] for questions
+        - Call onboarding_controller for clarify→kernel
+        - On Accept: scaffold project, write kernel.md, set stage
+      </create>
+      <modify file="app/tui/widgets/kernel_approval.py">
+        Add mode="proposal" to render markdown instead of diff
+      </modify>
+      <wire file="app/tui/controllers/onboarding_controller.py">Use controller for clarify→kernel</wire>
+    </changes>
+    <dependencies>
+      <on>B1</on>
+      <on>A3</on>
+      <on>F1</on>
+      <on>D1</on>
+      <on>C3</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Wizard shows exactly 5 numbered clarify questions; user submits one consolidated answer.</ac>
+      <ac>Kernel step shows full markdown proposal; Accept writes projects/&lt;slug&gt;/kernel.md and sets project.yaml stage: kernel.</ac>
+      <ac>Project scaffolding uses existing app/files/scaffold.py patterns.</ac>
+      <ac>Wizard can be cancelled at any step without creating project.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>LLM output extra sections → guard by simple structure check; trim extras post‑gen.</risk>
+      <risk>Slug conflicts → check for existing project, prompt for different name.</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 7) LOGGING                                                 -->
+  <!-- ========================================================= -->
+
+  <ticket id="G1" order="8" epic="Quality & Safety">
+    <title>Log onboarding milestones (JSONL)</title>
+    <why>Observe quality and drop‑offs; enable later improvements with evidence.</why>
+    <what>
+      Log onboarding milestones using existing app.synthesis.logger patterns.
+
+      Log format:
+      {"event": "event_name", "timestamp": "ISO8601", "project_slug": str, "data": {...}}
+
+      Events to log:
+      - onboarding_started
+      - clarify_questions_shown (with questions in data)
+      - answers_collected (with answer length in data)
+      - kernel_generated (with section_count in data)
+      - proposal_approved/rejected
+      - project_scaffolded
+
+      Create dedicated file: logs/onboarding_{date}.jsonl
+    </what>
+    <changes>
+      <modify file="app/tui/controllers/onboarding_controller.py">
+        Emit log events using existing logger patterns
+      </modify>
+      <modify file="app/tui/views/new_project_wizard.py">
+        Log UI interaction events
+      </modify>
+      <reuse file="app/synthesis/logger.py">Existing JSONL logger</reuse>
+    </changes>
+    <dependencies>
+      <on>D1</on>
+      <on>A2</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>One JSONL file per day under logs/onboarding_{YYYY-MM-DD}.jsonl with the milestone events above.</ac>
+      <ac>Each event includes timestamp, project_slug, and relevant data.</ac>
+      <ac>Logger handles file rotation automatically.</ac>
+    </acceptance_criteria>
+    <risks/>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 8) Command defaults                                        -->
+  <!-- ========================================================= -->
+
+  <ticket id="D2" order="9" epic="Session & LLM Orchestration">
+    <title>Command Palette defaults to AppState.active_project</title>
+    <why>
+      Commands need a slug; defaulting removes friction and prevents errors.
+    </why>
+    <what>
+      Use AppState for: Generate Workstreams, Start Synthesis, Import Research. Prompt to select if none.
+
+      Implementation:
+      - Query app for AppState instance
+      - Check active_project before running commands
+      - If None, show project selector modal
+      - Pass selected/active project to command handlers
+    </what>
+    <changes>
+      <modify file="app/tui/widgets/command_palette.py">
+        Default to active_project from AppState
+        Show selector modal if no active project
+      </modify>
+    </changes>
+    <dependencies>
+      <on>B1</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Palette actions operate on active project by default; missing project triggers selection flow.</ac>
+      <ac>Project selector shows same list as WelcomeScreen.</ac>
+      <ac>Selection persists in AppState for subsequent commands.</ac>
+    </acceptance_criteria>
+    <risks/>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 9) Research path alignment                                 -->
+  <!-- ========================================================= -->
+
+  <ticket id="E2" order="10" epic="Established Workflow">
+    <title>Research DB path consistency (per project)</title>
+    <why>
+      UI and synthesis must agree on DB path to avoid "no findings" confusion.
+    </why>
+    <what>
+      Point Research Import modal to projects/&lt;slug&gt;/research/findings.db, creating the dir if missing.
+
+      Current issue: app/tui/views/research.py line 125 hardcodes default path
+      Fix: Query AppState for active_project, use that slug for path
+    </what>
+    <changes>
+      <modify file="app/tui/views/research.py">
+        Line 125: Replace hardcoded path with:
+        - Query AppState for active_project
+        - Use projects/{slug}/research/findings.db
+        - Create research/ dir if missing
+      </modify>
+    </changes>
+    <remove>
+      <file path="app/tui/views/research.py">
+        <pattern>self.db_path = db_path or Path("projects") / "default" / "research.db"</pattern>
+      </file>
+    </remove>
+    <dependencies>
+      <on>B1</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Findings imported via UI are visible to SynthesisController.load_findings().</ac>
+      <ac>Research dir created automatically if missing.</ac>
+      <ac>Path matches active project from AppState.</ac>
+    </acceptance_criteria>
+    <risks/>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 10) Real file tree                                         -->
+  <!-- ========================================================= -->
+
+  <ticket id="C1" order="11" epic="Dynamic UI">
+    <title>FileTree renders real files for active project</title>
+    <why>
+      Placeholder tree misleads; trust comes from showing actual repository content.
+    </why>
+    <what>
+      Subscribe to AppState; on change, render projects/&lt;slug&gt; root plus known subfolders.
+
+      Implementation approach:
+      - Clear tree on project change
+      - List only existing files/dirs
+      - Known paths: kernel.md, outline.md, project.yaml, elements/, research/, exports/
+      - No file watching needed initially (manual refresh ok)
+      - Future: Add lazy loading for large dirs
+    </what>
+    <changes>
+      <modify file="app/tui/widgets/file_tree.py">
+        Add:
+        - refresh_tree(slug) method
+        - AppState subscription in on_mount
+        - Clear and rebuild tree on project change
+        - Show only files that exist
+      </modify>
+    </changes>
+    <remove>
+      <file path="app/tui/widgets/file_tree.py">
+        <pattern>def on_mount(self) -> None:</pattern>
+        <pattern>project1 = root.add("📁 example-project", expand=True)</pattern>
+        <pattern>project1.add_leaf("📄 kernel.md")</pattern>
+        <pattern>All placeholder nodes</pattern>
+      </file>
+    </remove>
+    <dependencies>
+      <on>B1</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Switching active project updates the tree within one frame; no placeholder nodes remain.</ac>
+      <ac>Only existing files/dirs shown in tree.</ac>
+      <ac>Tree updates when AppState.active_project changes.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>Large trees → constrain to known paths; lazy expand if needed.</risk>
+      <risk>Deleted files → handle gracefully, refresh tree.</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 11) Context panel is live                                  -->
+  <!-- ========================================================= -->
+
+  <ticket id="C2" order="12" epic="Dynamic UI">
+    <title>ContextPanel shows project name, current stage, next step</title>
+    <why>
+      Users need an accurate "where am I/what next?" panel tied to actual project state.
+    </why>
+    <what>
+      Subscribe to AppState; read project.yaml; map stage → next action.
+
+      Stage to next action mapping:
+      - capture: "Run :clarify to refine your idea"
+      - clarify: "Run :kernel to distill core concept"
+      - kernel: "Run :workstreams to generate outline"
+      - outline: "Run :research to gather findings"
+      - research: "Run :synthesis to create final doc"
+      - synthesis: "Run :export to generate deliverable"
+
+      Current implementation: app/tui/widgets/context_panel.py lines 30-49 (hardcoded cards)
+    </what>
+    <changes>
+      <modify file="app/tui/widgets/context_panel.py">
+        Add:
+        - update_for_project(slug) method
+        - Subscribe to AppState
+        - Read project.yaml via project_meta helpers
+        - Create STAGE_NEXT_ACTIONS mapping
+        - Show "Unknown stage" gracefully if invalid
+      </modify>
+    </changes>
+    <remove>
+      <file path="app/tui/widgets/context_panel.py">
+        <pattern>Static("[bold]Current Stage[/bold]\n[dim]Capture[/dim]"</pattern>
+        <pattern>Static("[bold]Project Info[/bold]\n[dim]No project selected[/dim]"</pattern>
+        <pattern>Static("[bold]Recent Actions[/bold]\n[dim]• App started"</pattern>
+      </file>
+    </remove>
+    <dependencies>
+      <on>B1</on>
+      <on>A3</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Panel updates to "Current Stage: kernel" immediately after wizard accept and shows the mapped next step.</ac>
+      <ac>Invalid/missing YAML shows "Unknown stage" with scaffold hint.</ac>
+      <ac>Panel refreshes when project changes or stage updates.</ac>
+    </acceptance_criteria>
+    <risks>
+      <risk>Invalid/missing YAML → show Unknown with a gentle scaffold hint.</risk>
+      <risk>Race condition on updates → debounce if needed.</risk>
+    </risks>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- 12) Workstreams command uses active project                -->
+  <!-- ========================================================= -->
+
+  <ticket id="E1" order="13" epic="Established Workflow">
+    <title>Generate Workstreams operates on active project</title>
+    <why>
+      Natural next step after kernel approval is to generate outline/elements for the current project.
+    </why>
+    <what>
+      Update generate_workstreams() to resolve project from AppState, with optional stage-warning if not kernel.
+
+      Method exists in app/tui/views/session.py
+      Changes needed:
+      - Query AppState for active_project
+      - Use that slug for file operations
+      - Keep existing diff preview workflow intact
+      - Warn if stage != kernel (but allow proceeding)
+    </what>
+    <changes>
+      <modify file="app/tui/views/session.py">
+        generate_workstreams() method:
+        - Query AppState.active_project
+        - Use slug for paths
+        - Check stage, warn if not kernel
+        - Keep diff preview/apply flow
+      </modify>
+    </changes>
+    <dependencies>
+      <on>B1</on>
+      <on>A3</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Running the command creates/updates outline.md and elements/ under projects/&lt;active_project&gt;.</ac>
+      <ac>Warning shown if stage != kernel but operation continues.</ac>
+      <ac>Diff preview still works as before.</ac>
+    </acceptance_criteria>
+    <risks/>
+  </ticket>
+
+  <!-- ========================================================= -->
+  <!-- GLOBAL EXPLICIT REMOVALS SUMMARY                           -->
+  <!-- (Already in-line above, but consolidated here for clarity) -->
+  <!-- ========================================================= -->
+
+  <removals_summary>
+    <remove file="app/llm/prompts/kernel.md">
+      <pattern>Any instruction that says "Propose a diff for the kernel.md file..."</pattern>
+    </remove>
+    <remove file="app/tui/widgets/file_tree.py">
+      <pattern>Entire on_mount() method with placeholder tree</pattern>
+    </remove>
+    <remove file="app/tui/widgets/context_panel.py">
+      <pattern>Hardcoded Static cards in on_mount()</pattern>
+    </remove>
+    <remove file="app/tui/widgets/session_viewer.py">
+      <pattern>Entire on_mount() method with welcome banner</pattern>
+    </remove>
+    <remove file="app/tui/views/research.py">
+      <pattern>self.db_path = db_path or Path("projects") / "default" / "research.db"</pattern>
+    </remove>
+  </removals_summary>
+
+  <!-- ========================================================= -->
+  <!-- EXECUTION NOTES & CRITICAL CONSIDERATIONS                  -->
+  <!-- ========================================================= -->
+
+  <execution_notes>
+    <note id="1">
+      <title>Recommended Execution Order (Risk-Minimized)</title>
+      <order>
+        1. B1 (Foundation - all other tickets depend on this)
+        2. C3 (Simple removal - low risk, immediate UX improvement)
+        3. A3 (Helpers - needed by multiple tickets)
+        4. F1 (Prompt change - isolated, testable)
+        5. D1 (Controller - can be tested independently)
+        6. A1 + A2 (New screens - can be tested in isolation before wiring)
+        7. C1 + C2 + D2 + E2 (Wire existing widgets to AppState)
+        8. E1 (Update existing command)
+        9. G1 (Logging - non-critical, can be added last)
+      </order>
+    </note>
+
+    <note id="2">
+      <title>Error Handling Strategy</title>
+      <guidelines>
+        - Missing AppState: Components should gracefully handle None active_project
+        - Invalid YAML: Return None from readers, let UI show appropriate message
+        - File operations: All writes must be atomic using existing helpers
+        - LLM failures: Retry with explicit requirements, max 2 attempts
+        - Widget unmounting: Always unsubscribe from AppState to prevent leaks
+      </guidelines>
+    </note>
+
+    <note id="3">
+      <title>Testing Checkpoints</title>
+      <checkpoints>
+        - After B1: Verify singleton pattern and observer notifications
+        - After A3: Test concurrent YAML updates don't corrupt
+        - After F1: Confirm LLM outputs full markdown (no diffs)
+        - After A2: Complete wizard flow with edge cases (cancel, bad input)
+        - After C1/C2: Project switching updates all panels correctly
+        - After E2: Research findings persist to correct project path
+      </checkpoints>
+    </note>
+
+    <note id="4">
+      <title>Migration Considerations</title>
+      <items>
+        - Existing app instances: Add AppState retroactively without breaking
+        - Default behavior: If no active_project, prompt for selection
+        - Backwards compatibility: Old commands should still work with warnings
+        - Data migration: Existing projects need no changes (YAML already compatible)
+      </items>
+    </note>
+
+    <note id="5">
+      <title>Rollback Plan</title>
+      <steps>
+        - Each ticket should be atomic and revertible
+        - AppState can be disabled by returning None from get_app_state()
+        - UI components must handle both AppState and legacy paths
+        - Keep old prompt in version control for quick revert
+      </steps>
+    </note>
+  </execution_notes>
+
+  <!-- ========================================================= -->
+  <!-- DEP GRAPH (sanity)                                        -->
+  <!-- ========================================================= -->
+
+  <dependency_graph>
+    <node id="B1"/>
+    <node id="A3" depends_on="B1"/>
+    <node id="F1"/>
+    <node id="D1" depends_on="F1"/>
+    <node id="C3"/>
+    <node id="A1" depends_on="B1"/>
+    <node id="A2" depends_on="B1,A3,F1,D1,C3"/>
+    <node id="G1" depends_on="D1,A2"/>
+    <node id="D2" depends_on="B1"/>
+    <node id="E2" depends_on="B1"/>
+    <node id="C1" depends_on="B1"/>
+    <node id="C2" depends_on="B1,A3"/>
+    <node id="E1" depends_on="B1,A3"/>
+  </dependency_graph>
+
+</roadmap>
