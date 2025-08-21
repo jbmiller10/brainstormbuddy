@@ -11,6 +11,7 @@ from textual.containers import Container, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog
 
+from app.core.config import load_settings
 from app.core.state import get_app_state
 from app.files.atomic import atomic_write_text
 from app.files.project_meta import ProjectMeta
@@ -19,13 +20,9 @@ from app.files.slug import ensure_unique_slug, slugify
 from app.llm.claude_client import FakeClaudeClient
 from app.llm.llm_service import LLMService
 from app.tui.controllers.onboarding_controller import OnboardingController
+from app.tui.utils.text import truncate_description
 
 logger = logging.getLogger(__name__)
-
-# Input validation constants
-MIN_PROJECT_NAME_LENGTH = 3
-MAX_BRAINDUMP_LENGTH = 10000
-MIN_BRAINDUMP_LENGTH = 10
 
 
 class OnboardingState(Enum):
@@ -48,21 +45,26 @@ class OnboardingChatScreen(Screen[bool]):
         layout: vertical;
     }
 
-    .chat-container {
+    .onboarding-chat-container {
         height: 1fr;
         padding: 1;
     }
 
-    .chat-history {
+    .onboarding-chat-history {
         height: 1fr;
         border: solid $primary;
         padding: 1;
         background: $surface;
     }
 
-    .input-container {
+    .onboarding-input-container {
         height: 3;
         padding: 0 1;
+    }
+
+    .onboarding-loading {
+        color: $text-muted;
+        font-style: italic;
     }
 
     """
@@ -75,7 +77,11 @@ class OnboardingChatScreen(Screen[bool]):
         """Initialize the onboarding chat screen."""
         super().__init__()
 
+        # Load configuration
+        self.settings = load_settings()
+
         # Initialize LLM service and controller
+        # TODO: Make client configurable based on settings (currently hardcoded to FakeClaudeClient)
         llm_service = LLMService(client=FakeClaudeClient())
         self.controller = OnboardingController(llm_service=llm_service)
 
@@ -94,19 +100,19 @@ class OnboardingChatScreen(Screen[bool]):
     def compose(self) -> ComposeResult:
         """Compose the chat interface UI."""
         yield Header()
-        with Container(classes="chat-container"), Vertical():
+        with Container(classes="onboarding-chat-container"), Vertical():
             yield RichLog(
                 id="chat-history",
-                classes="chat-history",
+                classes="onboarding-chat-history",
                 wrap=True,
                 highlight=True,
                 markup=True,
             )
-            with Container(classes="input-container"):
+            with Container(classes="onboarding-input-container"):
                 yield Input(
                     placeholder="Type your message and press Enter...",
                     id="chat-input",
-                    classes="chat-input",
+                    classes="onboarding-chat-input",
                 )
         yield Footer()
 
@@ -149,8 +155,9 @@ class OnboardingChatScreen(Screen[bool]):
         if not message:
             return
 
-        # Clear the input
+        # Clear and disable the input during processing
         event.input.value = ""
+        event.input.disabled = True
 
         # Add user message to chat
         self.add_user_message(message)
@@ -166,15 +173,21 @@ class OnboardingChatScreen(Screen[bool]):
         Args:
             message: The user's message to process
         """
+        # Show loading indicator
+        self.app.call_from_thread(self.add_ai_message, "[dim italic]Processing...[/dim italic]")
+
         try:
             logger.debug(f"Processing message in state {self.state.name}: {message[:50]}...")
 
             if self.state == OnboardingState.WELCOME:
+                # Clear the processing message
+                self._clear_last_ai_message()
+
                 # Validate project name
-                if len(message) < MIN_PROJECT_NAME_LENGTH:
+                if len(message) < self.settings.min_project_name_length:
                     self.app.call_from_thread(
                         self.add_ai_message,
-                        f"Please provide a project name with at least {MIN_PROJECT_NAME_LENGTH} characters.",
+                        f"Please provide a project name with at least {self.settings.min_project_name_length} characters.",
                     )
                     return
 
@@ -196,18 +209,21 @@ class OnboardingChatScreen(Screen[bool]):
                 )
 
             elif self.state == OnboardingState.BRAINDUMP:
+                # Clear the processing message
+                self._clear_last_ai_message()
+
                 # Validate braindump
-                if len(message.strip()) < MIN_BRAINDUMP_LENGTH:
+                if len(message.strip()) < self.settings.min_braindump_length:
                     self.app.call_from_thread(
                         self.add_ai_message,
-                        f"Please provide more detail about your idea (at least {MIN_BRAINDUMP_LENGTH} characters).",
+                        f"Please provide more detail about your idea (at least {self.settings.min_braindump_length} characters).",
                     )
                     return
 
-                if len(message) > MAX_BRAINDUMP_LENGTH:
+                if len(message) > self.settings.max_braindump_length:
                     self.app.call_from_thread(
                         self.add_ai_message,
-                        f"Your description is too long. Please keep it under {MAX_BRAINDUMP_LENGTH} characters.",
+                        f"Your description is too long. Please keep it under {self.settings.max_braindump_length} characters.",
                     )
                     return
 
@@ -232,6 +248,9 @@ class OnboardingChatScreen(Screen[bool]):
                 )
 
             elif self.state == OnboardingState.SUMMARY_REVIEW:
+                # Clear the processing message
+                self._clear_last_ai_message()
+
                 # Check if user approves or wants to refine
                 if message.lower() in ["yes", "y", "correct", "good", "perfect"]:
                     # Move directly to questions state
@@ -241,7 +260,9 @@ class OnboardingChatScreen(Screen[bool]):
                     )
 
                     # Generate questions
-                    self.questions = await self.controller.generate_clarifying_questions(count=5)
+                    self.questions = await self.controller.generate_clarifying_questions(
+                        count=self.settings.onboarding_questions_count
+                    )
 
                     # Display questions and set state
                     questions_text = "\n".join(self.questions)
@@ -268,6 +289,9 @@ class OnboardingChatScreen(Screen[bool]):
                     )
 
             elif self.state == OnboardingState.QUESTIONS:
+                # Clear the processing message
+                self._clear_last_ai_message()
+
                 # User provided answers
                 self.answers = message
 
@@ -292,6 +316,9 @@ class OnboardingChatScreen(Screen[bool]):
                 )
 
             elif self.state == OnboardingState.KERNEL_REVIEW:
+                # Clear the processing message
+                self._clear_last_ai_message()
+
                 # Handle kernel review decision
                 decision = message.lower().strip()
 
@@ -334,12 +361,18 @@ class OnboardingChatScreen(Screen[bool]):
                     )
 
         except Exception as e:
+            # Clear processing indicator if it exists
+            self._clear_last_ai_message()
+
             # Handle errors gracefully
             logger.error(f"Error processing message in state {self.state.name}: {e}", exc_info=True)
             self.app.call_from_thread(
                 self.add_ai_message,
                 f"I encountered an error: {str(e)}. Please try again or press ESC to cancel.",
             )
+        finally:
+            # Re-enable input after processing
+            self.app.call_from_thread(self._enable_input)
 
     async def create_project(self) -> None:
         """Create the project with all gathered information."""
@@ -379,11 +412,7 @@ stage: kernel
                 project_data = ProjectMeta.read_project_yaml(self.project_slug)
                 if project_data:
                     project_data["title"] = self.project_name
-                    project_data["description"] = (
-                        self.braindump[:200] + "..."
-                        if len(self.braindump) > 200
-                        else self.braindump
-                    )
+                    project_data["description"] = truncate_description(self.braindump)
                     project_data["stage"] = "kernel"
                     ProjectMeta.write_project_yaml(self.project_slug, project_data)
                 else:
@@ -393,9 +422,7 @@ stage: kernel
                     # Create minimal metadata if read failed
                     project_data = {
                         "title": self.project_name,
-                        "description": self.braindump[:200]
-                        if len(self.braindump) > 200
-                        else self.braindump,
+                        "description": truncate_description(self.braindump),
                         "stage": "kernel",
                     }
                     ProjectMeta.write_project_yaml(self.project_slug, project_data)
@@ -428,3 +455,16 @@ stage: kernel
     def action_cancel(self) -> None:
         """Cancel the onboarding process."""
         self.dismiss(False)
+
+    def _clear_last_ai_message(self) -> None:
+        """Clear the last AI message if it's a processing indicator."""
+        chat_history: RichLog = self.query_one("#chat-history", RichLog)
+        # Note: RichLog doesn't have a way to remove last message,
+        # so we'll overwrite with empty line
+        chat_history.write("", shrink=True)
+
+    def _enable_input(self) -> None:
+        """Re-enable the chat input after processing."""
+        input_widget: Input = self.query_one("#chat-input", Input)
+        input_widget.disabled = False
+        input_widget.focus()
