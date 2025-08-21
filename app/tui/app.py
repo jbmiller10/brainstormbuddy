@@ -36,11 +36,21 @@ class BrainstormBuddyApp(App[None]):
 
     def on_mount(self) -> None:
         """Initialize the app with the welcome screen."""
+        from pathlib import Path
+
         # Check if there's already an active project
         app_state = get_app_state()
         if app_state.active_project:
-            # Go directly to main screen if project is active
-            self.push_screen(MainScreen())
+            # Verify project still exists before navigation
+            project_path = Path(f"projects/{app_state.active_project}")
+            if project_path.exists() and (project_path / "project.yaml").exists():
+                # Go directly to main screen if project is valid
+                self.push_screen(MainScreen())
+            else:
+                # Clear orphaned active project
+                app_state.set_active_project(None, reason="reset")
+                # Show welcome screen for project selection
+                self.push_screen(WelcomeScreen())
         else:
             # Show welcome screen for project selection
             self.push_screen(WelcomeScreen())
@@ -53,9 +63,20 @@ class BrainstormBuddyApp(App[None]):
 
     def action_go_home(self) -> None:
         """Return to the welcome screen."""
-        # Clear all screens and go back to welcome
-        while len(self.screen_stack) > 1:
-            self.pop_screen()
+        # Safely clear all screens and go back to welcome
+        try:
+            # Pop all screens except the base screen
+            while len(self.screen_stack) > 1:
+                self.pop_screen()
+        except Exception:
+            # If something goes wrong, just switch to welcome
+            pass
+
+        # Clear active project and switch to welcome screen
+        app_state = get_app_state()
+        if app_state.active_project:
+            app_state.set_active_project(None, reason="reset")
+
         self.switch_screen(WelcomeScreen())
 
 

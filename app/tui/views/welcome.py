@@ -1,5 +1,6 @@
 """Welcome screen for project selection and creation."""
 
+import contextlib
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -142,25 +143,39 @@ class WelcomeScreen(Screen[None]):
         if not project_base.exists():
             return projects
 
-        for project_dir in project_base.iterdir():
-            if not project_dir.is_dir():
-                continue
+        try:
+            # Wrap directory iteration in try/except for race conditions
+            for project_dir in project_base.iterdir():
+                try:
+                    if not project_dir.is_dir():
+                        continue
 
-            # Try to read project.yaml
-            project_data = ProjectMeta.read_project_yaml(project_dir.name)
-            if project_data:
-                # Ensure we have the essential fields
-                project_info = {
-                    "slug": project_data.get("slug", project_dir.name),
-                    "title": project_data.get("title", project_data.get("name", project_dir.name)),
-                    "description": project_data.get("description", ""),
-                    "stage": project_data.get("stage", "capture"),
-                    "created": project_data.get("created", ""),
-                }
-                projects.append(project_info)
+                    # Try to read project.yaml
+                    project_data = ProjectMeta.read_project_yaml(project_dir.name)
+                    if project_data:
+                        # Ensure we have the essential fields
+                        project_info = {
+                            "slug": project_data.get("slug", project_dir.name),
+                            "title": project_data.get(
+                                "title", project_data.get("name", project_dir.name)
+                            ),
+                            "description": project_data.get("description", ""),
+                            "stage": project_data.get("stage", "capture"),
+                            "created": project_data.get("created", ""),
+                        }
+                        projects.append(project_info)
+                except (FileNotFoundError, PermissionError, OSError):
+                    # Skip projects that disappear or become inaccessible during iteration
+                    continue
+        except (FileNotFoundError, PermissionError, OSError):
+            # Handle case where projects directory itself becomes inaccessible
+            return projects
 
         # Sort by creation date (newest first)
-        projects.sort(key=lambda p: p.get("created", ""), reverse=True)
+        with contextlib.suppress(Exception):
+            # If sorting fails for any reason, just return unsorted
+            projects.sort(key=lambda p: p.get("created", ""), reverse=True)
+
         return projects
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

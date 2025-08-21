@@ -1,5 +1,6 @@
 """New project wizard for guided project creation."""
 
+import re
 from datetime import datetime
 from enum import Enum
 
@@ -294,6 +295,12 @@ class NewProjectWizard(Screen[bool]):
         """Handle input changes."""
         if event.input.id == "project-name-input":
             self.project_name = event.value
+            # Validate input in real-time
+            if event.value and not re.match(r"^[\w\s\-]+$", event.value):
+                self.notify(
+                    "Project name can only contain letters, numbers, spaces, and hyphens",
+                    severity="warning",
+                )
 
     async def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Handle textarea changes."""
@@ -310,6 +317,14 @@ class NewProjectWizard(Screen[bool]):
                 self.notify("Please enter a project name", severity="error")
                 return
 
+            # Additional validation for filesystem safety
+            if not re.match(r"^[\w\s\-]+$", self.project_name.strip()):
+                self.notify(
+                    "Project name contains invalid characters. Use only letters, numbers, spaces, and hyphens.",
+                    severity="error",
+                )
+                return
+
             self.project_slug = ensure_unique_slug(slugify(self.project_name))
             self.current_step = WizardStep.BRAINDUMP
 
@@ -319,14 +334,39 @@ class NewProjectWizard(Screen[bool]):
                 self.notify("Please describe your idea", severity="error")
                 return
 
-            # Generate clarifying questions
+            # Generate clarifying questions with retry
             self.notify("Generating clarifying questions...")
-            try:
-                self.clarify_questions = self.controller.generate_clarify_questions(
-                    self.braindump, count=5
-                )
-            except Exception as e:
-                self.notify(f"Failed to generate questions: {e}", severity="error")
+            questions_generated = False
+            for attempt in range(2):  # Try twice
+                try:
+                    self.clarify_questions = self.controller.generate_clarify_questions(
+                        self.braindump, count=5
+                    )
+                    questions_generated = True
+                    break
+                except TimeoutError:
+                    if attempt == 0:
+                        self.notify("Request timed out, retrying...", severity="warning")
+                        continue
+                    self.notify(
+                        "Unable to generate questions automatically. Using default questions.",
+                        severity="warning",
+                    )
+                    # Fallback to default questions
+                    self.clarify_questions = [
+                        "1. What specific problem are you trying to solve?",
+                        "2. Who is your target audience or users?",
+                        "3. What are the key features or capabilities?",
+                        "4. What is your expected timeline?",
+                        "5. How will you measure success?",
+                    ]
+                    questions_generated = True
+                    break
+                except Exception as e:
+                    self.notify(f"Failed to generate questions: {e}", severity="error")
+                    return
+
+            if not questions_generated:
                 return
 
             self.current_step = WizardStep.CLARIFY_QUESTIONS
@@ -340,27 +380,53 @@ class NewProjectWizard(Screen[bool]):
                 self.notify("Please answer the questions", severity="error")
                 return
 
-            # Generate kernel proposal
+            # Generate kernel proposal with retry
             self.notify("Generating project kernel...")
-            try:
-                self.kernel_content = self.controller.orchestrate_kernel_generation(
-                    self.braindump, self.answers
-                )
-            except Exception as e:
-                self.notify(f"Failed to generate kernel: {e}", severity="error")
+            kernel_generated = False
+            for attempt in range(2):  # Try twice
+                try:
+                    self.kernel_content = self.controller.orchestrate_kernel_generation(
+                        self.braindump, self.answers
+                    )
+                    kernel_generated = True
+                    break
+                except TimeoutError:
+                    if attempt == 0:
+                        self.notify("Request timed out, retrying...", severity="warning")
+                        continue
+                    self.notify(
+                        "Unable to generate kernel automatically. Using template.",
+                        severity="warning",
+                    )
+                    # Fallback to template
+                    self.kernel_content = self._generate_kernel_template()
+                    kernel_generated = True
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        self.notify(f"Generation failed, retrying: {e}", severity="warning")
+                        continue
+                    self.notify(f"Failed to generate kernel: {e}", severity="error")
+                    return
+
+            if not kernel_generated:
                 return
 
             self.current_step = WizardStep.KERNEL_PROPOSAL
 
         elif self.current_step == WizardStep.KERNEL_PROPOSAL:
-            # Show kernel approval modal
-            modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
-            approved = await self.app.push_screen_wait(modal)
+            # Show kernel approval modal with error handling
+            try:
+                modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
+                approved = await self.app.push_screen_wait(modal)
 
-            if approved:
-                await self.create_project()
-            else:
-                self.notify("Project creation cancelled", severity="warning")
+                if approved:
+                    await self.create_project()
+                else:
+                    self.notify("Project creation cancelled", severity="warning")
+            except Exception as e:
+                self.notify(f"Error showing approval dialog: {e}", severity="error")
+                return
 
         self.update_step_content()
 
@@ -379,6 +445,10 @@ class NewProjectWizard(Screen[bool]):
 
     def action_cancel(self) -> None:
         """Cancel the wizard."""
+        # Confirm cancellation if there's data
+        if self.project_name or self.braindump:
+            # For now, just dismiss. In future, could add confirmation dialog
+            pass
         self.dismiss(False)
 
     async def create_project(self) -> None:
@@ -427,3 +497,28 @@ stage: kernel
 
         except Exception as e:
             self.notify(f"Failed to create project: {e}", severity="error")
+
+    def _generate_kernel_template(self) -> str:
+        """Generate a fallback kernel template when LLM fails."""
+        return f"""# Kernel
+
+## Core Concept
+{self.braindump[:500]}...
+
+## Key Questions
+Based on your answers:
+{self.answers[:500]}...
+
+## Success Criteria
+- [Define specific, measurable goals]
+- [Add key performance indicators]
+- [Include timeline milestones]
+
+## Constraints
+- [Technical limitations]
+- [Resource constraints]
+- [Time boundaries]
+
+## Primary Value Proposition
+[The main value this project delivers]
+"""
