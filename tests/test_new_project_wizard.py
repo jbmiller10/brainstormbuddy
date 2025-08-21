@@ -380,19 +380,26 @@ class TestNewProjectWizard:
         mock_app = MagicMock()
         mock_app.push_screen_wait = AsyncMock(return_value=True)  # User approves
 
+        # Mock the logger to avoid potential issues
+        mock_logger = Mock()
+        wizard.logger = mock_logger
+
         with (
             patch.object(wizard, "create_project", new_callable=AsyncMock) as mock_create,
             patch.object(wizard, "update_step_content"),
-            patch.object(type(wizard), "app", new_callable=PropertyMock, return_value=mock_app),
         ):
-            wizard.current_step = WizardStep.KERNEL_PROPOSAL
-            wizard.kernel_content = "# Kernel content"
-            wizard.project_slug = "test-project"
+            # Set app directly on the instance
+            wizard._app = mock_app
+            # Patch the app property getter
+            with patch.object(type(wizard), "app", new=property(lambda self: self._app)):
+                wizard.current_step = WizardStep.KERNEL_PROPOSAL
+                wizard.kernel_content = "# Kernel content"
+                wizard.project_slug = "test-project"
 
-            await wizard.action_next_step()
+                await wizard.action_next_step()
 
-            mock_app.push_screen_wait.assert_called_once()
-            mock_create.assert_called_once()
+                mock_app.push_screen_wait.assert_called_once()
+                mock_create.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_action_next_step_kernel_rejection(
@@ -408,19 +415,28 @@ class TestNewProjectWizard:
         mock_app = MagicMock()
         mock_app.push_screen_wait = AsyncMock(return_value=False)  # User rejects
 
+        # Mock the logger to avoid potential issues
+        mock_logger = Mock()
+        wizard.logger = mock_logger
+
         with (
             patch.object(wizard, "notify") as mock_notify,
             patch.object(wizard, "update_step_content"),
-            patch.object(type(wizard), "app", new_callable=PropertyMock, return_value=mock_app),
         ):
-            wizard.current_step = WizardStep.KERNEL_PROPOSAL
-            wizard.kernel_content = "# Kernel content"
-            wizard.project_slug = "test-project"
+            # Set app directly on the instance
+            wizard._app = mock_app
+            # Patch the app property getter
+            with patch.object(type(wizard), "app", new=property(lambda self: self._app)):
+                wizard.current_step = WizardStep.KERNEL_PROPOSAL
+                wizard.kernel_content = "# Kernel content"
+                wizard.project_slug = "test-project"
 
-            await wizard.action_next_step()
+                await wizard.action_next_step()
 
-            mock_app.push_screen_wait.assert_called_once()
-            mock_notify.assert_called_once_with("Project creation cancelled", severity="warning")
+                mock_app.push_screen_wait.assert_called_once()
+                mock_notify.assert_called_once_with(
+                    "Project creation cancelled", severity="warning"
+                )
 
     @pytest.mark.asyncio
     async def test_create_project_success(
@@ -633,9 +649,10 @@ class TestNewProjectWizard:
         mock_screen.focus_next = Mock()
         mock_screen.focus_previous = Mock()
 
-        with patch.object(
-            type(wizard), "screen", new_callable=PropertyMock, return_value=mock_screen
-        ):
+        # Set screen directly on the instance
+        wizard._screen = mock_screen
+        # Patch the screen property getter
+        with patch.object(type(wizard), "screen", new=property(lambda self: self._screen)):
             # Test focus navigation
             wizard.action_focus_next()
             mock_screen.focus_next.assert_called_once()
