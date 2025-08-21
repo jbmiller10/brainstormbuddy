@@ -16,6 +16,8 @@ from app.files.atomic import atomic_write_text
 from app.files.project_meta import ProjectMeta
 from app.files.scaffold import scaffold_project
 from app.files.slug import ensure_unique_slug, slugify
+from app.llm.claude_client import FakeClaudeClient
+from app.llm.llm_service import LLMService
 from app.tui.controllers.onboarding_controller import OnboardingController
 from app.tui.controllers.onboarding_logger import OnboardingLogger
 from app.tui.styles import get_common_css
@@ -60,7 +62,9 @@ class NewProjectWizard(Screen[bool]):
         """Initialize the wizard."""
         super().__init__()
         self.current_step = WizardStep.PROJECT_NAME
-        self.controller = OnboardingController()
+        # Create LLM service with FakeClaudeClient for the wizard
+        llm_service = LLMService(client=FakeClaudeClient())
+        self.controller = OnboardingController(llm_service=llm_service)
         self.logger = OnboardingLogger()
 
         # Wizard state

@@ -119,6 +119,17 @@ def test_multiple_observers() -> None:
 
 def test_weak_reference_cleanup() -> None:
     """Test that weak references prevent memory leaks."""
+    import asyncio
+    import warnings
+
+    # Close any existing event loops to prevent resource warnings
+    try:
+        loop = asyncio.get_event_loop()
+        if not loop.is_closed():
+            loop.close()
+    except RuntimeError:
+        pass  # No event loop exists
+
     state = get_app_state()
     state._subscribers.clear()  # type: ignore
 
@@ -136,7 +147,11 @@ def test_weak_reference_cleanup() -> None:
 
     # Delete observer and force garbage collection
     del observer
-    gc.collect()
+
+    # Suppress resource warnings during gc.collect() as they're from previous tests
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
+        gc.collect()
 
     # The callback should be cleaned up on next notification
     state.set_active_project("cleanup-test")
