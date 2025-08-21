@@ -383,7 +383,7 @@ class TestNewProjectWizard:
         with (
             patch.object(wizard, "create_project", new_callable=AsyncMock) as mock_create,
             patch.object(wizard, "update_step_content"),
-            patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
+            patch.object(type(wizard), "app", new_callable=PropertyMock, return_value=mock_app),
         ):
             wizard.current_step = WizardStep.KERNEL_PROPOSAL
             wizard.kernel_content = "# Kernel content"
@@ -411,7 +411,7 @@ class TestNewProjectWizard:
         with (
             patch.object(wizard, "notify") as mock_notify,
             patch.object(wizard, "update_step_content"),
-            patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
+            patch.object(type(wizard), "app", new_callable=PropertyMock, return_value=mock_app),
         ):
             wizard.current_step = WizardStep.KERNEL_PROPOSAL
             wizard.kernel_content = "# Kernel content"
@@ -628,13 +628,13 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        # Mock the screen object using PropertyMock
+        # Mock the screen object
         mock_screen = Mock()
         mock_screen.focus_next = Mock()
         mock_screen.focus_previous = Mock()
 
         with patch.object(
-            NewProjectWizard, "screen", new_callable=PropertyMock, return_value=mock_screen
+            type(wizard), "screen", new_callable=PropertyMock, return_value=mock_screen
         ):
             # Test focus navigation
             wizard.action_focus_next()
