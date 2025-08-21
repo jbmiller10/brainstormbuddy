@@ -206,3 +206,83 @@ async def test_llm_service_with_real_prompts() -> None:
         assert prompt_name in service._prompt_cache
         cached_content = service._load_system_prompt(prompt_name)
         assert cached_content == prompt_content
+
+
+@pytest.mark.asyncio
+async def test_generate_response_handles_timeout_error() -> None:
+    """Test that generate_response properly handles TimeoutError."""
+    mock_client = MagicMock()
+
+    async def mock_stream(*_args: Any, **_kwargs: Any) -> Any:
+        """Mock stream that raises TimeoutError."""
+        raise TimeoutError("Request timed out")
+        yield  # pragma: no cover
+
+    mock_client.stream = mock_stream
+    service = LLMService(mock_client)
+
+    with (
+        patch.object(service, "_load_system_prompt", return_value="System"),
+        pytest.raises(TimeoutError, match="LLM request timed out"),
+    ):
+        await service.generate_response(["Test"], "test_prompt")
+
+
+@pytest.mark.asyncio
+async def test_generate_response_handles_connection_error() -> None:
+    """Test that generate_response properly handles ConnectionError."""
+    mock_client = MagicMock()
+
+    async def mock_stream(*_args: Any, **_kwargs: Any) -> Any:
+        """Mock stream that raises ConnectionError."""
+        raise ConnectionError("Connection failed")
+        yield  # pragma: no cover
+
+    mock_client.stream = mock_stream
+    service = LLMService(mock_client)
+
+    with (
+        patch.object(service, "_load_system_prompt", return_value="System"),
+        pytest.raises(ConnectionError, match="Network connection failed"),
+    ):
+        await service.generate_response(["Test"], "test_prompt")
+
+
+@pytest.mark.asyncio
+async def test_generate_response_handles_os_error() -> None:
+    """Test that generate_response properly handles OSError."""
+    mock_client = MagicMock()
+
+    async def mock_stream(*_args: Any, **_kwargs: Any) -> Any:
+        """Mock stream that raises OSError."""
+        raise OSError("Network error")
+        yield  # pragma: no cover
+
+    mock_client.stream = mock_stream
+    service = LLMService(mock_client)
+
+    with (
+        patch.object(service, "_load_system_prompt", return_value="System"),
+        pytest.raises(ConnectionError, match="Network connection failed"),
+    ):
+        await service.generate_response(["Test"], "test_prompt")
+
+
+@pytest.mark.asyncio
+async def test_generate_response_handles_generic_exception() -> None:
+    """Test that generate_response properly handles generic exceptions."""
+    mock_client = MagicMock()
+
+    async def mock_stream(*_args: Any, **_kwargs: Any) -> Any:
+        """Mock stream that raises generic exception."""
+        raise ValueError("Unexpected error")
+        yield  # pragma: no cover
+
+    mock_client.stream = mock_stream
+    service = LLMService(mock_client)
+
+    with (
+        patch.object(service, "_load_system_prompt", return_value="System"),
+        pytest.raises(RuntimeError, match="Failed to generate response"),
+    ):
+        await service.generate_response(["Test"], "test_prompt")

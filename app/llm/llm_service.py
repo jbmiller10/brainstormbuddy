@@ -1,4 +1,9 @@
-"""Core LLM service for centralized AI communication."""
+"""Core LLM service for centralized AI communication.
+
+This service provides a single point of contact for all AI text generation,
+abstracting the low-level details of streaming and prompt management from
+the application logic. It supports dependency injection for testability.
+"""
 
 from pathlib import Path
 
@@ -34,7 +39,7 @@ class LLMService:
         if prompt_name in self._prompt_cache:
             return self._prompt_cache[prompt_name]
 
-        prompt_path = Path(__file__).parent / "prompts" / f"{prompt_name}.md"
+        prompt_path = Path(__file__).resolve().parent / "prompts" / f"{prompt_name}.md"
 
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
@@ -55,19 +60,32 @@ class LLMService:
 
         Returns:
             Complete AI response as a string
+
+        Raises:
+            FileNotFoundError: If the prompt file doesn't exist
+            TimeoutError: If the LLM request times out
+            ConnectionError: If there's a network connection issue
+            RuntimeError: If there's an error during streaming
         """
         system_prompt = self._load_system_prompt(system_prompt_name)
 
         user_prompt = "\n".join(transcript)
 
         full_response = ""
-        async for event in self.client.stream(
-            prompt=user_prompt,
-            system_prompt=system_prompt,
-        ):
-            if isinstance(event, TextDelta):
-                full_response += event.text
-            elif isinstance(event, MessageDone):
-                break
+        try:
+            async for event in self.client.stream(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+            ):
+                if isinstance(event, TextDelta):
+                    full_response += event.text
+                elif isinstance(event, MessageDone):
+                    break
+        except TimeoutError as e:
+            raise TimeoutError("LLM request timed out") from e
+        except (ConnectionError, OSError) as e:
+            raise ConnectionError(f"Network connection failed: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate response: {e}") from e
 
         return full_response
