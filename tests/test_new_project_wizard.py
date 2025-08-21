@@ -381,7 +381,7 @@ class TestNewProjectWizard:
         mock_app.push_screen_wait = AsyncMock(return_value=True)  # User approves
 
         with (
-            patch.object(wizard, "create_project") as mock_create,
+            patch.object(wizard, "create_project", new_callable=AsyncMock) as mock_create,
             patch.object(wizard, "update_step_content"),
             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
         ):
