@@ -1,8 +1,9 @@
 """Tests for the LLMService class."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
@@ -33,12 +34,12 @@ async def test_load_system_prompt_caches_content() -> None:
         patch.object(Path, "exists", return_value=True),
     ):
         # First call should load from file
-        result1 = service._load_system_prompt("test_prompt")
+        result1 = await service._load_system_prompt("test_prompt")
         assert result1 == prompt_content
         assert "test_prompt" in service._prompt_cache
 
         # Second call should use cache
-        result2 = service._load_system_prompt("test_prompt")
+        result2 = await service._load_system_prompt("test_prompt")
         assert result2 == prompt_content
 
 
@@ -50,9 +51,9 @@ async def test_load_system_prompt_file_not_found() -> None:
 
     with (
         patch.object(Path, "exists", return_value=False),
-        pytest.raises(FileNotFoundError, match="Prompt file not found"),
+        pytest.raises(FileNotFoundError, match="Prompt 'nonexistent_prompt' not found"),
     ):
-        service._load_system_prompt("nonexistent_prompt")
+        await service._load_system_prompt("nonexistent_prompt")
 
 
 @pytest.mark.asyncio
@@ -63,8 +64,8 @@ async def test_generate_response_with_fake_client() -> None:
 
     transcript = ["User: Hello", "Assistant: Hi there", "User: How are you?"]
 
-    # Mock the prompt loading
-    with patch.object(service, "_load_system_prompt", return_value="System prompt"):
+    # Mock the prompt loading (now async)
+    with patch.object(service, "_load_system_prompt", AsyncMock(return_value="System prompt")):
         response = await service.generate_response(transcript, "test_prompt")
 
     # FakeClaudeClient returns deterministic output
@@ -90,8 +91,8 @@ async def test_generate_response_aggregates_text_deltas() -> None:
 
     transcript = ["Test message"]
 
-    # Mock the prompt loading
-    with patch.object(service, "_load_system_prompt", return_value="System prompt"):
+    # Mock the prompt loading (now async)
+    with patch.object(service, "_load_system_prompt", AsyncMock(return_value="System prompt")):
         response = await service.generate_response(transcript, "test_prompt")
 
     assert response == "Hello world!"
@@ -198,13 +199,13 @@ async def test_llm_service_with_real_prompts() -> None:
     prompts_to_test = ["summarize", "refine_summary", "kernel_from_transcript"]
 
     for prompt_name in prompts_to_test:
-        prompt_content = service._load_system_prompt(prompt_name)
+        prompt_content = await service._load_system_prompt(prompt_name)
         assert prompt_content, f"Should load {prompt_name} prompt"
         assert "<instructions>" in prompt_content
 
         # Verify caching works
         assert prompt_name in service._prompt_cache
-        cached_content = service._load_system_prompt(prompt_name)
+        cached_content = await service._load_system_prompt(prompt_name)
         assert cached_content == prompt_content
 
 
@@ -282,7 +283,75 @@ async def test_generate_response_handles_generic_exception() -> None:
     service = LLMService(mock_client)
 
     with (
-        patch.object(service, "_load_system_prompt", return_value="System"),
-        pytest.raises(RuntimeError, match="Failed to generate response"),
+        patch.object(service, "_load_system_prompt", AsyncMock(return_value="System")),
+        pytest.raises(RuntimeError, match="Failed to generate response for prompt 'test_prompt'"),
     ):
         await service.generate_response(["Test"], "test_prompt")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_cache_access() -> None:
+    """Test that concurrent access to prompt cache is thread-safe."""
+    client = FakeClaudeClient()
+    service = LLMService(client)
+
+    prompt_content = "Test concurrent access"
+    call_count = 0
+
+    # Create a mock open that tracks call count
+    def mock_open_side_effect(*args: Any, **kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        return mock_open(read_data=prompt_content)(*args, **kwargs)
+
+    with (
+        patch("builtins.open", side_effect=mock_open_side_effect),
+        patch.object(Path, "exists", return_value=True),
+    ):
+        # Launch multiple concurrent loads of the same prompt
+        tasks = [service._load_system_prompt("concurrent_test") for _ in range(10)]
+        results = await asyncio.gather(*tasks)
+
+    # All should return the same content
+    assert all(r == prompt_content for r in results)
+    # File should only be read once due to caching
+    assert call_count == 1
+    # Cache should contain the prompt
+    assert "concurrent_test" in service._prompt_cache
+
+
+@pytest.mark.asyncio
+async def test_load_system_prompt_encoding_error() -> None:
+    """Test that _load_system_prompt handles encoding errors gracefully."""
+    client = FakeClaudeClient()
+    service = LLMService(client)
+
+    # Create mock file with non-UTF-8 content
+    def mock_open_with_encoding_error(*_args: Any, **_kwargs: Any) -> Any:
+        raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid start byte")
+
+    with (
+        patch("builtins.open", side_effect=mock_open_with_encoding_error),
+        patch.object(Path, "exists", return_value=True),
+        pytest.raises(ValueError, match="Failed to decode prompt file 'bad_encoding'"),
+    ):
+        await service._load_system_prompt("bad_encoding")
+
+
+@pytest.mark.asyncio
+async def test_generate_response_empty_response() -> None:
+    """Test that generate_response handles empty responses correctly."""
+    mock_client = MagicMock()
+
+    async def mock_stream(*_args: Any, **_kwargs: Any) -> Any:
+        """Mock stream that only yields MessageDone."""
+        yield MessageDone()
+
+    mock_client.stream = mock_stream
+    service = LLMService(mock_client)
+
+    with patch.object(service, "_load_system_prompt", AsyncMock(return_value="System")):
+        response = await service.generate_response(["Test"], "test_prompt")
+
+    # Should return empty string without error
+    assert response == ""
