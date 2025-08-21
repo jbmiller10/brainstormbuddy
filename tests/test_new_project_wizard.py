@@ -253,7 +253,7 @@ class TestNewProjectWizard:
 
             mock_notify.assert_called_once_with("Generating clarifying questions...")
             mock_onboarding_controller.generate_clarify_questions.assert_called_once_with(
-                "My great idea", count=5
+                "My great idea", count=5, project_slug=""
             )
             assert len(wizard.clarify_questions) == 5
             assert wizard.current_step == WizardStep.CLARIFY_QUESTIONS
@@ -332,7 +332,7 @@ class TestNewProjectWizard:
 
             mock_notify.assert_called_once_with("Generating project kernel...")
             mock_onboarding_controller.orchestrate_kernel_generation.assert_called_once_with(
-                "My idea", "Detailed answers"
+                "My idea", "Detailed answers", project_slug=""
             )
             assert "# Kernel" in wizard.kernel_content
             assert wizard.current_step == WizardStep.KERNEL_PROPOSAL
