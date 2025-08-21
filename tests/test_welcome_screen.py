@@ -102,7 +102,7 @@ class TestWelcomeScreen:
                 "title": f"Project {i}",
                 "description": f"Description {i}",
                 "stage": "capture",
-                "created": f"2024-01-0{i+1}T00:00:00",
+                "created": f"2024-01-0{i + 1}T00:00:00",
                 "tags": [],
                 "metadata": {"version": "1.0.0", "format": "brainstormbuddy-project"},
             }

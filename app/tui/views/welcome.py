@@ -103,8 +103,7 @@ class WelcomeScreen(Screen[None]):
 
             item = ListItem(
                 Static(
-                    f"[bold]{project['title']}[/bold] ({project['slug']})\n"
-                    f"[dim]{description}[/dim]"
+                    f"[bold]{project['title']}[/bold] ({project['slug']})\n[dim]{description}[/dim]"
                 ),
                 id=f"project-{project['slug']}",
             )

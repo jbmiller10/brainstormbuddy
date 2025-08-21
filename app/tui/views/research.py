@@ -1,5 +1,6 @@
 """Research import view for pasting and storing external findings."""
 
+import sqlite3
 from pathlib import Path
 
 from textual import on
@@ -9,8 +10,35 @@ from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Static, TextArea
 
+from app.core.state import get_app_state
 from app.research.db import ResearchDB
 from app.research.ingest import Finding, parse_findings
+
+
+def get_db_path(slug: str) -> Path:
+    """Get the research database path for a project.
+
+    Args:
+        slug: Project slug
+
+    Returns:
+        Path to the research database, creating research directory if needed
+    """
+    research_dir = Path(f"projects/{slug}/research")
+    research_dir.mkdir(parents=True, exist_ok=True)
+    db_path = research_dir / "findings.db"
+
+    # Set WAL mode for better concurrent access if DB exists
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.close()
+        except sqlite3.OperationalError:
+            # If WAL mode fails, continue with default mode
+            pass
+
+    return db_path
 
 
 class ResearchImportModal(ModalScreen[bool]):
@@ -122,7 +150,17 @@ class ResearchImportModal(ModalScreen[bool]):
         """
         super().__init__()
         self.workstream = workstream
-        self.db_path = db_path or Path("projects") / "default" / "research.db"
+
+        # Use active project if no db_path provided
+        if db_path is None:
+            app_state = get_app_state()
+            if app_state.active_project:
+                self.db_path = get_db_path(app_state.active_project)
+            else:
+                # Fallback if no active project (shouldn't happen in normal flow)
+                self.db_path = Path("projects") / "default" / "research" / "findings.db"
+        else:
+            self.db_path = db_path
         self.status_message = ""
         self.findings: list[Finding] = []
         # Filter state

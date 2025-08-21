@@ -102,6 +102,7 @@ class CommandPalette(Container):
         log(f"Executing command: {command}")
 
         # Import here to avoid circular imports
+        from app.core.state import get_app_state
         from app.llm.sessions import get_policy
         from app.tui.views.session import SessionController
         from app.tui.widgets.agent_selector import AgentSelector
@@ -130,8 +131,14 @@ class CommandPalette(Container):
 
         # Handle kernel command
         elif command == "kernel":
-            # For now, use a default project slug - in production, this would prompt for it
-            project_slug = "default-project"
+            # Get active project or prompt for selection
+            app_state = get_app_state()
+            project_slug = app_state.active_project
+
+            if not project_slug:
+                viewer.write("[yellow]No active project. Please select a project first.[/yellow]\n")
+                return
+
             initial_idea = "Build a better brainstorming app"
 
             # Get stage policy for tool info
@@ -150,8 +157,16 @@ class CommandPalette(Container):
 
         # Handle generate workstreams command
         elif command == "generate workstreams":
+            # Get active project
+            app_state = get_app_state()
+            project_slug = app_state.active_project
+
+            if not project_slug:
+                viewer.write("[yellow]No active project. Please select a project first.[/yellow]\n")
+                return
+
             # Run the async task using Textual's worker system
-            self.app.run_worker(controller.generate_workstreams(), exclusive=True)
+            self.app.run_worker(controller.generate_workstreams(project_slug), exclusive=True)
 
         # Handle domain settings command
         elif command == "domain settings":
@@ -185,9 +200,16 @@ class CommandPalette(Container):
 
             from app.tui.views.research import ResearchImportModal
 
+            # Get active project
+            app_state = get_app_state()
+            project_slug = app_state.active_project
+
+            if not project_slug:
+                viewer.write("[yellow]No active project. Please select a project first.[/yellow]\n")
+                return
+
             # Determine project path and workstream
-            # For now, use default project - in production, this would be context-aware
-            project_path = Path("projects") / "default"
+            project_path = Path("projects") / project_slug
             project_path.mkdir(parents=True, exist_ok=True)
             db_path = project_path / "research.db"
 
@@ -201,8 +223,13 @@ class CommandPalette(Container):
 
             from app.tui.widgets.agent_selector import AgentSelector
 
-            # Get project slug (default for now)
-            project_slug = "default-project"
+            # Get active project
+            app_state = get_app_state()
+            project_slug = app_state.active_project
+
+            if not project_slug:
+                viewer.write("[yellow]No active project. Please select a project first.[/yellow]\n")
+                return
 
             # Check if kernel exists
             kernel_path = Path("projects") / project_slug / "kernel.md"

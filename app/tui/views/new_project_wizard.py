@@ -432,12 +432,14 @@ class NewProjectWizard(Screen[bool]):
     def action_focus_next(self) -> None:
         """Focus the next input field."""
         import contextlib
+
         with contextlib.suppress(Exception):
             self.screen.focus_next()
 
     def action_focus_previous(self) -> None:
         """Focus the previous input field."""
         import contextlib
+
         with contextlib.suppress(Exception):
             self.screen.focus_previous()
 
@@ -504,11 +506,11 @@ stage: kernel
 ## Core Concept
 {first_sentence.strip()}.
 
-{self.braindump[:500] if len(self.braindump) > len(first_sentence) else ''}
+{self.braindump[:500] if len(self.braindump) > len(first_sentence) else ""}
 
 ## Key Questions
 Based on your clarifications:
-{chr(10).join('- ' + point for point in key_points) if key_points else self.answers[:500]}
+{chr(10).join("- " + point for point in key_points) if key_points else self.answers[:500]}
 
 ## Success Criteria
 - Complete implementation of described functionality
