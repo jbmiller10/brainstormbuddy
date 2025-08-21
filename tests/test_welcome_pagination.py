@@ -15,11 +15,13 @@ class TestWelcomeScreenPagination:
         """Create mock project list for testing pagination."""
         projects = []
         for i in range(50):  # Create 50 mock projects
-            projects.append({
-                "slug": f"project-{i:02d}",
-                "title": f"Project {i:02d}",
-                "description": f"Description for project {i:02d}" * 5,  # Long description
-            })
+            projects.append(
+                {
+                    "slug": f"project-{i:02d}",
+                    "title": f"Project {i:02d}",
+                    "description": f"Description for project {i:02d}" * 5,  # Long description
+                }
+            )
         return projects
 
     def test_pagination_initialization(self) -> None:
@@ -61,7 +63,7 @@ class TestWelcomeScreenPagination:
         # Check that load more indicator was added
         last_call = mock_list_view.append.call_args_list[-1]
         item = last_call[0][0]
-        assert hasattr(item, 'id')
+        assert hasattr(item, "id")
         assert item.id == "load-more-indicator"
 
     def test_display_all_projects_no_pagination(self) -> None:
@@ -99,7 +101,7 @@ class TestWelcomeScreenPagination:
 
         # Mock the ListView with a load more indicator that supports iteration
         mock_list_view = Mock()
-        mock_indicator = Mock(spec=['id', 'remove'])
+        mock_indicator = Mock(spec=["id", "remove"])
         mock_indicator.id = "load-more-indicator"
         mock_indicator.remove = Mock()
 
@@ -141,9 +143,7 @@ class TestWelcomeScreenPagination:
         """Test that long descriptions are truncated."""
         screen = WelcomeScreen()
         long_description = "A" * 150  # 150 characters
-        screen.projects = [
-            {"slug": "test", "title": "Test", "description": long_description}
-        ]
+        screen.projects = [{"slug": "test", "title": "Test", "description": long_description}]
 
         # Mock the ListView
         mock_list_view = Mock()

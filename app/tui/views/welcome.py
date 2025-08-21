@@ -18,7 +18,9 @@ class WelcomeScreen(Screen[None]):
     """Welcome screen that lists existing projects and allows creating new ones."""
 
     # Use shared styles with some customizations
-    DEFAULT_CSS = get_common_css("WelcomeScreen", center_align=True) + """
+    DEFAULT_CSS = (
+        get_common_css("WelcomeScreen", center_align=True)
+        + """
     WelcomeScreen Button {
         width: 24;  /* Wider buttons for welcome screen */
     }
@@ -27,6 +29,7 @@ class WelcomeScreen(Screen[None]):
         /* Use medium container for welcome screen */
     }
     """
+    )
 
     BINDINGS = [
         Binding("n", "create_project", "New Project", priority=True),
@@ -94,7 +97,7 @@ class WelcomeScreen(Screen[None]):
         for idx in range(start_idx, end_idx):
             project = self.projects[idx]
             # Lazy load description - truncate if too long
-            description = project.get('description', 'No description')
+            description = project.get("description", "No description")
             if len(description) > 100:
                 description = description[:97] + "..."
 

@@ -1,0 +1,846 @@
+<roadmap name="GuidedOnboarding+StatefulUI" version="2.1-hybrid">
+
+  <context>
+    We want a guided flow that takes a new user from 0 → approved kernel.md, while making the app
+    stateful (active project awareness) and contextual (panes reflect the selected project).
+
+```
+Version 2.1 uses a hybrid approach with:
+- Explicit interface contracts defined upfront
+- Bundled tickets for tightly coupled components
+- Atomic tickets for independent work
+- Clear integration test requirements
+- Privacy-by-default logging and robust slug/FS hygiene
+```
+
+  </context>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 0: INTERFACE CONTRACTS                               -->
+
+  <!-- ========================================================= -->
+
+  <ticket id="B0" order="1" epic="Interfaces" bundle="standalone">
+    <title>Define interface contracts for shared components</title>
+    <why>
+      Multiple tickets need to interact with shared components. Defining interfaces upfront
+      allows parallel development without implementation coupling and clarifies event semantics.
+    </why>
+    <what>
+      Create protocol definitions and type contracts that all implementations must follow.
+      These are contracts only — no implementation logic.
+
+````
+  AppState Interface Contract:
+  ```python
+  # app/core/interfaces.py (protocols only)
+  from typing import Protocol, Callable, Optional, Literal
+
+  Stage = Literal["capture","clarify","kernel","outline","research","synthesis"]
+  Reason = Literal["manual","wizard-accept","project-switch","reset"]
+
+  class AppStateProtocol(Protocol):
+      @property
+      def active_project(self) -> Optional[str]:
+          """Currently active project slug, or None."""
+
+      def set_active_project(self, slug: Optional[str], *, reason: Reason = "manual") -> None:
+          """Set the active project and notify subscribers."""
+
+      def subscribe(
+          self,
+          callback: Callable[[Optional[str], Optional[str], Reason], None],
+      ) -> Callable[[], None]:
+          """
+          Subscribe to project changes. Callback receives (new_slug, old_slug, reason).
+          Returns an unsubscribe callable (disposer).
+          """
+
+  def get_app_state() -> AppStateProtocol:
+      """Get the singleton AppState instance."""
+  ```
+
+  ProjectMeta Interface Contract:
+  ```python
+  from typing import Protocol
+  from .interfaces import Stage
+
+  class ProjectMetaProtocol(Protocol):
+      @staticmethod
+      def read_project_yaml(slug: str) -> dict | None:
+          """Read project.yaml for given slug. Returns None if invalid/missing."""
+
+      @staticmethod
+      def write_project_yaml(slug: str, data: dict) -> None:
+          """Write project.yaml atomically."""
+
+      @staticmethod
+      def set_project_stage(slug: str, stage: Stage) -> bool:
+          """Update project stage. Returns success status."""
+
+      @staticmethod
+      def validate_project_yaml(data: dict) -> bool:
+          """
+          Validate YAML has required fields:
+          - slug: str   (machine-safe)
+          - title: str  (human-friendly)
+          - created: ISO timestamp
+          - stage: Stage
+          - description: str
+          - tags: list[str]
+          - metadata: {version: "1.0.0", format: "brainstormbuddy-project"}
+          """
+  ```
+
+  Controller Interface Contract:
+  ```python
+  from typing import Protocol, List
+
+  class OnboardingControllerProtocol(Protocol):
+      def generate_clarify_questions(self, braindump: str, *, count: int = 5) -> List[str]:
+          """Generate exactly `count` clarifying questions (default 5)."""
+
+      def orchestrate_kernel_generation(self, braindump: str, answers_text: str) -> str:
+          """Generate kernel.md content from braindump and a single consolidated answer string."""
+  ```
+</what>
+<changes>
+  <create file="app/core/interfaces.py">
+    Protocol definitions for AppStateProtocol, ProjectMetaProtocol, OnboardingControllerProtocol
+    Type aliases (Stage, Reason) and any required imports
+  </create>
+</changes>
+<dependencies/>
+<acceptance_criteria>
+  <ac>File contains only protocols and type/type-alias definitions, no implementation.</ac>
+  <ac>All method signatures include type hints and docstrings.</ac>
+  <ac>Mypy/pyright pass with a minimal mock implementation in tests.</ac>
+</acceptance_criteria>
+<integration_tests>
+  <test>Create mock implementations and verify they satisfy protocols under mypy/pyright.</test>
+</integration_tests>
+````
+
+  </ticket>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 1: STANDALONE ATOMIC TICKETS                         -->
+
+  <!-- ========================================================= -->
+
+  <ticket id="F1" order="2" epic="Prompt & Policy" bundle="standalone">
+    <title>Kernel prompt outputs full content (no diff, no fences)</title>
+    <why>
+      Full-file output is simpler for onboarding; diffs and code fences confuse new users and add failure cases.
+    </why>
+    <what>
+      Revise kernel prompt to require a complete kernel.md with exact sections and word cap.
+      Replace any instruction that says "Propose a diff" with explicit rules:
+      - Output ONLY the final markdown content of kernel.md.
+      - Do NOT include code fences, YAML front matter, or explanations.
+      - Begin with "# Kernel" and include exactly these sections in order:
+        Core Concept, Key Questions, Success Criteria, Constraints, Primary Value Proposition.
+      - Max 250 words total; omit any extra sections.
+    </what>
+    <changes>
+      <modify file="app/llm/prompts/kernel.md">
+        Replace the "Propose a diff" requirement with the rules above (symbol-based edit, not line-based).
+      </modify>
+    </changes>
+    <dependencies/>
+    <acceptance_criteria>
+      <ac>Generated output contains only markdown (no diff markers / fences / explanations).</ac>
+      <ac>Output starts with "# Kernel".</ac>
+      <ac>Exactly 5 sections present in the specified order.</ac>
+    </acceptance_criteria>
+    <integration_tests>
+      <test>Mock LLM response and verify parser accepts full markdown; reject or unfence fenced responses.</test>
+    </integration_tests>
+  </ticket>
+
+  <ticket id="B2" order="3" epic="Interfaces" bundle="standalone">
+    <title>Slug utilities and validation</title>
+    <why>
+      Prevent path traversal, collisions, and invalid slugs across wizard, metadata, and filesystem operations.
+    </why>
+    <what>
+      Implement:
+      - `slugify(title: str) -> str`
+      - `enforce_slug(slug: str) -> str` (raises on invalid)
+      - `ensure_unique_slug(base_slug: str) -> str` (adds -2, -3 suffix if needed)
+    </what>
+    <changes>
+      <create file="app/files/slug.py">
+        slugify, enforce_slug, ensure_unique_slug with tests
+      </create>
+    </changes>
+    <dependencies>
+      <on>B0</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Unsafe input like "../foo" or "ACME 🚀" yields safe slug; collisions produce suffixed slug.</ac>
+      <ac>Unit tests cover unicode, length caps, reserved names, and collisions.</ac>
+    </acceptance_criteria>
+  </ticket>
+
+  <ticket id="C3" order="4" epic="Dynamic UI" bundle="standalone">
+    <title>SessionViewer starts neutral (remove legacy banner)</title>
+    <why>
+      Legacy banner contradicts wizard narrative and adds noise.
+    </why>
+    <what>
+      Remove the `on_mount()` method from `SessionViewer` (symbol-based deletion by method name).
+    </what>
+    <changes>
+      <modify file="app/tui/widgets/session_viewer.py">
+        Delete the `on_mount` method and any welcome banner strings.
+      </modify>
+    </changes>
+    <dependencies/>
+    <acceptance_criteria>
+      <ac>Viewer is blank on startup.</ac>
+      <ac>No welcome message appears.</ac>
+      <ac>CI grep confirms the string "Welcome to Brainstorm Buddy" does not exist in repo.</ac>
+    </acceptance_criteria>
+    <integration_tests>
+      <test>Launch app, verify SessionViewer is empty.</test>
+    </integration_tests>
+  </ticket>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 2: FOUNDATION BUNDLE                                 -->
+
+  <!-- ========================================================= -->
+
+  <bundle id="foundation" order="5">
+    <title>Core state and metadata infrastructure</title>
+    <why>
+      These components are tightly coupled — AppState and project metadata helpers
+      work together to manage application state. Bundling ensures consistency.
+    </why>
+
+```
+<ticket id="B1" epic="Stateful Architecture">
+  <title>AppState implementation following interface</title>
+  <what>
+    Implement AppState following the AppStateProtocol from B0.
+    MUST follow the exact interface contract defined in app/core/interfaces.py.
+
+    Implementation requirements:
+    - Singleton pattern via get_app_state()
+    - Observer pattern for subscriptions (subscribe returns disposer)
+    - Notify callbacks with (new_slug, old_slug, reason)
+    - Async/UI safety: ensure notifications are marshaled to the UI loop if required
+    - Prevent memory leaks (weak references for observers if needed)
+  </what>
+  <changes>
+    <create file="app/core/state.py">
+      Import AppStateProtocol from interfaces
+      Implement AppState class following protocol
+      Implement get_app_state() singleton function
+    </create>
+  </changes>
+  <dependencies>
+    <on>B0</on>
+  </dependencies>
+</ticket>
+
+<ticket id="A3" epic="Onboarding">
+  <title>Project lifecycle helpers following interface</title>
+  <what>
+    Implement project metadata helpers following ProjectMetaProtocol from B0.
+
+    YAML structure:
+    - slug: machine-safe slug (string)
+    - title: human-friendly project title (string)
+    - created: ISO timestamp
+    - stage: capture|clarify|kernel|outline|research|synthesis (Stage)
+    - description: text
+    - tags: list[str]
+    - metadata: {version: "1.0.0", format: "brainstormbuddy-project"}
+
+    Requirements:
+    - Use app/files/atomic.atomic_write_text for all writes
+    - Validation per protocol
+    - Backfill/migrate legacy projects that had only `name` by setting title=name and slug=slugify(name)
+  </what>
+  <changes>
+    <create file="app/files/project_meta.py">
+      Import ProjectMetaProtocol and Stage
+      Implement all methods following protocol
+      Use atomic_write_text for writes
+    </create>
+  </changes>
+  <dependencies>
+    <on>B0</on>
+    <on>B2</on>
+  </dependencies>
+</ticket>
+
+<integration_tests>
+  <test>Verify AppState singleton pattern works.</test>
+  <test>Test observer notifications on project change (payloads + order).</test>
+  <test>Verify project_meta reads/writes are atomic.</test>
+  <test>Test concurrent YAML updates don't corrupt.</test>
+  <test>Legacy project migration populates title/slug correctly.</test>
+</integration_tests>
+```
+
+  </bundle>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 3: CONTROLLER BUNDLE                                 -->
+
+  <!-- ========================================================= -->
+
+  <bundle id="controller" order="6">
+    <title>Onboarding orchestration logic</title>
+    <why>
+      Controller needs to understand prompt format and use project helpers.
+      Bundling ensures consistent implementation.
+    </why>
+
+```
+<ticket id="D1" epic="Session & LLM Orchestration">
+  <title>Onboarding Controller following interface</title>
+  <what>
+    Implement controller following OnboardingControllerProtocol from B0.
+
+    Requirements:
+    - Use app.llm.sessions.get_policy("clarify") for questions
+    - Generate exactly 5 numbered questions (default count=5 honored)
+    - Use app.llm.sessions.get_policy("kernel") for kernel generation
+    - Validate all 5 sections present in the required order
+    - Strip any extra sections
+    - Retry up to 2 times if structure invalid
+
+    Expected sections in kernel:
+    1. Core Concept
+    2. Key Questions
+    3. Success Criteria
+    4. Constraints
+    5. Primary Value Proposition
+  </what>
+  <changes>
+    <create file="app/tui/controllers/onboarding_controller.py">
+      Import OnboardingControllerProtocol from interfaces
+      Implement instance methods per protocol
+      Add validate_kernel_structure() helper
+    </create>
+  </changes>
+  <dependencies>
+    <on>B0</on>
+    <on>F1</on>
+  </dependencies>
+</ticket>
+
+<integration_tests>
+  <test>Mock LLM responses, verify 5 questions generated.</test>
+  <test>Test kernel validation accepts valid structure.</test>
+  <test>Test retry logic on malformed kernel (e.g., missing "Constraints").</test>
+</integration_tests>
+```
+
+  </bundle>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 4: NEW SCREENS BUNDLE                                -->
+
+  <!-- ========================================================= -->
+
+  <bundle id="new-screens" order="7">
+    <title>Welcome and Wizard screens</title>
+    <why>
+      These new screens work together to provide the onboarding flow.
+      The wizard depends on the welcome screen's project creation trigger.
+    </why>
+
+```
+<ticket id="A1" epic="Onboarding">
+  <title>WelcomeScreen with project selection</title>
+  <what>
+    Create welcome screen that lists existing projects.
+
+    Implementation:
+    - Scan projects/ for dirs with project.yaml
+    - Show list of projects or empty state
+    - "Create New Project" button
+    - On select: set AppState.active_project (reason="project-switch"), push MainScreen
+    - On create: push NewProjectWizard
+
+    Use get_app_state() from app/core/state following interface.
+  </what>
+  <changes>
+    <create file="app/tui/views/welcome.py">
+      WelcomeScreen class
+      find_projects() method
+      Event handlers for selection/creation
+    </create>
+    <modify file="app/tui/app.py">
+      Boot to WelcomeScreen instead of MainScreen
+    </modify>
+  </changes>
+  <dependencies>
+    <on>foundation</on>
+  </dependencies>
+</ticket>
+
+<ticket id="A2" epic="Onboarding">
+  <title>NewProjectWizard multi-step flow</title>
+  <what>
+    Create wizard with steps:
+    1. Project name input (becomes slug via slugify/ensure_unique_slug; show final slug)
+    2. Braindump textarea
+    3. Show 5 clarify questions (from controller)
+    4. Single textarea for consolidated answer
+    5. Show kernel proposal (full markdown; unfence if fenced)
+    6. Accept/Reject buttons
+
+    On Accept:
+    - Use scaffold_project from app/files/scaffold.py
+    - Write kernel.md using atomic_write_text
+    - Write project.yaml with fields: slug, title, created, stage="kernel", description, tags, metadata
+    - Set stage to "kernel" via project_meta
+    - Set AppState.active_project (reason="wizard-accept")
+    - Close wizard, return to main screen
+
+    KernelApproval widget changes:
+    - Add mode: Literal["diff", "proposal"] parameter
+    - In proposal mode, show markdown without diff UI; refuse code fences by un-fencing if present
+  </what>
+  <changes>
+    <create file="app/tui/views/new_project_wizard.py">
+      NewProjectWizard with step management
+      Integration with OnboardingController
+      Use slug utilities (slugify/ensure_unique_slug)
+    </create>
+    <modify file="app/tui/widgets/kernel_approval.py">
+      Add mode parameter and proposal rendering
+    </modify>
+  </changes>
+  <dependencies>
+    <on>foundation</on>
+    <on>controller</on>
+    <on>C3</on>
+    <on>B2</on>
+    <on>F1</on>
+  </dependencies>
+  <acceptance_criteria>
+    <ac>Accepting with an existing folder present creates a non-destructive suffixed slug (e.g., "-2").</ac>
+    <ac>Kernel renders without fences or extra UI chrome.</ac>
+  </acceptance_criteria>
+  <notes>
+    Optional (stretch): autosave wizard state to `.onboarding-draft.json` and reload on next open.
+  </notes>
+</ticket>
+
+<integration_tests>
+  <test>Complete wizard flow end-to-end.</test>
+  <test>Verify project created with correct structure and kernel.md.</test>
+  <test>Test cancellation at each step (including autosave if implemented).</test>
+  <test>Verify AppState updated on completion (reason="wizard-accept").</test>
+</integration_tests>
+```
+
+  </bundle>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 5: PANEL UPDATES BUNDLE                              -->
+
+  <!-- ========================================================= -->
+
+  <bundle id="panel-updates" order="8">
+    <title>Update existing panels for AppState</title>
+    <why>
+      All panels need consistent AppState integration.
+      Bundling ensures they work together correctly.
+    </why>
+
+```
+<ticket id="C1" epic="Dynamic UI">
+  <title>FileTree shows real project files</title>
+  <what>
+    Update FileTree to show actual project files.
+
+    Implementation:
+    - Subscribe to AppState in on_mount (use disposer on unmount)
+    - On project change, call refresh_tree(slug)
+    - List only existing files/dirs from projects/{slug}
+    - Known paths: kernel.md, outline.md, project.yaml, elements/, research/, exports/
+    - Remove any placeholder code
+    - Lazy expansion for large trees; actionable empty state if dir missing
+  </what>
+  <changes>
+    <modify file="app/tui/widgets/file_tree.py">
+      Remove placeholder code
+      Add refresh_tree(slug) method
+      Add AppState subscription
+    </modify>
+  </changes>
+  <dependencies>
+    <on>foundation</on>
+  </dependencies>
+</ticket>
+
+<ticket id="C2" epic="Dynamic UI">
+  <title>ContextPanel shows live project state</title>
+  <what>
+    Update ContextPanel to show actual project info.
+
+    Stage → Next Action mapping:
+    - capture: "Run :clarify to refine your idea"
+    - clarify: "Run :kernel to distill core concept"
+    - kernel: "Run :workstreams to generate outline"
+    - outline: "Run :research to gather findings"
+    - research: "Run :synthesis to create final doc"
+    - synthesis: "Run :export to generate deliverable"
+
+    Remove hardcoded cards; use project_meta helpers to read stage.
+  </what>
+  <changes>
+    <modify file="app/tui/widgets/context_panel.py">
+      Remove hardcoded Static cards
+      Add update_for_project() method
+      Add STAGE_NEXT_ACTIONS mapping (using Stage type)
+      Subscribe to AppState; unsubscribe via disposer
+    </modify>
+  </changes>
+  <dependencies>
+    <on>foundation</on>
+  </dependencies>
+</ticket>
+
+<ticket id="D2" epic="Session & LLM Orchestration">
+  <title>Command Palette uses active project</title>
+  <what>
+    Update command palette to use AppState.active_project.
+
+    For commands needing project:
+    - Check get_app_state().active_project
+    - If None, show project selector modal
+    - Use selected/active project for operations
+  </what>
+  <changes>
+    <modify file="app/tui/widgets/command_palette.py">
+      Query AppState for active_project
+      Add project selector modal if needed
+    </modify>
+  </changes>
+  <dependencies>
+    <on>foundation</on>
+  </dependencies>
+</ticket>
+
+<ticket id="E2" epic="Established Workflow">
+  <title>Research DB uses active project path (resilient)</title>
+  <what>
+    Replace any hardcoded research DB path.
+
+    Implementation:
+    - Query get_app_state().active_project
+    - Use projects/{slug}/research/findings.db
+    - Ensure research/ dir exists
+    - Set SQLite PRAGMA journal_mode=WAL
+    - Handle sqlite3.OperationalError with a friendly UI message
+    - Introduce get_db_path(slug) helper and use it
+  </what>
+  <changes>
+    <modify file="app/tui/views/research.py">
+      Replace hardcoded path with AppState-based get_db_path(slug)
+      Apply WAL and error handling
+    </modify>
+  </changes>
+  <dependencies>
+    <on>foundation</on>
+  </dependencies>
+  <acceptance_criteria>
+    <ac>Opening two research panels for the same project does not corrupt the DB.</ac>
+  </acceptance_criteria>
+</ticket>
+
+<integration_tests>
+  <test>Switch projects, verify all panels update.</test>
+  <test>Verify FileTree shows only real files.</test>
+  <test>Test ContextPanel shows correct stage and next action.</test>
+  <test>Verify research DB writes to correct path and survives concurrent open.</test>
+</integration_tests>
+```
+
+  </bundle>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 6: COMMAND UPDATES                                   -->
+
+  <!-- ========================================================= -->
+
+  <ticket id="E1" order="9" epic="Established Workflow" bundle="standalone">
+    <title>Generate Workstreams uses active project</title>
+    <why>
+      Natural next step after kernel approval.
+    </why>
+    <what>
+      Update generate_workstreams in app/tui/views/session.py:
+      - Query get_app_state().active_project
+      - Use slug for all file operations
+      - Check stage via project_meta
+      - Warn if stage != kernel but continue
+      - Keep existing diff preview workflow
+    </what>
+    <changes>
+      <modify file="app/tui/views/session.py">
+        Update generate_workstreams() to use AppState and project_meta
+      </modify>
+    </changes>
+    <dependencies>
+      <on>foundation</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>Command uses active project for paths.</ac>
+      <ac>Warning shown if wrong stage.</ac>
+      <ac>Diff preview still works.</ac>
+    </acceptance_criteria>
+    <integration_tests>
+      <test>Run command, verify files created in correct project.</test>
+    </integration_tests>
+  </ticket>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 7: LOGGING                                           -->
+
+  <!-- ========================================================= -->
+
+  <ticket id="G1" order="10" epic="Quality & Safety" bundle="standalone">
+    <title>Log onboarding milestones (privacy by default)</title>
+    <why>
+      Track quality and drop-offs while protecting user content.
+    </why>
+    <what>
+      Log format:
+      {"event": "name", "timestamp": "ISO8601", "project_slug": str, "data": {...}}
+
+```
+  Events:
+  - onboarding_started
+  - clarify_questions_shown
+  - answers_collected
+  - kernel_generated
+  - proposal_approved / proposal_rejected
+  - project_scaffolded
+  - error (with error_code and last_successful_step)
+
+  File: logs/onboarding_{YYYY-MM-DD}.jsonl
+  Use patterns from app/synthesis/logger.py
+
+  Privacy:
+  - Redact user content fields by default (store hashes/lengths, not full text)
+  - Enable full-content logging only when env LOG_ONBOARDING_VERBOSE=1
+</what>
+<changes>
+  <modify file="app/tui/controllers/onboarding_controller.py">
+    Add logging calls with redaction
+  </modify>
+  <modify file="app/tui/views/new_project_wizard.py">
+    Add logging calls with redaction
+  </modify>
+</changes>
+<dependencies>
+  <on>controller</on>
+  <on>new-screens</on>
+</dependencies>
+<acceptance_criteria>
+  <ac>JSONL file created with all events.</ac>
+  <ac>No PII content written when LOG_ONBOARDING_VERBOSE is unset.</ac>
+  <ac>Each event has required fields.</ac>
+</acceptance_criteria>
+<integration_tests>
+  <test>Complete onboarding, verify all events logged with redaction.</test>
+  <test>Toggle LOG_ONBOARDING_VERBOSE=1 and verify content inclusion.</test>
+</integration_tests>
+```
+
+  </ticket>
+
+  <!-- ========================================================= -->
+
+  <!-- PHASE 8: TELEMETRY                                         -->
+
+  <!-- ========================================================= -->
+
+  <ticket id="Q2" order="11" epic="Quality & Safety" bundle="standalone">
+    <title>UI update latency telemetry</title>
+    <why>
+      Back the “fast panel updates” metric with data and alert on regressions.
+    </why>
+    <what>
+      - Emit trace "appstate_set" with timestamp and slug when set_active_project is called
+      - Each panel emits "panel_updated" with slug and timestamp after completing update_for_project
+      - Compute latency; assert p95 &lt; 75ms on CI runners
+    </what>
+    <changes>
+      <modify file="app/core/state.py">
+        Emit "appstate_set" trace
+      </modify>
+      <modify file="app/tui/widgets/context_panel.py">
+        Emit "panel_updated" trace
+      </modify>
+      <modify file="app/tui/widgets/file_tree.py">
+        Emit "panel_updated" trace
+      </modify>
+    </changes>
+    <dependencies>
+      <on>foundation</on>
+      <on>panel-updates</on>
+    </dependencies>
+    <acceptance_criteria>
+      <ac>CI integration test computes latency p95 &lt; 75ms.</ac>
+    </acceptance_criteria>
+    <integration_tests>
+      <test>Trigger rapid project switches; verify no stale UI and latency thresholds met.</test>
+    </integration_tests>
+  </ticket>
+
+  <!-- ========================================================= -->
+
+  <!-- EXECUTION STRATEGY                                         -->
+
+  <!-- ========================================================= -->
+
+\<execution\_strategy> <phase number="0" name="Interfaces"> <tickets>B0</tickets>
+\<can\_parallelize>No — everything depends on this\</can\_parallelize>
+\<estimated\_time>1 hour\</estimated\_time> </phase>
+
+```
+<phase number="1" name="Standalone Tickets">
+  <tickets>F1, B2, C3</tickets>
+  <can_parallelize>Yes — completely independent</can_parallelize>
+  <estimated_time>1–2 hours</estimated_time>
+</phase>
+
+<phase number="2" name="Foundation">
+  <bundles>foundation (B1, A3)</bundles>
+  <can_parallelize>No — but tickets within the bundle can be done together</can_parallelize>
+  <estimated_time>2–3 hours</estimated_time>
+</phase>
+
+<phase number="3" name="Controller">
+  <bundles>controller (D1)</bundles>
+  <can_parallelize>Yes — can be done parallel to Phase 2 (depends on B0 and F1 only)</can_parallelize>
+  <estimated_time>2 hours</estimated_time>
+</phase>
+
+<phase number="4" name="New Screens">
+  <bundles>new-screens (A1, A2)</bundles>
+  <can_parallelize>No — depends on foundation and controller</can_parallelize>
+  <estimated_time>3–4 hours</estimated_time>
+</phase>
+
+<phase number="5" name="Panel Updates">
+  <bundles>panel-updates (C1, C2, D2, E2)</bundles>
+  <can_parallelize>Yes — each ticket in bundle can be done in parallel</can_parallelize>
+  <estimated_time>2–3 hours</estimated_time>
+</phase>
+
+<phase number="6" name="Commands">
+  <tickets>E1</tickets>
+  <can_parallelize>Yes</can_parallelize>
+  <estimated_time>1 hour</estimated_time>
+</phase>
+
+<phase number="7" name="Logging">
+  <tickets>G1</tickets>
+  <can_parallelize>Yes</can_parallelize>
+  <estimated_time>1 hour</estimated_time>
+</phase>
+
+<phase number="8" name="Telemetry">
+  <tickets>Q2</tickets>
+  <can_parallelize>Yes — after panel updates</can_parallelize>
+  <estimated_time>1 hour</estimated_time>
+</phase>
+```
+
+\</execution\_strategy>
+
+  <!-- ========================================================= -->
+
+  <!-- INTEGRATION TEST SUITE                                     -->
+
+  <!-- ========================================================= -->
+
+\<integration\_test\_suite> <test id="IT1" phase="after-foundation"> <name>AppState and ProjectMeta Integration</name> <steps>
+1\. Create project via project\_meta
+2\. Set active\_project in AppState (reason="manual")
+3\. Verify observers notified with (new\_slug, old\_slug, reason)
+4\. Update stage via project\_meta
+5\. Verify file written atomically </steps> </test>
+
+```
+<test id="IT2" phase="after-new-screens">
+  <name>End-to-End Onboarding Flow</name>
+  <steps>
+    1. Start app, see WelcomeScreen
+    2. Click "Create New Project"
+    3. Complete wizard steps
+    4. Verify project created with kernel.md
+    5. Verify AppState.active_project set (reason="wizard-accept")
+    6. Verify returned to MainScreen
+  </steps>
+</test>
+
+<test id="IT3" phase="after-panel-updates">
+  <name>Panel Synchronization</name>
+  <steps>
+    1. Change active_project repeatedly (A→B→A rapidly)
+    2. Verify FileTree updates with no stale state
+    3. Verify ContextPanel updates and shows correct stage/next action
+    4. Verify commands use new project
+  </steps>
+</test>
+
+<test id="IT4" phase="after-logging">
+  <name>Logging Redaction</name>
+  <steps>
+    1. Run onboarding with LOG_ONBOARDING_VERBOSE unset
+    2. Validate JSONL contains only redacted user content fields
+    3. Re-run with LOG_ONBOARDING_VERBOSE=1; validate content included
+  </steps>
+</test>
+
+<test id="IT5" phase="after-telemetry">
+  <name>UI Update Latency</name>
+  <steps>
+    1. Switch projects 50 times
+    2. Parse traces and assert p95 latency &lt; 75ms
+  </steps>
+</test>
+```
+
+\</integration\_test\_suite>
+
+  <!-- ========================================================= -->
+
+  <!-- ROLLBACK STRATEGY                                          -->
+
+  <!-- ========================================================= -->
+
+\<rollback\_strategy> <step>Each bundle is atomic — can revert entire bundle.</step> <step>Interfaces (B0) can stay even if implementation reverted.</step> <step>Feature flag: set STATEFUL\_UI=0 to disable stateful features at runtime.</step> <step>UI components must no-op when STATEFUL\_UI=0 (check get\_app\_state().active\_project is None).</step> <step>Keep git tags for each phase completion.</step>
+\</rollback\_strategy>
+
+  <!-- ========================================================= -->
+
+  <!-- SUCCESS METRICS                                            -->
+
+  <!-- ========================================================= -->
+
+\<success\_metrics> <metric>All integration tests pass.</metric> <metric>New user can complete onboarding in under 5 minutes.</metric> <metric>No regression in existing workflows.</metric> <metric>Logging captures all onboarding events (with redaction by default).</metric> <metric>Panels’ p95 update latency < 75ms after project change (measured by telemetry).</metric>
+\</success\_metrics>
+
+</roadmap>

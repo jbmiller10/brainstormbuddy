@@ -88,7 +88,7 @@ class TestNewProjectWizard:
             wizard = NewProjectWizard()
 
         # Test backward transitions
-        with patch.object(wizard, 'update_step_content'):
+        with patch.object(wizard, "update_step_content"):
             wizard.current_step = WizardStep.PROJECT_NAME
             wizard.action_prev_step()  # Should stay at PROJECT_NAME
             assert wizard.current_step == WizardStep.PROJECT_NAME
@@ -117,7 +117,7 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'dismiss') as mock_dismiss:
+        with patch.object(wizard, "dismiss") as mock_dismiss:
             wizard.action_cancel()
             mock_dismiss.assert_called_once_with(False)
 
@@ -173,7 +173,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.PROJECT_NAME
             wizard.project_name = ""  # Empty name
 
@@ -196,7 +199,7 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'update_step_content'):
+        with patch.object(wizard, "update_step_content"):
             wizard.current_step = WizardStep.PROJECT_NAME
             wizard.project_name = "Test Project"
 
@@ -216,7 +219,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.BRAINDUMP
             wizard.braindump = ""  # Empty braindump
 
@@ -236,7 +242,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.BRAINDUMP
             wizard.braindump = "My great idea"
 
@@ -262,7 +271,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.BRAINDUMP
             wizard.braindump = "My idea"
 
@@ -285,7 +297,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.ANSWERS
             wizard.answers = ""  # Empty answers
 
@@ -305,7 +320,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.ANSWERS
             wizard.braindump = "My idea"
             wizard.answers = "Detailed answers"
@@ -334,7 +352,10 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, patch.object(wizard, 'update_step_content'):
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+        ):
             wizard.current_step = WizardStep.ANSWERS
             wizard.braindump = "My idea"
             wizard.answers = "Answers"
@@ -358,10 +379,12 @@ class TestNewProjectWizard:
 
         mock_app = MagicMock()
         mock_app.push_screen_wait = AsyncMock(return_value=True)  # User approves
-        
-        with patch.object(wizard, 'create_project') as mock_create, \
-             patch.object(wizard, 'update_step_content'), \
-             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app):
+
+        with (
+            patch.object(wizard, "create_project") as mock_create,
+            patch.object(wizard, "update_step_content"),
+            patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
+        ):
             wizard.current_step = WizardStep.KERNEL_PROPOSAL
             wizard.kernel_content = "# Kernel content"
             wizard.project_slug = "test-project"
@@ -384,10 +407,12 @@ class TestNewProjectWizard:
 
         mock_app = MagicMock()
         mock_app.push_screen_wait = AsyncMock(return_value=False)  # User rejects
-        
-        with patch.object(wizard, 'notify') as mock_notify, \
-             patch.object(wizard, 'update_step_content'), \
-             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app):
+
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch.object(wizard, "update_step_content"),
+            patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
+        ):
             wizard.current_step = WizardStep.KERNEL_PROPOSAL
             wizard.kernel_content = "# Kernel content"
             wizard.project_slug = "test-project"
@@ -418,9 +443,9 @@ class TestNewProjectWizard:
 
         mock_app = MagicMock()
         mock_app.switch_screen = Mock()
-        
+
         with (
-            patch.object(wizard, 'notify') as mock_notify,
+            patch.object(wizard, "notify") as mock_notify,
             patch.object(NewProjectWizard, "app", new_callable=PropertyMock, return_value=mock_app),
             patch("app.tui.views.new_project_wizard.scaffold_project") as mock_scaffold,
             patch("app.tui.views.new_project_wizard.atomic_write_text") as mock_write,
@@ -458,11 +483,13 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, \
-             patch(
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch(
                 "app.tui.views.new_project_wizard.scaffold_project",
                 side_effect=Exception("Filesystem error"),
-             ):
+            ),
+        ):
             wizard.project_slug = "test-project"
             await wizard.create_project()
 
@@ -478,10 +505,11 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'action_next_step') as mock_next, \
-             patch.object(wizard, 'action_prev_step') as mock_prev, \
-             patch.object(wizard, 'action_cancel') as mock_cancel:
-
+        with (
+            patch.object(wizard, "action_next_step") as mock_next,
+            patch.object(wizard, "action_prev_step") as mock_prev,
+            patch.object(wizard, "action_cancel") as mock_cancel,
+        ):
             # Test next button
             event = Mock()
             event.button.id = "next-button"
@@ -687,7 +715,9 @@ class TestNewProjectWizard:
             wizard = NewProjectWizard()
 
         wizard.braindump = "Build a task management system. It should help teams collaborate."
-        wizard.answers = "Line 1: Focus on developers\nLine 2: Real-time sync\nLine 3: Mobile support"
+        wizard.answers = (
+            "Line 1: Focus on developers\nLine 2: Real-time sync\nLine 3: Mobile support"
+        )
 
         kernel = wizard._generate_kernel_template()
 
@@ -706,9 +736,7 @@ class TestNewProjectWizard:
         assert "## Primary Value Proposition" in kernel
 
     @pytest.mark.asyncio
-    async def test_lock_timeout_handling(
-        self, mock_onboarding_controller: Mock
-    ) -> None:
+    async def test_lock_timeout_handling(self, mock_onboarding_controller: Mock) -> None:
         """Test handling of lock timeout during slug generation."""
         with patch(
             "app.tui.views.new_project_wizard.OnboardingController",
@@ -716,11 +744,13 @@ class TestNewProjectWizard:
         ):
             wizard = NewProjectWizard()
 
-        with patch.object(wizard, 'notify') as mock_notify, \
-             patch(
+        with (
+            patch.object(wizard, "notify") as mock_notify,
+            patch(
                 "app.tui.views.new_project_wizard.ensure_unique_slug",
                 side_effect=TimeoutError("Lock timeout"),
-             ):
+            ),
+        ):
             wizard.project_name = "Test Project"
             wizard.current_step = WizardStep.PROJECT_NAME
             await wizard.action_next_step()

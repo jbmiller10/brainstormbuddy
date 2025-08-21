@@ -80,10 +80,14 @@ class FileLock:
     def __enter__(self) -> "FileLock":
         """Context manager entry."""
         if not self.acquire():
-            raise TimeoutError(f"Could not acquire lock '{self.lock_name}' within {self.timeout} seconds")
+            raise TimeoutError(
+                f"Could not acquire lock '{self.lock_name}' within {self.timeout} seconds"
+            )
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object
+    ) -> None:
         """Context manager exit."""
         self.release()
 
