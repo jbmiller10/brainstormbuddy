@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+from app.core.state import get_app_state
 from app.files.diff import compute_patch, generate_diff_preview
 from app.llm.claude_client import FakeClaudeClient, MessageDone, TextDelta
 from app.tui.views.session import SessionController
@@ -383,7 +384,11 @@ A revolutionary task management system.
 
         mock_path.__truediv__ = path_div
 
-        await controller.generate_workstreams("test-project")
+        # Set active project in AppState
+        app_state = get_app_state()
+        app_state.set_active_project("test-project")
+
+        await controller.generate_workstreams()
 
     # Verify viewer was updated
     viewer.clear.assert_called_once()
@@ -425,7 +430,11 @@ async def test_session_controller_generate_workstreams_without_kernel(tmp_path: 
 
         mock_path.side_effect = path_side_effect
 
-        await controller.generate_workstreams("new-project")
+        # Set active project in AppState
+        app_state = get_app_state()
+        app_state.set_active_project("new-project")
+
+        await controller.generate_workstreams()
 
     # Verify viewer was updated
     viewer.clear.assert_called_once()
@@ -451,7 +460,11 @@ async def test_session_controller_generate_workstreams_rejection() -> None:
     # Mock the modal to return rejection (False)
     viewer.app.push_screen_wait = AsyncMock(return_value=False)
 
-    await controller.generate_workstreams("test-project")
+    # Set active project in AppState
+    app_state = get_app_state()
+    app_state.set_active_project("test-project")
+
+    await controller.generate_workstreams()
 
     # Verify rejection message was written
     viewer.clear.assert_called_once()
@@ -474,7 +487,11 @@ async def test_session_controller_generate_workstreams_error(tmp_path: Path) -> 
     with patch("app.tui.views.session.create_workstream_batch") as mock_create:
         mock_create.side_effect = PermissionError("Cannot create files")
 
-        await controller.generate_workstreams("test-project")
+        # Set active project in AppState
+        app_state = get_app_state()
+        app_state.set_active_project("test-project")
+
+        await controller.generate_workstreams()
 
     # Verify error message was written
     viewer.clear.assert_called_once()

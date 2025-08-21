@@ -166,7 +166,7 @@ class CommandPalette(Container):
                 return
 
             # Run the async task using Textual's worker system
-            self.app.run_worker(controller.generate_workstreams(project_slug), exclusive=True)
+            self.app.run_worker(controller.generate_workstreams(), exclusive=True)
 
         # Handle domain settings command
         elif command == "domain settings":
