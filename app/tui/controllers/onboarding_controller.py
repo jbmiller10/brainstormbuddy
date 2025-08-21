@@ -34,7 +34,13 @@ class OnboardingController(OnboardingControllerProtocol):
 
         Args:
             project_name: Name of the project being created
+
+        Raises:
+            ValueError: If project name is empty or only whitespace
         """
+        if not project_name or not project_name.strip():
+            raise ValueError("Project name cannot be empty")
+
         self.transcript.clear()
         welcome_message = f"Starting new project: {project_name}"
         self.transcript.append(f"System: {welcome_message}")
@@ -167,6 +173,9 @@ class OnboardingController(OnboardingControllerProtocol):
         This is a synchronous wrapper for backward compatibility.
         New code should use generate_clarifying_questions() instead.
 
+        Note: This method is not thread-safe when called from
+        multiple threads due to event loop management.
+
         Args:
             braindump: Initial user braindump text
             count: Number of questions to generate (default 5)
@@ -192,7 +201,7 @@ class OnboardingController(OnboardingControllerProtocol):
                 questions = asyncio.run(self.generate_clarifying_questions(count))
         except Exception as e:
             # Fallback to default questions if async fails
-            print(f"LLM request failed: {e}")
+            print(f"LLM request failed ({type(e).__name__}): {e}")
             questions = [
                 f"{i + 1}. What specific problem are you trying to solve?" for i in range(count)
             ]

@@ -367,6 +367,24 @@ async def test_start_session() -> None:
 
 
 @pytest.mark.asyncio
+async def test_start_session_empty_name() -> None:
+    """Test that start_session raises ValueError for empty names."""
+    mock_llm_service = AsyncMock(spec=LLMService)
+    controller = OnboardingController(llm_service=mock_llm_service)
+
+    # Test empty string
+    with pytest.raises(ValueError, match="Project name cannot be empty"):
+        await controller.start_session("")
+
+    # Test whitespace only
+    with pytest.raises(ValueError, match="Project name cannot be empty"):
+        await controller.start_session("   ")
+
+    # Transcript should remain empty after errors
+    assert len(controller.transcript) == 0
+
+
+@pytest.mark.asyncio
 async def test_summarize_braindump() -> None:
     """Test braindump summarization."""
     mock_llm_service = AsyncMock(spec=LLMService)
