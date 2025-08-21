@@ -1,5 +1,7 @@
 """Onboarding controller for orchestrating new user flow."""
 
+import asyncio
+import concurrent.futures
 import re
 
 from app.core.interfaces import OnboardingControllerProtocol
@@ -10,6 +12,10 @@ from app.llm.sessions import get_policy
 class OnboardingController(OnboardingControllerProtocol):
     """Controller for onboarding orchestration logic."""
 
+    # Configuration constants
+    MAX_KERNEL_ATTEMPTS = 3
+    DEFAULT_QUESTION_COUNT = 5
+
     def __init__(self, client: ClaudeClient | None = None) -> None:
         """
         Initialize onboarding controller.
@@ -18,6 +24,68 @@ class OnboardingController(OnboardingControllerProtocol):
             client: Claude client for LLM operations (defaults to FakeClaudeClient)
         """
         self.client = client or FakeClaudeClient()
+
+    def _run_async_stream(
+        self,
+        prompt: str,
+        system_prompt: str,
+        allowed_tools: list[str],
+        denied_tools: list[str],
+        permission_mode: str,
+    ) -> str:
+        """
+        Helper to run async streaming in sync context.
+
+        Args:
+            prompt: User prompt to send to LLM
+            system_prompt: System prompt for context
+            allowed_tools: List of allowed tool names
+            denied_tools: List of denied tool names
+            permission_mode: Permission mode for tool usage
+
+        Returns:
+            Complete response text from LLM
+
+        Raises:
+            asyncio.TimeoutError: If the LLM request times out
+            ConnectionError: If there's a network connection issue
+            RuntimeError: If there's an async context issue
+        """
+        full_response = ""
+
+        async def _stream() -> None:
+            nonlocal full_response
+            async for event in self.client.stream(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                allowed_tools=allowed_tools,
+                denied_tools=denied_tools,
+                permission_mode=permission_mode,
+            ):
+                if isinstance(event, TextDelta):
+                    full_response += event.text
+                elif isinstance(event, MessageDone):
+                    break
+
+        # Run the async function
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, use thread executor
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, _stream())
+                    future.result()
+            else:
+                # If no loop is running, use asyncio.run
+                asyncio.run(_stream())
+        except TimeoutError as e:
+            raise TimeoutError("LLM request timed out") from e
+        except (ConnectionError, OSError) as e:
+            raise ConnectionError(f"Network connection failed: {e}") from e
+        except RuntimeError as e:
+            raise RuntimeError(f"Async context error: {e}") from e
+
+        return full_response
 
     def generate_clarify_questions(self, braindump: str, *, count: int = 5) -> list[str]:
         """
@@ -38,44 +106,22 @@ class OnboardingController(OnboardingControllerProtocol):
             system_prompt = f.read()
 
         # Adjust prompt to request specific number of questions
-        if count != 5:
+        if count != self.DEFAULT_QUESTION_COUNT:
             system_prompt = system_prompt.replace("3-7", str(count))
             system_prompt = system_prompt.replace("(3-7 total)", f"({count} total)")
 
         # Collect response from LLM
-        full_response = ""
         try:
-            # Use async generator in sync context via run_until_complete
-            import asyncio
-
-            async def _stream() -> None:
-                nonlocal full_response
-                async for event in self.client.stream(
-                    prompt=braindump,
-                    system_prompt=system_prompt,
-                    allowed_tools=policy.allowed_tools,
-                    denied_tools=policy.denied_tools,
-                    permission_mode=policy.permission_mode,
-                ):
-                    if isinstance(event, TextDelta):
-                        full_response += event.text
-                    elif isinstance(event, MessageDone):
-                        break
-
-            # Run the async function
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an async context, create a task
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, _stream())
-                    future.result()
-            else:
-                # If no loop is running, use asyncio.run
-                asyncio.run(_stream())
-
-        except Exception:
+            full_response = self._run_async_stream(
+                prompt=braindump,
+                system_prompt=system_prompt,
+                allowed_tools=policy.allowed_tools,
+                denied_tools=policy.denied_tools,
+                permission_mode=policy.permission_mode,
+            )
+        except (TimeoutError, ConnectionError, RuntimeError) as e:
+            # Log specific error for debugging (in production, use proper logging)
+            print(f"LLM request failed with {type(e).__name__}: {e}")
             # Fallback to default questions if LLM fails
             return [
                 f"{i + 1}. What specific problem are you trying to solve?" for i in range(count)
@@ -86,7 +132,7 @@ class OnboardingController(OnboardingControllerProtocol):
 
         # Ensure we have exactly `count` questions
         if len(questions) < count:
-            # Pad with generic questions
+            # Pad with generic questions, preserving original numbering
             for i in range(len(questions), count):
                 questions.append(f"{i + 1}. Could you provide more details about this aspect?")
         elif len(questions) > count:
@@ -125,43 +171,22 @@ Clarified details:
 
 Please create a kernel document that captures the essence of this concept."""
 
-        # Try up to 3 times (initial + 2 retries)
-        for attempt in range(3):
-            full_response = ""
+        # Try up to MAX_KERNEL_ATTEMPTS times
+        for attempt in range(self.MAX_KERNEL_ATTEMPTS):
             try:
-                # Use async generator in sync context
-                import asyncio
-
-                async def _stream(prompt_text: str = combined_prompt) -> None:
-                    nonlocal full_response
-                    async for event in self.client.stream(
-                        prompt=prompt_text,
-                        system_prompt=system_prompt,
-                        allowed_tools=policy.allowed_tools,
-                        denied_tools=policy.denied_tools,
-                        permission_mode=policy.permission_mode,
-                    ):
-                        if isinstance(event, TextDelta):
-                            full_response += event.text
-                        elif isinstance(event, MessageDone):
-                            break
-
-                # Run the async function
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If we're already in an async context, create a task
-                    import concurrent.futures
-
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _stream())
-                        future.result()
-                else:
-                    # If no loop is running, use asyncio.run
-                    asyncio.run(_stream())
-
-            except Exception as e:
-                if attempt == 2:
-                    raise ValueError(f"Failed to generate kernel after 3 attempts: {e}") from e
+                full_response = self._run_async_stream(
+                    prompt=combined_prompt,
+                    system_prompt=system_prompt,
+                    allowed_tools=policy.allowed_tools,
+                    denied_tools=policy.denied_tools,
+                    permission_mode=policy.permission_mode,
+                )
+            except (TimeoutError, ConnectionError, RuntimeError) as e:
+                if attempt == self.MAX_KERNEL_ATTEMPTS - 1:
+                    raise ValueError(
+                        f"Failed to generate kernel after {self.MAX_KERNEL_ATTEMPTS} attempts: {e}"
+                    ) from e
+                print(f"Attempt {attempt + 1} failed with {type(e).__name__}: {e}, retrying...")
                 continue
 
             # Strip any code fences if present
@@ -184,7 +209,9 @@ IMPORTANT: The kernel must include exactly these 5 sections in order:
 Start with "# Kernel" and use ## for section headers."""
 
         # If we get here, all attempts failed
-        raise ValueError("Failed to generate valid kernel structure after 3 attempts")
+        raise ValueError(
+            f"Failed to generate valid kernel structure after {self.MAX_KERNEL_ATTEMPTS} attempts"
+        )
 
     def validate_kernel_structure(self, kernel_content: str) -> bool:
         """
@@ -234,28 +261,30 @@ Start with "# Kernel" and use ## for section headers."""
 
     def _extract_numbered_questions(self, text: str, count: int) -> list[str]:
         """
-        Extract numbered questions from LLM response.
+        Extract numbered questions from LLM response, preserving original numbering.
 
         Args:
             text: Full LLM response text
             count: Expected number of questions
 
         Returns:
-            List of question strings (without numbers)
+            List of question strings with original numbering preserved
         """
         questions: list[str] = []
 
-        # Look for numbered patterns like "1. " or "1) "
-        pattern = r"^\s*\d+[\.\)]\s+(.+)$"
+        # Look for numbered patterns like "1. " or "1) " and capture the number
+        pattern = r"^\s*(\d+)[\.\)]\s+(.+)$"
 
         for line in text.split("\n"):
             match = re.match(pattern, line)
             if match:
-                question = match.group(1).strip()
+                original_number = match.group(1)
+                question = match.group(2).strip()
                 # Remove trailing question mark if present and re-add for consistency
                 if question.endswith("?"):
                     question = question[:-1]
-                questions.append(f"{len(questions) + 1}. {question}?")
+                # Preserve original numbering
+                questions.append(f"{original_number}. {question}?")
 
                 if len(questions) >= count:
                     break

@@ -249,3 +249,53 @@ These will help clarify your thinking."""
 
     questions2 = controller._extract_numbered_questions(text2, 2)
     assert len(questions2) == 2
+
+
+@pytest.mark.asyncio
+async def test_extract_numbered_questions_preserves_original_numbering() -> None:
+    """Test that original question numbering is preserved."""
+    controller = OnboardingController()
+
+    # Test with non-sequential numbering
+    text = """Questions for clarification:
+3. What is your timeline?
+5. What is the budget?
+7. Who are the stakeholders?"""
+
+    questions = controller._extract_numbered_questions(text, 3)
+
+    assert len(questions) == 3
+    # Original numbers should be preserved
+    assert questions[0] == "3. What is your timeline?"
+    assert questions[1] == "5. What is the budget?"
+    assert questions[2] == "7. Who are the stakeholders?"
+
+
+@pytest.mark.asyncio
+async def test_class_constants_defined() -> None:
+    """Test that class constants are properly defined."""
+    assert hasattr(OnboardingController, "MAX_KERNEL_ATTEMPTS")
+    assert OnboardingController.MAX_KERNEL_ATTEMPTS == 3
+    assert hasattr(OnboardingController, "DEFAULT_QUESTION_COUNT")
+    assert OnboardingController.DEFAULT_QUESTION_COUNT == 5
+
+
+@pytest.mark.asyncio
+async def test_specific_exception_handling() -> None:
+    """Test that specific exceptions are handled appropriately."""
+    from unittest.mock import MagicMock
+
+    # Create a mock client that raises specific exceptions
+    mock_client = MagicMock()
+
+    async def mock_stream_timeout(*_args: Any, **_kwargs: Any) -> AsyncGenerator[Event, None]:
+        raise TimeoutError("Request timed out")
+        yield  # pragma: no cover
+
+    mock_client.stream = mock_stream_timeout
+    controller = OnboardingController(client=mock_client)
+
+    # Should gracefully handle timeout and return default questions
+    questions = controller.generate_clarify_questions("Test idea")
+    assert len(questions) == 5
+    assert all("What specific problem" in q for q in questions)
