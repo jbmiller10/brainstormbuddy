@@ -1,7 +1,7 @@
 """Integration tests for research import functionality."""
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,7 +13,7 @@ from app.tui.widgets.command_palette import CommandPalette
 
 
 @pytest.fixture
-def reset_app_state():
+def reset_app_state() -> Generator[None, None, None]:
     """Reset AppState singleton for testing."""
     # Clear the singleton instance
     import app.core.state
@@ -25,8 +25,11 @@ def reset_app_state():
 
 
 @pytest.mark.asyncio
-async def test_research_import_command_execution(tmp_path: Path, reset_app_state) -> None:  # noqa: ARG001
+async def test_research_import_command_execution(tmp_path: Path, reset_app_state: None) -> None:  # noqa: ARG001
     """Test that research import command can be executed."""
+    # Fixture ensures app state is reset
+    del reset_app_state
+
     from app.core.state import get_app_state
 
     palette = CommandPalette()

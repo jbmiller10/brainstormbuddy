@@ -1,7 +1,9 @@
 """Integration tests for panel updates with AppState."""
 
 import asyncio
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -14,7 +16,7 @@ from app.tui.widgets.file_tree import FileTree
 
 
 @pytest.fixture
-def reset_app_state():
+def reset_app_state() -> Generator[None, None, None]:
     """Reset AppState singleton for testing."""
     # Clear the singleton instance
     import app.core.state
@@ -26,7 +28,7 @@ def reset_app_state():
 
 
 @pytest.fixture
-def sample_project(tmp_path: Path) -> dict[str, str]:
+def sample_project(tmp_path: Path) -> dict[str, Any]:
     """Create a sample project for testing."""
     # Create project directory
     project_dir = tmp_path / "projects" / "test-project"
@@ -72,13 +74,13 @@ def sample_project(tmp_path: Path) -> dict[str, str]:
 class TestFileTreeUpdates:
     """Test FileTree widget updates with AppState."""
 
-    def test_file_tree_subscribes_to_appstate(self, reset_app_state, tmp_path):  # noqa: ARG002
+    def test_file_tree_subscribes_to_appstate(self, reset_app_state: None) -> None:  # noqa: ARG002
         """Test that FileTree subscribes to AppState on mount."""
         # Create FileTree
         tree = FileTree()
 
         # Mock the refresh_tree method
-        tree.refresh_tree = Mock()
+        tree.refresh_tree = Mock()  # type: ignore[method-assign]
 
         # Simulate mount
         tree.on_mount()
@@ -97,8 +99,13 @@ class TestFileTreeUpdates:
         tree.on_unmount()
         assert tree._disposer is None
 
-    def test_file_tree_shows_real_files(self, reset_app_state, sample_project, tmp_path):  # noqa: ARG002
+    def test_file_tree_shows_real_files(
+        self, reset_app_state: None, sample_project: dict[str, Any], tmp_path: Path
+    ) -> None:  # noqa: ARG002
         """Test that FileTree shows actual project files."""
+        # Fixture ensures app state is reset
+        del reset_app_state
+
         import os
 
         original_cwd = os.getcwd()
@@ -108,17 +115,18 @@ class TestFileTreeUpdates:
             tree = FileTree()
 
             # Refresh with test project
-            tree.refresh_tree("test-project")
+            project_slug = sample_project["slug"]
+            tree.refresh_tree(project_slug)
 
             # Check that project title is set
-            assert "Test Project" in tree.root.label
+            assert sample_project["title"] in tree.root.label
 
             # Check that files are listed (would need to traverse tree.root.children)
-            assert tree._current_project == "test-project"
+            assert tree._current_project == project_slug
         finally:
             os.chdir(original_cwd)
 
-    def test_file_tree_empty_state(self, reset_app_state):  # noqa: ARG002
+    def test_file_tree_empty_state(self, reset_app_state: None) -> None:  # noqa: ARG002
         """Test FileTree shows empty state when no project."""
         tree = FileTree()
         tree._show_empty_state()
@@ -131,12 +139,12 @@ class TestFileTreeUpdates:
 class TestContextPanelUpdates:
     """Test ContextPanel widget updates with AppState."""
 
-    def test_context_panel_subscribes_to_appstate(self, reset_app_state):  # noqa: ARG002
+    def test_context_panel_subscribes_to_appstate(self, reset_app_state: None) -> None:  # noqa: ARG002
         """Test that ContextPanel subscribes to AppState on mount."""
         panel = ContextPanel()
 
         # Mock update_for_project
-        panel.update_for_project = Mock()
+        panel.update_for_project = Mock()  # type: ignore[method-assign]
 
         # Mock the mount method to avoid Textual mounting issues
         with patch.object(panel, "mount"):
@@ -157,12 +165,16 @@ class TestContextPanelUpdates:
         panel.on_unmount()
         assert panel._disposer is None
 
-    def test_context_panel_stage_mapping(self):
+    def test_context_panel_stage_mapping(self) -> None:
         """Test that ContextPanel has correct stage to action mapping."""
         panel = ContextPanel()
 
         # Check all stages are mapped
-        expected_stages = ["capture", "clarify", "kernel", "outline", "research", "synthesis"]
+        from typing import Literal
+
+        expected_stages: list[
+            Literal["capture", "clarify", "kernel", "outline", "research", "synthesis"]
+        ] = ["capture", "clarify", "kernel", "outline", "research", "synthesis"]
         for stage in expected_stages:
             assert stage in panel.STAGE_NEXT_ACTIONS
             assert isinstance(panel.STAGE_NEXT_ACTIONS[stage], str)
@@ -175,8 +187,13 @@ class TestContextPanelUpdates:
         assert "synthesis" in panel.STAGE_NEXT_ACTIONS["research"]
         assert "export" in panel.STAGE_NEXT_ACTIONS["synthesis"]
 
-    def test_context_panel_update_for_project(self, reset_app_state, sample_project, tmp_path):  # noqa: ARG002
+    def test_context_panel_update_for_project(
+        self, reset_app_state: None, sample_project: dict[str, Any], tmp_path: Path
+    ) -> None:  # noqa: ARG002
         """Test ContextPanel updates correctly for a project."""
+        # Fixture ensures app state is reset
+        del reset_app_state
+
         import os
 
         original_cwd = os.getcwd()
@@ -191,7 +208,8 @@ class TestContextPanelUpdates:
             panel._action_card = Mock(spec=Static)
 
             # Update for test project
-            panel.update_for_project("test-project")
+            project_slug = sample_project["slug"]
+            panel.update_for_project(project_slug)
 
             # Verify cards were updated
             panel._project_card.update.assert_called()
@@ -209,7 +227,7 @@ class TestPanelSynchronization:
     """Test synchronization between panels on project switch."""
 
     @pytest.mark.asyncio
-    async def test_rapid_project_switching(self, reset_app_state, tmp_path):  # noqa: ARG002
+    async def test_rapid_project_switching(self, reset_app_state: None, tmp_path: Path) -> None:  # noqa: ARG002
         """Test panels handle rapid project switching without stale state."""
         import os
 
@@ -239,8 +257,8 @@ class TestPanelSynchronization:
             panel = ContextPanel()
 
             # Mock update methods
-            tree.refresh_tree = Mock()
-            panel.update_for_project = Mock()
+            tree.refresh_tree = Mock()  # type: ignore[method-assign]
+            panel.update_for_project = Mock()  # type: ignore[method-assign]
 
             # Simulate mount for tree
             tree.on_mount()
@@ -274,7 +292,7 @@ class TestPanelSynchronization:
 class TestResearchDBPath:
     """Test research database path resolution."""
 
-    def test_get_db_path_creates_directory(self, tmp_path):
+    def test_get_db_path_creates_directory(self, tmp_path: Path) -> None:
         """Test that get_db_path creates research directory if missing."""
         import os
 
@@ -297,8 +315,13 @@ class TestResearchDBPath:
         finally:
             os.chdir(original_cwd)
 
-    def test_research_modal_uses_active_project(self, reset_app_state, tmp_path):  # noqa: ARG002
+    def test_research_modal_uses_active_project(
+        self, reset_app_state: None, tmp_path: Path
+    ) -> None:  # noqa: ARG002
         """Test ResearchImportModal uses active project for DB path."""
+        # Fixture ensures app state is reset
+        del reset_app_state
+
         import os
 
         from app.tui.views.research import ResearchImportModal
@@ -326,7 +349,7 @@ class TestCommandPaletteIntegration:
     """Test command palette uses active project."""
 
     @pytest.mark.asyncio
-    async def test_commands_require_active_project(self, reset_app_state):  # noqa: ARG002
+    async def test_commands_require_active_project(self, reset_app_state: None) -> None:  # noqa: ARG002
         """Test that commands check for active project."""
         from app.core.state import get_app_state
 
