@@ -2,11 +2,13 @@
 
 import asyncio
 import concurrent.futures
+import contextlib
 import re
 
 from app.core.interfaces import OnboardingControllerProtocol
 from app.llm.claude_client import ClaudeClient, FakeClaudeClient, MessageDone, TextDelta
 from app.llm.sessions import get_policy
+from app.tui.controllers.onboarding_logger import OnboardingLogger
 
 
 class OnboardingController(OnboardingControllerProtocol):
@@ -24,6 +26,7 @@ class OnboardingController(OnboardingControllerProtocol):
             client: Claude client for LLM operations (defaults to FakeClaudeClient)
         """
         self.client = client or FakeClaudeClient()
+        self.logger = OnboardingLogger()
 
     def _run_async_stream(
         self,
@@ -87,13 +90,16 @@ class OnboardingController(OnboardingControllerProtocol):
 
         return full_response
 
-    def generate_clarify_questions(self, braindump: str, *, count: int = 5) -> list[str]:
+    def generate_clarify_questions(
+        self, braindump: str, *, count: int = 5, project_slug: str = ""
+    ) -> list[str]:
         """
         Generate exactly `count` clarifying questions (default 5).
 
         Args:
             braindump: Initial user braindump text
             count: Number of questions to generate (default 5)
+            project_slug: Project slug for logging context
 
         Returns:
             List of exactly `count` clarifying questions
@@ -139,15 +145,23 @@ class OnboardingController(OnboardingControllerProtocol):
             # Trim to requested count
             questions = questions[:count]
 
+        # Log the event (fire-and-forget, non-blocking)
+        if project_slug:
+            with contextlib.suppress(Exception):
+                self.logger.log_clarify_questions_shown(project_slug, questions, braindump)
+
         return questions
 
-    def orchestrate_kernel_generation(self, braindump: str, answers_text: str) -> str:
+    def orchestrate_kernel_generation(
+        self, braindump: str, answers_text: str, *, project_slug: str = ""
+    ) -> str:
         """
         Generate kernel.md content from braindump and a single consolidated answer string.
 
         Args:
             braindump: Initial user braindump text
             answers_text: Consolidated answers to clarifying questions
+            project_slug: Project slug for logging context
 
         Returns:
             Complete kernel.md markdown content
@@ -194,6 +208,10 @@ Please create a kernel document that captures the essence of this concept."""
 
             # Validate structure
             if self.validate_kernel_structure(full_response):
+                # Log successful generation (fire-and-forget, non-blocking)
+                if project_slug:
+                    with contextlib.suppress(Exception):
+                        self.logger.log_kernel_generated(project_slug, full_response)
                 return full_response
 
             # If invalid, adjust prompt for retry

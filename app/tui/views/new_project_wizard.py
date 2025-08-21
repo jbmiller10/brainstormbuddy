@@ -16,6 +16,7 @@ from app.files.project_meta import ProjectMeta
 from app.files.scaffold import scaffold_project
 from app.files.slug import ensure_unique_slug, slugify
 from app.tui.controllers.onboarding_controller import OnboardingController
+from app.tui.controllers.onboarding_logger import OnboardingLogger
 from app.tui.styles import get_common_css
 from app.tui.widgets.kernel_approval import KernelApprovalModal
 
@@ -59,6 +60,7 @@ class NewProjectWizard(Screen[bool]):
         super().__init__()
         self.current_step = WizardStep.PROJECT_NAME
         self.controller = OnboardingController()
+        self.logger = OnboardingLogger()
 
         # Wizard state
         self.project_name: str = ""
@@ -293,11 +295,19 @@ class NewProjectWizard(Screen[bool]):
             # Generate unique slug with error handling
             try:
                 self.project_slug = ensure_unique_slug(slugify(self.project_name))
+                # Log onboarding started
+                self.logger.log_onboarding_started(self.project_slug, self.project_name)
             except TimeoutError:
                 self.notify("Project creation is locked, please try again", severity="error")
+                self.logger.log_error(
+                    self.project_slug or "unknown", "project_creation_locked", "project_name"
+                )
                 return
             except Exception as e:
                 self.notify(f"Error creating project identifier: {str(e)[:50]}", severity="error")
+                self.logger.log_error(
+                    self.project_slug or "unknown", "slug_generation_failed", "project_name", str(e)
+                )
                 return
             self.current_step = WizardStep.BRAINDUMP
 
@@ -313,7 +323,9 @@ class NewProjectWizard(Screen[bool]):
             for attempt in range(self.MAX_RETRY_ATTEMPTS):
                 try:
                     self.clarify_questions = self.controller.generate_clarify_questions(
-                        self.braindump, count=self.CLARIFY_QUESTIONS_COUNT
+                        self.braindump,
+                        count=self.CLARIFY_QUESTIONS_COUNT,
+                        project_slug=self.project_slug,
                     )
                     questions_generated = True
                     break
@@ -331,6 +343,9 @@ class NewProjectWizard(Screen[bool]):
                     break
                 except Exception as e:
                     self.notify(f"Failed to generate questions: {e}", severity="error")
+                    self.logger.log_error(
+                        self.project_slug, "question_generation_failed", "braindump", str(e)
+                    )
                     return
 
             if not questions_generated:
@@ -347,13 +362,18 @@ class NewProjectWizard(Screen[bool]):
                 self.notify("Please answer the questions", severity="error")
                 return
 
+            # Log answers collected with question context
+            self.logger.log_answers_collected(
+                self.project_slug, self.answers, self.clarify_questions
+            )
+
             # Generate kernel proposal with retry
             self.notify("Generating project kernel...")
             kernel_generated = False
             for attempt in range(self.MAX_RETRY_ATTEMPTS):
                 try:
                     self.kernel_content = self.controller.orchestrate_kernel_generation(
-                        self.braindump, self.answers
+                        self.braindump, self.answers, project_slug=self.project_slug
                     )
                     kernel_generated = True
                     break
@@ -374,6 +394,9 @@ class NewProjectWizard(Screen[bool]):
                         self.notify(f"Generation failed, retrying: {e}", severity="warning")
                         continue
                     self.notify(f"Failed to generate kernel: {e}", severity="error")
+                    self.logger.log_error(
+                        self.project_slug, "kernel_generation_failed", "answers", str(e)
+                    )
                     return
 
             if not kernel_generated:
@@ -396,14 +419,19 @@ class NewProjectWizard(Screen[bool]):
                 approved = await self.app.push_screen_wait(modal)
 
                 if approved is True:
+                    self.logger.log_proposal_decision(self.project_slug, True, self.kernel_content)
                     await self.create_project()
                 elif approved is False:
+                    self.logger.log_proposal_decision(self.project_slug, False, self.kernel_content)
                     self.notify("Project creation cancelled", severity="warning")
                 else:  # None or unexpected value (e.g., modal dismissed with ESC)
                     self.notify("Action cancelled", severity="information")
                     return
             except Exception as e:
                 self.notify(f"Error showing approval dialog: {e}", severity="error")
+                self.logger.log_error(
+                    self.project_slug, "approval_dialog_error", "kernel_proposal", str(e)
+                )
                 return
 
         self.update_step_content()
@@ -478,6 +506,9 @@ stage: kernel
             app_state = get_app_state()
             app_state.set_active_project(self.project_slug, reason="wizard-accept")
 
+            # Log successful scaffolding
+            self.logger.log_project_scaffolded(self.project_slug, project_path)
+
             self.notify(
                 f"Project '{self.project_name}' created successfully!", severity="information"
             )
@@ -489,6 +520,9 @@ stage: kernel
 
         except Exception as e:
             self.notify(f"Failed to create project: {e}", severity="error")
+            self.logger.log_error(
+                self.project_slug, "project_creation_failed", "create_project", str(e)
+            )
 
     def _generate_kernel_template(self) -> str:
         """Generate a dynamic kernel template based on user inputs."""
