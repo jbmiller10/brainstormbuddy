@@ -363,7 +363,7 @@ async def test_start_session() -> None:
     await controller.start_session("MyProject")
 
     assert len(controller.transcript) == 1
-    assert "Starting new project: MyProject" in controller.transcript[0]
+    assert "Starting new project: MyProject" in controller.transcript.to_string_list()[0]
 
 
 @pytest.mark.asyncio
@@ -394,8 +394,12 @@ async def test_summarize_braindump() -> None:
     summary = await controller.summarize_braindump("I have an idea for an app")
 
     assert summary == "This is a summary of your idea."
-    assert "User Braindump: I have an idea for an app" in controller.transcript
-    assert "Assistant Summary: This is a summary of your idea." in controller.transcript
+    transcript_strings = controller.transcript.to_string_list()
+    assert any("User Braindump: I have an idea for an app" in entry for entry in transcript_strings)
+    assert any(
+        "Assistant Summary: This is a summary of your idea." in entry
+        for entry in transcript_strings
+    )
 
 
 @pytest.mark.asyncio
@@ -405,14 +409,20 @@ async def test_refine_summary() -> None:
     mock_llm_service.generate_response.return_value = "This is a refined summary."
 
     controller = OnboardingController(llm_service=mock_llm_service)
-    controller.transcript.append("User Braindump: Initial idea")
-    controller.transcript.append("Assistant Summary: Initial summary")
+    controller.transcript.add_user("Braindump: Initial idea")
+    controller.transcript.add_assistant("Summary: Initial summary")
 
     refined = await controller.refine_summary("Actually, I meant something else")
 
     assert refined == "This is a refined summary."
-    assert "User Feedback: Actually, I meant something else" in controller.transcript
-    assert "Assistant Refined Summary: This is a refined summary." in controller.transcript
+    transcript_strings = controller.transcript.to_string_list()
+    assert any(
+        "User Feedback: Actually, I meant something else" in entry for entry in transcript_strings
+    )
+    assert any(
+        "Assistant Refined Summary: This is a refined summary." in entry
+        for entry in transcript_strings
+    )
 
 
 @pytest.mark.asyncio
@@ -432,7 +442,8 @@ async def test_generate_clarifying_questions_async() -> None:
 
     assert len(questions) == 5
     assert questions[0] == "1. What is the main goal?"
-    assert "Assistant Questions:" in controller.transcript[-1]
+    last_entry = controller.transcript.to_string_list()[-1]
+    assert "Assistant Questions:" in last_entry
 
 
 @pytest.mark.asyncio
@@ -459,10 +470,11 @@ Some constraints.
 The value proposition."""
 
     controller = OnboardingController(llm_service=mock_llm_service)
-    controller.transcript.append("User Braindump: My idea")
-    controller.transcript.append("Assistant Questions: Some questions")
+    controller.transcript.add_user("Braindump: My idea")
+    controller.transcript.add_assistant("Questions: Some questions")
 
     kernel = await controller.synthesize_kernel("My answers")
 
     assert controller.validate_kernel_structure(kernel)
-    assert "User Answers: My answers" in controller.transcript
+    transcript_strings = controller.transcript.to_string_list()
+    assert any("User Answers: My answers" in entry for entry in transcript_strings)
