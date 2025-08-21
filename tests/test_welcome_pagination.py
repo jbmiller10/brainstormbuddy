@@ -1,6 +1,7 @@
 """Tests for welcome screen pagination functionality."""
 
-from unittest.mock import Mock
+from typing import Any
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -37,34 +38,32 @@ class TestWelcomeScreenPagination:
         """Test displaying the first page of projects."""
         screen = WelcomeScreen()
 
-        # Mock find_projects to return our mock projects
-        screen.find_projects = Mock(return_value=mock_projects)
-
         # Mock the ListView
         mock_list_view = Mock()
         mock_list_view.clear = Mock()
         mock_list_view.append = Mock()
         mock_list_view.children = []
 
-        # Mock query_one to return our mock ListView
-        screen.query_one = Mock(return_value=mock_list_view)
+        with (
+            patch.object(screen, "find_projects", return_value=mock_projects),
+            patch.object(screen, "query_one", return_value=mock_list_view),
+        ):
+            # Refresh projects (which triggers pagination)
+            screen.refresh_projects()
 
-        # Refresh projects (which triggers pagination)
-        screen.refresh_projects()
+            # Should display first 30 projects
+            assert screen.displayed_count == 30
+            assert screen.has_more is True
 
-        # Should display first 30 projects
-        assert screen.displayed_count == 30
-        assert screen.has_more is True
+            # Check that 30 projects + load more indicator were added
+            # (30 projects + 1 load more indicator)
+            assert mock_list_view.append.call_count == 31
 
-        # Check that 30 projects + load more indicator were added
-        # (30 projects + 1 load more indicator)
-        assert mock_list_view.append.call_count == 31
-
-        # Check that load more indicator was added
-        last_call = mock_list_view.append.call_args_list[-1]
-        item = last_call[0][0]
-        assert hasattr(item, "id")
-        assert item.id == "load-more-indicator"
+            # Check that load more indicator was added
+            last_call = mock_list_view.append.call_args_list[-1]
+            item = last_call[0][0]
+            assert hasattr(item, "id")
+            assert item.id == "load-more-indicator"
 
     def test_display_all_projects_no_pagination(self) -> None:
         """Test when all projects fit in one page."""
@@ -79,8 +78,6 @@ class TestWelcomeScreenPagination:
         mock_list_view = Mock()
         mock_list_view.clear = Mock()
         mock_list_view.append = Mock()
-
-        screen.query_one = Mock(return_value=mock_list_view)
 
         # Display the page
         screen._display_page(mock_list_view)
@@ -110,34 +107,31 @@ class TestWelcomeScreenPagination:
         mock_list_view.append = Mock()
         mock_list_view.scroll_end = Mock()
 
-        screen.query_one = Mock(return_value=mock_list_view)
+        with patch.object(screen, "query_one", return_value=mock_list_view):
+            # Load more projects
+            screen.action_load_more()
 
-        # Load more projects
-        screen.action_load_more()
+            # Note: remove might fail due to the try/except block
+            # What matters is that the display was updated
 
-        # Note: remove might fail due to the try/except block
-        # What matters is that the display was updated
+            # Should display next 20 projects (50 total - 30 already shown)
+            assert screen.displayed_count == 50
+            assert screen.has_more is False
 
-        # Should display next 20 projects (50 total - 30 already shown)
-        assert screen.displayed_count == 50
-        assert screen.has_more is False
-
-        # Should scroll to newly added items
-        mock_list_view.scroll_end.assert_called_once_with(animate=True)
+            # Should scroll to newly added items
+            mock_list_view.scroll_end.assert_called_once_with(animate=True)
 
     def test_load_more_when_no_more(self) -> None:
         """Test load more action when no more projects available."""
         screen = WelcomeScreen()
         screen.has_more = False
 
-        # Mock query_one to track if it's called
-        screen.query_one = Mock()
+        with patch.object(screen, "query_one") as mock_query_one:
+            # Should return early without doing anything
+            screen.action_load_more()
 
-        # Should return early without doing anything
-        screen.action_load_more()
-
-        # query_one should not be called
-        screen.query_one.assert_not_called()
+            # query_one should not be called
+            mock_query_one.assert_not_called()
 
     def test_description_truncation(self) -> None:
         """Test that long descriptions are truncated."""
@@ -149,7 +143,7 @@ class TestWelcomeScreenPagination:
         mock_list_view = Mock()
         items_added = []
 
-        def capture_append(item):
+        def capture_append(item: Any) -> None:
             items_added.append(item)
 
         mock_list_view.append = Mock(side_effect=capture_append)
@@ -174,14 +168,15 @@ class TestWelcomeScreenPagination:
         mock_highlighted.id = "load-more-indicator"
         mock_list_view.highlighted_child = mock_highlighted
 
-        screen.query_one = Mock(return_value=mock_list_view)
-        screen.select_project = Mock()  # This should NOT be called
+        with (
+            patch.object(screen, "query_one", return_value=mock_list_view),
+            patch.object(screen, "select_project") as mock_select_project,
+        ):
+            # Try to select the "project"
+            screen.action_select_project()
 
-        # Try to select the "project"
-        screen.action_select_project()
-
-        # select_project should not be called for load-more-indicator
-        screen.select_project.assert_not_called()
+            # select_project should not be called for load-more-indicator
+            mock_select_project.assert_not_called()
 
     def test_refresh_projects_with_pagination(self, mock_projects: list[dict[str, str]]) -> None:
         """Test that refresh_projects resets pagination state."""
@@ -192,24 +187,23 @@ class TestWelcomeScreenPagination:
         screen.has_more = True
         screen.projects = []
 
-        # Mock find_projects to return our mock projects
-        screen.find_projects = Mock(return_value=mock_projects)
-
         # Mock the ListView
         mock_list_view = Mock()
         mock_list_view.clear = Mock()
         mock_list_view.append = Mock()
 
-        screen.query_one = Mock(return_value=mock_list_view)
+        with (
+            patch.object(screen, "find_projects", return_value=mock_projects),
+            patch.object(screen, "query_one", return_value=mock_list_view),
+        ):
+            # Refresh projects
+            screen.refresh_projects()
 
-        # Refresh projects
-        screen.refresh_projects()
+            # Should reset displayed_count
+            assert screen.displayed_count == 30  # First page
 
-        # Should reset displayed_count
-        assert screen.displayed_count == 30  # First page
+            # Should clear the list view
+            mock_list_view.clear.assert_called_once()
 
-        # Should clear the list view
-        mock_list_view.clear.assert_called_once()
-
-        # Should have loaded new projects
-        assert screen.projects == mock_projects
+            # Should have loaded new projects
+            assert screen.projects == mock_projects
