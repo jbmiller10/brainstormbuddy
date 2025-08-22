@@ -136,7 +136,7 @@ class OnboardingChatScreen(Screen[bool]):
 
     .onboarding-loading {
         color: $text-muted;
-        font-style: italic;
+        text-style: italic;
     }
 
     """
@@ -153,13 +153,29 @@ class OnboardingChatScreen(Screen[bool]):
         self.settings = load_settings()
 
         # Initialize LLM service with configurable client
-        # Note: Real ClaudeClient implementation pending
+        # Initialize LLM client based on settings
         if self.settings.use_fake_llm_client:
             client = FakeClaudeClient()
+            logger.info("Using FakeClaudeClient (as configured in settings)")
         else:
-            # TODO: Implement and use real ClaudeClient when available
-            client = FakeClaudeClient()
-            logger.warning("Real ClaudeClient not yet implemented, using FakeClaudeClient")
+            # Try to use real Claude client if available
+            try:
+                from app.llm.real_claude_client import RealClaudeClient, is_claude_sdk_available
+
+                if is_claude_sdk_available():
+                    client = RealClaudeClient()
+                    logger.info("Using RealClaudeClient with claude-code-sdk")
+                else:
+                    client = FakeClaudeClient()
+                    logger.warning(
+                        "claude-code-sdk not installed, using FakeClaudeClient. Install with: pip install claude-code-sdk"
+                    )
+            except Exception as e:
+                # Fall back to fake client if real client fails
+                client = FakeClaudeClient()
+                logger.warning(
+                    f"Failed to initialize RealClaudeClient: {e}, using FakeClaudeClient"
+                )
 
         llm_service = LLMService(client=client)
         self.controller = OnboardingController(llm_service=llm_service)
@@ -258,7 +274,7 @@ class OnboardingChatScreen(Screen[bool]):
         """
         # Show loading indicator only once
         if not self._processing_message_shown:
-            self.app.call_from_thread(self.add_ai_message, "[dim italic]Processing...[/dim italic]")
+            self.add_ai_message("[dim italic]Processing...[/dim italic]")
             self._processing_message_shown = True
 
         try:
@@ -272,24 +288,21 @@ class OnboardingChatScreen(Screen[bool]):
 
                 # Validate project name length
                 if len(message) < self.settings.min_project_name_length:
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        f"Please provide a project name with at least {self.settings.min_project_name_length} characters.",
+                    self.add_ai_message(
+                        f"Please provide a project name with at least {self.settings.min_project_name_length} characters."
                     )
                     return
 
                 if len(message) > self.settings.max_project_name_length:
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        f"Project name is too long. Please keep it under {self.settings.max_project_name_length} characters.",
+                    self.add_ai_message(
+                        f"Project name is too long. Please keep it under {self.settings.max_project_name_length} characters."
                     )
                     return
 
                 # Validate project name characters
                 if not re.match(r"^[\w\s\-]+$", message):
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        "Project names can only contain letters, numbers, spaces, hyphens, and underscores.",
+                    self.add_ai_message(
+                        "Project names can only contain letters, numbers, spaces, hyphens, and underscores."
                     )
                     return
 
@@ -303,11 +316,10 @@ class OnboardingChatScreen(Screen[bool]):
 
                 # Move to braindump state
                 self.state = OnboardingState.BRAINDUMP
-                self.app.call_from_thread(
-                    self.add_ai_message,
+                self.add_ai_message(
                     f"Great! I've created a project called '{self.project_name}'. "
                     "Now, tell me about your idea. Don't worry about structure - "
-                    "just describe what you're thinking in as much detail as you'd like.",
+                    "just describe what you're thinking in as much detail as you'd like."
                 )
 
             elif self.state == OnboardingState.BRAINDUMP:
@@ -319,18 +331,16 @@ class OnboardingChatScreen(Screen[bool]):
                 # Validate braindump with helpful character count
                 current_length = len(message.strip())
                 if current_length < self.settings.min_braindump_length:
-                    self.app.call_from_thread(
-                        self.add_ai_message,
+                    self.add_ai_message(
                         f"Please provide more detail about your idea. "
-                        f"Current: {current_length} characters, minimum: {self.settings.min_braindump_length} characters.",
+                        f"Current: {current_length} characters, minimum: {self.settings.min_braindump_length} characters."
                     )
                     return
 
                 if len(message) > self.settings.max_braindump_length:
-                    self.app.call_from_thread(
-                        self.add_ai_message,
+                    self.add_ai_message(
                         f"Your description is too long ({len(message)} characters). "
-                        f"Please keep it under {self.settings.max_braindump_length} characters.",
+                        f"Please keep it under {self.settings.max_braindump_length} characters."
                     )
                     return
 
@@ -339,19 +349,16 @@ class OnboardingChatScreen(Screen[bool]):
                 logger.debug(f"Received braindump of {len(message)} characters")
 
                 # Generate summary
-                self.app.call_from_thread(
-                    self.add_ai_message, "Thanks for sharing! Let me summarize what I understand..."
-                )
+                self.add_ai_message("Thanks for sharing! Let me summarize what I understand...")
 
                 self.summary = await self.controller.summarize_braindump(self.braindump)
 
                 # Show summary and ask for confirmation
                 self.state = OnboardingState.SUMMARY_REVIEW
-                self.app.call_from_thread(
-                    self.add_ai_message,
+                self.add_ai_message(
                     f"Here's my summary of your idea:\n\n{self.summary}\n\n"
                     "Does this capture the essence of your project? "
-                    "You can say 'yes' to continue or provide feedback to refine it.",
+                    "You can say 'yes' to continue or provide feedback to refine it."
                 )
 
             elif self.state == OnboardingState.SUMMARY_REVIEW:
@@ -363,9 +370,8 @@ class OnboardingChatScreen(Screen[bool]):
                 # Check if user approves or wants to refine
                 if message.lower() in ["yes", "y", "correct", "good", "perfect"]:
                     # Move directly to questions state
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        "Excellent! Let me ask you a few clarifying questions to better understand your project...",
+                    self.add_ai_message(
+                        "Excellent! Let me ask you a few clarifying questions to better understand your project..."
                     )
 
                     # Generate questions
@@ -379,22 +385,18 @@ class OnboardingChatScreen(Screen[bool]):
                     logger.debug(
                         f"Transitioned to QUESTIONS state with {len(self.questions)} questions"
                     )
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        f"{questions_text}\n\nPlease provide your answers in a single response.",
+                    self.add_ai_message(
+                        f"{questions_text}\n\nPlease provide your answers in a single response."
                     )
                 else:
                     # Refine summary based on feedback
-                    self.app.call_from_thread(
-                        self.add_ai_message, "Let me refine the summary based on your feedback..."
-                    )
+                    self.add_ai_message("Let me refine the summary based on your feedback...")
 
                     self.summary = await self.controller.refine_summary(message)
 
-                    self.app.call_from_thread(
-                        self.add_ai_message,
+                    self.add_ai_message(
                         f"Here's the refined summary:\n\n{self.summary}\n\n"
-                        "Does this better capture your idea? (yes/no or provide more feedback)",
+                        "Does this better capture your idea? (yes/no or provide more feedback)"
                     )
 
             elif self.state == OnboardingState.QUESTIONS:
@@ -407,26 +409,24 @@ class OnboardingChatScreen(Screen[bool]):
                 self.answers = message
 
                 # Generate kernel
-                self.app.call_from_thread(
-                    self.add_ai_message,
+                self.add_ai_message(
                     "Thank you for those answers! Now I'll create a project kernel that captures "
-                    "the essence of your idea...",
+                    "the essence of your idea..."
                 )
 
                 self.kernel_content = await self.controller.synthesize_kernel(self.answers)
 
                 # Show kernel for review using modal
                 self.state = OnboardingState.KERNEL_REVIEW
-                self.app.call_from_thread(
-                    self.add_ai_message,
+                self.add_ai_message(
                     "Here's your project kernel. I'll show you a review modal where you can:"
                     "\n• Accept the kernel and create the project"
                     "\n• Clarify something to refine the kernel"
-                    "\n• Start over from the beginning",
+                    "\n• Start over from the beginning"
                 )
 
                 # Show the kernel approval modal
-                self.app.call_from_thread(self.show_kernel_approval_modal)
+                self.show_kernel_approval_modal()
 
             elif self.state == OnboardingState.KERNEL_REVIEW:
                 # Clear the processing message if shown
@@ -437,33 +437,29 @@ class OnboardingChatScreen(Screen[bool]):
                 # Only process as clarification if we're expecting it
                 if self._awaiting_clarification:
                     # Store the feedback and regenerate the kernel
-                    self.app.call_from_thread(
-                        self.add_ai_message, "Let me refine the kernel based on your feedback..."
-                    )
+                    self.add_ai_message("Let me refine the kernel based on your feedback...")
 
                     # Add feedback to transcript and regenerate
                     self.controller.transcript.add_user(f"Kernel feedback: {message}")
                     self.kernel_content = await self.controller.synthesize_kernel(self.answers)
 
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        "I've refined the kernel based on your feedback. Let me show you the updated version.",
+                    self.add_ai_message(
+                        "I've refined the kernel based on your feedback. Let me show you the updated version."
                     )
 
                     # Reset the clarification flag
                     self._awaiting_clarification = False
 
                     # Show the modal again with the refined kernel
-                    self.app.call_from_thread(self.show_kernel_approval_modal)
+                    self.show_kernel_approval_modal()
                 else:
                     # User typed something when we weren't expecting clarification
-                    self.app.call_from_thread(
-                        self.add_ai_message,
+                    self.add_ai_message(
                         "Please use the review modal to make your decision. "
-                        "Press Enter to show the modal again.",
+                        "Press Enter to show the modal again."
                     )
                     # Show the modal again
-                    self.app.call_from_thread(self.show_kernel_approval_modal)
+                    self.show_kernel_approval_modal()
 
         except Exception as e:
             # Clear processing indicator if it was shown
@@ -473,14 +469,13 @@ class OnboardingChatScreen(Screen[bool]):
 
             # Handle errors gracefully
             logger.error(f"Error processing message in state {self.state.name}: {e}", exc_info=True)
-            self.app.call_from_thread(
-                self.add_ai_message,
-                f"I encountered an error: {str(e)}. Please try again or press ESC to cancel.",
+            self.add_ai_message(
+                f"I encountered an error: {str(e)}. Please try again or press ESC to cancel."
             )
         finally:
             # Always reset processing flag and re-enable input
             self._processing_message_shown = False
-            self.app.call_from_thread(self._enable_input)
+            self._enable_input()
 
     async def create_project(self) -> None:
         """Create the project with all gathered information."""
@@ -544,10 +539,9 @@ stage: kernel
                 app_state = get_app_state()
                 app_state.set_active_project(self.project_slug, reason="wizard-accept")
 
-                self.app.call_from_thread(
-                    self.add_ai_message,
+                self.add_ai_message(
                     f"🎉 Project '{self.project_name}' created successfully! "
-                    "Switching to the main screen...",
+                    "Switching to the main screen..."
                 )
 
                 logger.info(f"Successfully created project {self.project_slug}")
@@ -555,14 +549,12 @@ stage: kernel
                 # Switch to main screen directly from the worker thread
                 from app.tui.views.main_screen import MainScreen
 
-                self.app.call_from_thread(self.app.switch_screen, MainScreen())
+                self.app.switch_screen(MainScreen())
 
             except Exception as e:
                 logger.error(f"Failed to create project {self.project_slug}: {e}", exc_info=True)
                 self.state = OnboardingState.KERNEL_REVIEW  # Reset state so user can try again
-                self.app.call_from_thread(
-                    self.add_ai_message, f"Failed to create project: {str(e)}"
-                )
+                self.add_ai_message(f"Failed to create project: {str(e)}")
 
     def action_cancel(self) -> None:
         """Cancel the onboarding process."""
@@ -615,41 +607,37 @@ stage: kernel
                 self.kernel_content = ""
                 self.controller.clear_transcript()
 
-                self.app.call_from_thread(
-                    self.add_ai_message,
-                    "No problem! Let's start fresh. What would you like to name your project?",
+                self.add_ai_message(
+                    "No problem! Let's start fresh. What would you like to name your project?"
                 )
                 # Re-enable input for new conversation
-                self.app.call_from_thread(self._enable_input)
+                self._enable_input()
 
             else:  # "clarify" or MODAL_CANCELLED (ESC/Cancel)
                 if decision == "clarify":
                     # User explicitly wants to provide feedback
                     logger.info("User wants to clarify kernel")
                     self._awaiting_clarification = True  # Set flag to expect clarification
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        "Please tell me what you'd like to clarify or change about the kernel:",
+                    self.add_ai_message(
+                        "Please tell me what you'd like to clarify or change about the kernel:"
                     )
                 elif decision == MODAL_CANCELLED:
                     # Modal was cancelled (ESC)
                     logger.info("User cancelled kernel review modal")
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        "Review cancelled. Type anything to show the modal again, or say 'restart' to begin over.",
+                    self.add_ai_message(
+                        "Review cancelled. Type anything to show the modal again, or say 'restart' to begin over."
                     )
                 # Re-enable input
-                self.app.call_from_thread(self._enable_input)
+                self._enable_input()
 
         except Exception as e:
             logger.error(f"Error showing kernel approval modal: {e}", exc_info=True)
-            self.app.call_from_thread(
-                self.add_ai_message,
+            self.add_ai_message(
                 f"I encountered an error showing the approval dialog: {str(e)}. "
-                "Please provide feedback to refine the kernel or type 'restart' to begin again.",
+                "Please provide feedback to refine the kernel or type 'restart' to begin again."
             )
             # Re-enable input on error
-            self.app.call_from_thread(self._enable_input)
+            self._enable_input()
         finally:
             # Always reset the modal showing flag
             self._modal_showing = False

@@ -50,6 +50,7 @@ class CommandPalette(Container):
             ("synthesis", "Synthesize findings into final output"),
             ("export", "Export project to various formats"),
             ("domain settings", "Configure web domain allow/deny lists"),
+            ("claude status", "Check Claude SDK status and configuration"),
         ]
 
     def compose(self) -> ComposeResult:
@@ -308,3 +309,39 @@ class CommandPalette(Container):
                 ),
                 exclusive=True,
             )
+
+        # Handle claude status command
+        elif command == "claude status":
+            # Check Claude SDK status
+            try:
+                from app.core.settings import load_settings
+                from app.llm.real_claude_client import is_claude_sdk_available
+
+                settings = load_settings()
+
+                viewer.clear()
+                viewer.write("[bold cyan]═══ Claude SDK Status ═══[/bold cyan]\n\n")
+
+                if settings.use_fake_llm_client:
+                    viewer.write(
+                        "🔧 [yellow]Using FakeClaudeClient[/yellow] (configured in settings)\n"
+                    )
+                    viewer.write("\n[dim]To use real Claude:[/dim]\n")
+                    viewer.write("1. Install SDK: pip install claude-code-sdk\n")
+                    viewer.write("2. Set use_fake_llm_client=false in settings\n")
+                elif is_claude_sdk_available():
+                    viewer.write("✅ [green]claude-code-sdk is installed and available[/green]\n")
+                    viewer.write("✅ [green]Using RealClaudeClient[/green]\n")
+                else:
+                    viewer.write("❌ [red]claude-code-sdk not installed[/red]\n")
+                    viewer.write("\n[yellow]To install:[/yellow]\n")
+                    viewer.write("pip install claude-code-sdk\n")
+                    viewer.write(
+                        "\n[dim]Once installed, the app will automatically use it.[/dim]\n"
+                    )
+
+                viewer.write("\n[dim]For more info about Claude Code SDK:[/dim]\n")
+                viewer.write("https://github.com/anthropics/claude-code-sdk-python\n")
+            except Exception as e:
+                viewer.write(f"[red]Error checking Claude status: {e}[/red]\n")
+                log(f"Error checking Claude status: {e}")

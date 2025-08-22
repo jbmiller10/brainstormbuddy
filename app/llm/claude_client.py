@@ -85,13 +85,56 @@ class FakeClaudeClient(ClaudeClient):
         # Parameters are intentionally unused in fake implementation
         _ = (allowed_tools, denied_tools, permission_mode, cwd)
 
-        # Check if this is a kernel stage request
-        if system_prompt and "kernel stage" in system_prompt.lower():
+        # Check if this is a refine summary request (must check before general summarize)
+        if system_prompt and "refining a project summary" in system_prompt.lower():
+            # Generate a refined summary incorporating feedback
+            yield TextDelta(
+                "Based on your feedback, here's a refined understanding: You're building an intelligent "
+                "brainstorming assistant that leverages AI to help users develop ideas systematically. "
+                "The system will guide users through structured thinking processes while remaining flexible "
+                "enough to adapt to different creative workflows."
+            )
+            yield MessageDone()
+
+        # Check if this is an initial summarization request
+        elif system_prompt and "initial onboarding phase" in system_prompt.lower():
+            # Extract key info from the braindump
+            idea_snippet = prompt[:200].strip()
+            if "braindump:" in idea_snippet.lower():
+                idea_snippet = idea_snippet.split(":", 1)[1].strip()
+
+            # Generate a meaningful summary
+            if "claude code" in idea_snippet.lower() or "agentic" in idea_snippet.lower():
+                summary = (
+                    "You want to build an AI-powered brainstorming application that provides intelligent assistance "
+                    "similar to Claude Code, helping users develop and refine their ideas through guided conversation. "
+                    "The goal is to create an agentic system that can understand context and provide meaningful support "
+                    "throughout the creative process."
+                )
+            else:
+                # Generic but contextual summary
+                summary = (
+                    f"You're envisioning {idea_snippet[:100]}. "
+                    "This would involve creating a systematic approach to capture, refine, and develop ideas. "
+                    "The focus is on building something that provides real value through intelligent assistance."
+                )
+
+            yield TextDelta(summary)
+            yield MessageDone()
+
+        # Check if this is a kernel generation request
+        elif system_prompt and ("kernel" in system_prompt.lower() or "# Kernel" in system_prompt):
             # Generate a kernel document based on the prompt
+            # Extract a meaningful snippet from the prompt for the core concept
+            prompt_snippet = prompt[:100].lower().strip(".")
+            if "skip" in prompt_snippet or "test" in prompt_snippet or len(prompt_snippet) < 20:
+                # Use a generic but valid kernel for testing
+                prompt_snippet = "create a solution that addresses user needs"
+
             kernel_content = f"""# Kernel
 
 ## Core Concept
-The essential idea is to {prompt[:100].lower().strip(".")}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
+The essential idea is to {prompt_snippet}. This represents a focused approach to solving a specific problem through systematic exploration and implementation.
 
 ## Key Questions
 1. What are the fundamental requirements that must be satisfied for this concept to succeed?
@@ -122,13 +165,8 @@ This initiative creates value by directly addressing the identified problem spac
             yield MessageDone()
 
         # Check if this is a clarify stage request
-        elif system_prompt and "clarify stage" in system_prompt.lower():
+        elif system_prompt and "clarify" in system_prompt.lower():
             # Generate clarify questions based on the prompt
-            yield TextDelta(f"I see you want to explore: {prompt[:100]}\n\n")
-            yield TextDelta(
-                "Let me ask some clarifying questions to help sharpen your thinking:\n\n"
-            )
-
             questions = [
                 "1. What specific problem are you trying to solve, and who will benefit most from the solution?",
                 "2. What constraints (time, budget, technical, regulatory) must you work within?",
@@ -138,11 +176,13 @@ This initiative creates value by directly addressing the identified problem spac
             ]
 
             for question in questions:
-                yield TextDelta(f"{question}\n\n")
+                yield TextDelta(f"{question}\n")
 
+            yield TextDelta("\nPlease provide your answers in a single response.")
             yield MessageDone()
+
         else:
-            # Default test output
+            # Default test output for unrecognized prompts
             yield TextDelta("First chunk of text")
             yield TextDelta("Second chunk of text")
             yield MessageDone()
