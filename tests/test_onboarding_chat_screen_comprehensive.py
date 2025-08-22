@@ -71,9 +71,11 @@ class TestUIComponents:
 
         # Mock the query_one method and input widget
         mock_input = Mock(spec=Input)
-        screen.query_one = Mock(return_value=mock_input)
 
-        with patch.object(screen, "add_ai_message") as mock_add_ai:
+        with (
+            patch.object(screen, "query_one", return_value=mock_input),
+            patch.object(screen, "add_ai_message") as mock_add_ai,
+        ):
             screen.on_mount()
 
             # Should display welcome message
@@ -99,19 +101,19 @@ class TestUIComponents:
 
         # Mock the chat history widget
         mock_chat = Mock(spec=RichLog)
-        screen.query_one = Mock(return_value=mock_chat)
 
-        # Add an AI message
-        test_message = "Test AI message"
-        screen.add_ai_message(test_message)
+        with patch.object(screen, "query_one", return_value=mock_chat):
+            # Add an AI message
+            test_message = "Test AI message"
+            screen.add_ai_message(test_message)
 
-        # Should write formatted message and spacing
-        assert mock_chat.write.call_count == 2
-        first_call = mock_chat.write.call_args_list[0][0][0]
-        assert "🤖 Assistant:" in first_call
-        assert test_message in first_call
-        # Second call should be empty line for spacing
-        assert mock_chat.write.call_args_list[1][0][0] == ""
+            # Should write formatted message and spacing
+            assert mock_chat.write.call_count == 2
+            first_call = mock_chat.write.call_args_list[0][0][0]
+            assert "🤖 Assistant:" in first_call
+            assert test_message in first_call
+            # Second call should be empty line for spacing
+            assert mock_chat.write.call_args_list[1][0][0] == ""
 
     def test_add_user_message(self, mock_settings: Mock, mock_controller: Mock) -> None:
         """Test add_user_message writes to chat history."""
@@ -127,19 +129,19 @@ class TestUIComponents:
 
         # Mock the chat history widget
         mock_chat = Mock(spec=RichLog)
-        screen.query_one = Mock(return_value=mock_chat)
 
-        # Add a user message
-        test_message = "Test user message"
-        screen.add_user_message(test_message)
+        with patch.object(screen, "query_one", return_value=mock_chat):
+            # Add a user message
+            test_message = "Test user message"
+            screen.add_user_message(test_message)
 
-        # Should write formatted message and spacing
-        assert mock_chat.write.call_count == 2
-        first_call = mock_chat.write.call_args_list[0][0][0]
-        assert "👤 You:" in first_call
-        assert test_message in first_call
-        # Second call should be empty line for spacing
-        assert mock_chat.write.call_args_list[1][0][0] == ""
+            # Should write formatted message and spacing
+            assert mock_chat.write.call_count == 2
+            first_call = mock_chat.write.call_args_list[0][0][0]
+            assert "👤 You:" in first_call
+            assert test_message in first_call
+            # Second call should be empty line for spacing
+            assert mock_chat.write.call_args_list[1][0][0] == ""
 
     def test_enable_input(self, mock_settings: Mock, mock_controller: Mock) -> None:
         """Test _enable_input re-enables and focuses input."""
@@ -156,14 +158,14 @@ class TestUIComponents:
         # Mock the input widget
         mock_input = Mock(spec=Input)
         mock_input.disabled = True
-        screen.query_one = Mock(return_value=mock_input)
 
-        # Enable input
-        screen._enable_input()
+        with patch.object(screen, "query_one", return_value=mock_input):
+            # Enable input
+            screen._enable_input()
 
-        # Should enable and focus
-        assert mock_input.disabled is False
-        mock_input.focus.assert_called_once()
+            # Should enable and focus
+            assert mock_input.disabled is False
+            mock_input.focus.assert_called_once()
 
 
 class TestProcessMessageWelcomeState:
@@ -199,7 +201,7 @@ class TestProcessMessageWelcomeState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "ab")  # Too short
+            await screen.process_message.__wrapped__(screen, "ab")  # type: ignore[attr-defined]  # Too short
 
         # Should add error message and remain in WELCOME state
         assert screen.state == OnboardingState.WELCOME
@@ -236,7 +238,7 @@ class TestProcessMessageWelcomeState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "a" * 51)  # Too long
+            await screen.process_message.__wrapped__(screen, "a" * 51)  # type: ignore[attr-defined]  # Too long
 
         # Should add error message and remain in WELCOME state
         assert screen.state == OnboardingState.WELCOME
@@ -272,7 +274,7 @@ class TestProcessMessageWelcomeState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "test@project!")  # Invalid chars
+            await screen.process_message.__wrapped__(screen, "test@project!")  # type: ignore[attr-defined]  # Invalid chars
 
         # Should add error message and remain in WELCOME state
         assert screen.state == OnboardingState.WELCOME
@@ -313,7 +315,7 @@ class TestProcessMessageWelcomeState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "My Project")
+            await screen.process_message.__wrapped__(screen, "My Project")  # type: ignore[attr-defined]
 
         # Should progress to BRAINDUMP state
         assert screen.state == OnboardingState.BRAINDUMP
@@ -357,7 +359,7 @@ class TestProcessMessageBraindumpState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "Short idea")  # Too short
+            await screen.process_message.__wrapped__(screen, "Short idea")  # type: ignore[attr-defined]  # Too short
 
         # Should remain in BRAINDUMP state
         assert screen.state == OnboardingState.BRAINDUMP
@@ -394,7 +396,7 @@ class TestProcessMessageBraindumpState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "x" * 101)  # Too long
+            await screen.process_message.__wrapped__(screen, "x" * 101)  # type: ignore[attr-defined]  # Too long
 
         # Should remain in BRAINDUMP state
         assert screen.state == OnboardingState.BRAINDUMP
@@ -434,7 +436,7 @@ class TestProcessMessageBraindumpState:
         ):
             braindump = "This is my amazing idea for a project that will revolutionize everything"
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, braindump)
+            await screen.process_message.__wrapped__(screen, braindump)  # type: ignore[attr-defined]
 
         # Should progress to SUMMARY_REVIEW state
         assert screen.state == OnboardingState.SUMMARY_REVIEW
@@ -481,7 +483,7 @@ class TestProcessMessageSummaryReviewState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "yes")
+            await screen.process_message.__wrapped__(screen, "yes")  # type: ignore[attr-defined]
 
         # Should progress to QUESTIONS state
         assert screen.state == OnboardingState.QUESTIONS
@@ -520,7 +522,7 @@ class TestProcessMessageSummaryReviewState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "Actually, it should focus more on X")
+            await screen.process_message.__wrapped__(screen, "Actually, it should focus more on X")  # type: ignore[attr-defined]
 
         # Should remain in SUMMARY_REVIEW state with refined summary
         assert screen.state == OnboardingState.SUMMARY_REVIEW
@@ -569,7 +571,7 @@ class TestProcessMessageQuestionsState:
         ):
             answers = "A1: Answer 1\nA2: Answer 2\nA3: Answer 3"
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, answers)
+            await screen.process_message.__wrapped__(screen, answers)  # type: ignore[attr-defined]
 
         # Should progress to KERNEL_REVIEW state
         assert screen.state == OnboardingState.KERNEL_REVIEW
@@ -619,7 +621,7 @@ class TestProcessMessageKernelReviewState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "restart")
+            await screen.process_message.__wrapped__(screen, "restart")  # type: ignore[attr-defined]
 
         # Should reset to WELCOME state
         assert screen.state == OnboardingState.WELCOME
@@ -667,7 +669,7 @@ class TestProcessMessageKernelReviewState:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "Please add more detail about X")
+            await screen.process_message.__wrapped__(screen, "Please add more detail about X")  # type: ignore[attr-defined]
 
         # Should remain in KERNEL_REVIEW with refined kernel
         assert screen.state == OnboardingState.KERNEL_REVIEW
@@ -757,7 +759,7 @@ class TestErrorHandling:
             ),  # Bypass @work decorator
         ):
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "This is my braindump")
+            await screen.process_message.__wrapped__(screen, "This is my braindump")  # type: ignore[attr-defined]
 
         # Should display error and enable input
         assert any("I encountered an error: LLM error" in str(args) for func, args in call_history)
@@ -847,7 +849,7 @@ class TestProcessingMessageFlag:
             assert screen._processing_message_shown is False
 
             # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "Test Project")
+            await screen.process_message.__wrapped__(screen, "Test Project")  # type: ignore[attr-defined]
 
             # After processing, flag should be reset to False
             assert screen._processing_message_shown is False
