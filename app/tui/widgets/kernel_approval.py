@@ -11,13 +11,14 @@ from textual.widgets import Button, Label, Static
 from app.tui.styles import get_modal_css
 
 
-class KernelApprovalModal(ModalScreen[str]):
+class KernelApprovalModal(ModalScreen[str | None]):
     """Modal for reviewing and approving kernel changes.
 
     Returns:
         "accept" - User accepts the kernel
         "clarify" - User wants to provide feedback and refine
         "restart" - User wants to start over from the beginning
+        None - User cancelled the modal (ESC key)
     """
 
     # Use shared modal styles
@@ -27,7 +28,7 @@ class KernelApprovalModal(ModalScreen[str]):
         Binding("a", "accept", "Accept", priority=True),
         Binding("c", "clarify", "Clarify", priority=True),
         Binding("r", "restart", "Start Over", priority=True),
-        Binding("escape", "clarify", "Cancel"),
+        Binding("escape", "cancel", "Cancel"),
     ]
 
     def __init__(
@@ -106,6 +107,10 @@ class KernelApprovalModal(ModalScreen[str]):
     def action_restart(self) -> None:
         """Start over from the beginning."""
         self.dismiss("restart")
+
+    def action_cancel(self) -> None:
+        """Cancel the modal without making a decision."""
+        self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press events."""
