@@ -185,10 +185,10 @@ class WelcomeScreen(Screen[None]):
             self.select_project(slug)
 
     def action_create_project(self) -> None:
-        """Navigate to new project wizard."""
-        from app.tui.views.new_project_wizard import NewProjectWizard
+        """Navigate to new project onboarding chat."""
+        from app.tui.views.onboarding_chat_screen import OnboardingChatScreen
 
-        self.app.push_screen(NewProjectWizard())
+        self.app.push_screen(OnboardingChatScreen())
 
     def action_load_more(self) -> None:
         """Load more projects if available."""

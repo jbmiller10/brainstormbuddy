@@ -578,8 +578,8 @@ class TestProcessMessageQuestionsState:
         assert screen.answers == answers
         assert screen.kernel_content == "# Project Kernel\n\nCore idea..."
         mock_controller.synthesize_kernel.assert_called_once_with(answers)
-        # Check for kernel display
-        assert any("Project Kernel" in str(args) for func, args in call_history)
+        # Check for kernel modal message
+        assert any("review modal" in str(args).lower() for func, args in call_history)
         assert any("accept" in str(args).lower() for func, args in call_history)
 
 
@@ -588,7 +588,7 @@ class TestProcessMessageKernelReviewState:
 
     @pytest.mark.asyncio
     async def test_kernel_restart(self, mock_settings: Mock, mock_controller: Mock) -> None:
-        """Test restarting the onboarding process."""
+        """Test restarting the onboarding process via modal."""
         with (
             patch("app.tui.views.onboarding_chat_screen.load_settings", return_value=mock_settings),
             patch(
@@ -613,6 +613,7 @@ class TestProcessMessageKernelReviewState:
         mock_app.call_from_thread = Mock(
             side_effect=lambda func, *args: call_history.append((func, args))
         )
+        mock_app.push_screen_wait = AsyncMock(return_value="restart")
 
         with (
             patch.object(type(screen), "app", property(lambda _: mock_app)),
@@ -620,8 +621,8 @@ class TestProcessMessageKernelReviewState:
                 "app.tui.views.onboarding_chat_screen.work", lambda f: f
             ),  # Bypass @work decorator
         ):
-            # Call the actual async method directly
-            await screen.process_message.__wrapped__(screen, "restart")  # type: ignore[attr-defined]
+            # Call the modal method directly
+            await screen.show_kernel_approval_modal.__wrapped__(screen)  # type: ignore[attr-defined]
 
         # Should reset to WELCOME state
         assert screen.state == OnboardingState.WELCOME
@@ -679,7 +680,7 @@ class TestProcessMessageKernelReviewState:
         )
         mock_controller.synthesize_kernel.assert_called_once_with("Previous answers")
         # Check for refined kernel display
-        assert any("refined kernel" in str(args).lower() for func, args in call_history)
+        assert any("refined" in str(args).lower() for func, args in call_history)
 
 
 class TestCreateProject:

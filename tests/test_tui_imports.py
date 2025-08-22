@@ -11,13 +11,11 @@ def test_tui_app_imports() -> None:
 
 def test_tui_views_imports() -> None:
     """Test that all view modules import successfully."""
-    from app.tui.views import MainScreen, NewProjectWizard, WelcomeScreen  # noqa: F401
+    from app.tui.views import MainScreen, WelcomeScreen  # noqa: F401
     from app.tui.views.main_screen import MainScreen as MS  # noqa: F401
-    from app.tui.views.new_project_wizard import NewProjectWizard as NPW  # noqa: F401
     from app.tui.views.welcome import WelcomeScreen as WS  # noqa: F401
 
     assert MainScreen is MS
-    assert NewProjectWizard is NPW
     assert WelcomeScreen is WS
 
 
@@ -63,13 +61,11 @@ def test_widget_instantiation() -> None:
 
 def test_screen_instantiation() -> None:
     """Test that screens can be instantiated without errors."""
-    from app.tui.views import MainScreen, NewProjectWizard, WelcomeScreen
+    from app.tui.views import MainScreen, WelcomeScreen
 
     # Create instances to ensure no initialization errors
     main_screen = MainScreen()
     welcome_screen = WelcomeScreen()
-    wizard = NewProjectWizard()
 
     assert main_screen is not None
     assert welcome_screen is not None
-    assert wizard is not None

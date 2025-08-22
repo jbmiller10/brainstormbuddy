@@ -11,16 +11,23 @@ from textual.widgets import Button, Label, Static
 from app.tui.styles import get_modal_css
 
 
-class KernelApprovalModal(ModalScreen[bool]):
-    """Modal for reviewing and approving kernel changes."""
+class KernelApprovalModal(ModalScreen[str]):
+    """Modal for reviewing and approving kernel changes.
+
+    Returns:
+        "accept" - User accepts the kernel
+        "clarify" - User wants to provide feedback and refine
+        "restart" - User wants to start over from the beginning
+    """
 
     # Use shared modal styles
     DEFAULT_CSS = get_modal_css("KernelApprovalModal")
 
     BINDINGS = [
-        Binding("y", "accept", "Accept", priority=True),
-        Binding("n", "reject", "Reject", priority=True),
-        Binding("escape", "reject", "Cancel"),
+        Binding("a", "accept", "Accept", priority=True),
+        Binding("c", "clarify", "Clarify", priority=True),
+        Binding("r", "restart", "Start Over", priority=True),
+        Binding("escape", "clarify", "Cancel"),
     ]
 
     def __init__(
@@ -70,29 +77,41 @@ class KernelApprovalModal(ModalScreen[bool]):
 
             with Horizontal(classes="button-container"):
                 yield Button(
-                    "Accept (Y)",
+                    "Accept (A)",
                     variant="success",
                     classes="accept-button",
                     id="accept",
                 )
                 yield Button(
-                    "Reject (N)",
+                    "Clarify (C)",
                     variant="warning",
-                    classes="reject-button",
-                    id="reject",
+                    classes="clarify-button",
+                    id="clarify",
+                )
+                yield Button(
+                    "Start Over (R)",
+                    variant="error",
+                    classes="restart-button",
+                    id="restart",
                 )
 
     def action_accept(self) -> None:
         """Accept the changes."""
-        self.dismiss(True)
+        self.dismiss("accept")
 
-    def action_reject(self) -> None:
-        """Reject the changes."""
-        self.dismiss(False)
+    def action_clarify(self) -> None:
+        """Request clarification or refinement."""
+        self.dismiss("clarify")
+
+    def action_restart(self) -> None:
+        """Start over from the beginning."""
+        self.dismiss("restart")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press events."""
         if event.button.id == "accept":
             self.action_accept()
-        elif event.button.id == "reject":
-            self.action_reject()
+        elif event.button.id == "clarify":
+            self.action_clarify()
+        elif event.button.id == "restart":
+            self.action_restart()

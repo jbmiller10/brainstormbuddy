@@ -23,6 +23,7 @@ from app.llm.claude_client import FakeClaudeClient
 from app.llm.llm_service import LLMService
 from app.tui.controllers.onboarding_controller import OnboardingController
 from app.tui.utils.text import truncate_description
+from app.tui.widgets.kernel_approval import KernelApprovalModal
 
 logger = logging.getLogger(__name__)
 
@@ -348,16 +349,18 @@ class OnboardingChatScreen(Screen[bool]):
 
                 self.kernel_content = await self.controller.synthesize_kernel(self.answers)
 
-                # Show kernel for review
+                # Show kernel for review using modal
                 self.state = OnboardingState.KERNEL_REVIEW
                 self.app.call_from_thread(
                     self.add_ai_message,
-                    f"Here's your project kernel:\n\n{self.kernel_content}\n\n"
-                    "Would you like to:\n"
-                    "1. Accept this kernel and create the project (type 'accept')\n"
-                    "2. Clarify something (type 'clarify' and explain)\n"
-                    "3. Start over (type 'restart')",
+                    "Here's your project kernel. I'll show you a review modal where you can:"
+                    "\n• Accept the kernel and create the project"
+                    "\n• Clarify something to refine the kernel"
+                    "\n• Start over from the beginning",
                 )
+
+                # Show the kernel approval modal
+                self.app.call_from_thread(self.show_kernel_approval_modal)
 
             elif self.state == OnboardingState.KERNEL_REVIEW:
                 # Clear the processing message if shown
@@ -365,46 +368,23 @@ class OnboardingChatScreen(Screen[bool]):
                     self._clear_last_ai_message()
                     self._processing_message_shown = False
 
-                # Handle kernel review decision
-                decision = message.lower().strip()
+                # In KERNEL_REVIEW state, user can provide clarification feedback
+                # Store the feedback and regenerate the kernel
+                self.app.call_from_thread(
+                    self.add_ai_message, "Let me refine the kernel based on your feedback..."
+                )
 
-                if decision == "accept" or decision == "1":
-                    # Create the project
-                    await self.create_project()
+                # Add feedback to transcript and regenerate
+                self.controller.transcript.add_user(f"Kernel feedback: {message}")
+                self.kernel_content = await self.controller.synthesize_kernel(self.answers)
 
-                elif decision == "restart" or decision == "3":
-                    # Reset everything
-                    logger.info("User requested restart of onboarding process")
-                    self.state = OnboardingState.WELCOME
-                    self.project_name = ""
-                    self.project_slug = ""
-                    self.braindump = ""
-                    self.summary = ""
-                    self.questions = []
-                    self.answers = ""
-                    self.kernel_content = ""
-                    self.controller.clear_transcript()
+                self.app.call_from_thread(
+                    self.add_ai_message,
+                    "I've refined the kernel based on your feedback. Let me show you the updated version.",
+                )
 
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        "No problem! Let's start fresh. What would you like to name your project?",
-                    )
-
-                else:
-                    # Treat as clarification feedback
-                    self.app.call_from_thread(
-                        self.add_ai_message, "Let me refine the kernel based on your feedback..."
-                    )
-
-                    # Add feedback to transcript and regenerate
-                    self.controller.transcript.add_user(f"Kernel feedback: {message}")
-                    self.kernel_content = await self.controller.synthesize_kernel(self.answers)
-
-                    self.app.call_from_thread(
-                        self.add_ai_message,
-                        f"Here's the refined kernel:\n\n{self.kernel_content}\n\n"
-                        "Would you like to accept, clarify further, or restart?",
-                    )
+                # Show the modal again with the refined kernel
+                self.app.call_from_thread(self.show_kernel_approval_modal)
 
         except Exception as e:
             # Clear processing indicator if it was shown
@@ -524,3 +504,55 @@ stage: kernel
         input_widget: Input = self.query_one("#chat-input", Input)
         input_widget.disabled = False
         input_widget.focus()
+
+    @work
+    async def show_kernel_approval_modal(self) -> None:
+        """Show the kernel approval modal and handle the user's decision."""
+        try:
+            modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
+            decision = await self.app.push_screen_wait(modal)
+
+            if decision == "accept":
+                # Create the project
+                logger.info("User accepted kernel, creating project")
+                await self.create_project()
+
+            elif decision == "restart":
+                # Reset everything
+                logger.info("User requested restart of onboarding process")
+                self.state = OnboardingState.WELCOME
+                self.project_name = ""
+                self.project_slug = ""
+                self.braindump = ""
+                self.summary = ""
+                self.questions = []
+                self.answers = ""
+                self.kernel_content = ""
+                self.controller.clear_transcript()
+
+                self.app.call_from_thread(
+                    self.add_ai_message,
+                    "No problem! Let's start fresh. What would you like to name your project?",
+                )
+                # Re-enable input for new conversation
+                self.app.call_from_thread(self._enable_input)
+
+            else:  # "clarify"
+                # User wants to provide feedback
+                logger.info("User wants to clarify kernel")
+                self.app.call_from_thread(
+                    self.add_ai_message,
+                    "Please tell me what you'd like to clarify or change about the kernel:",
+                )
+                # Re-enable input for feedback
+                self.app.call_from_thread(self._enable_input)
+
+        except Exception as e:
+            logger.error(f"Error showing kernel approval modal: {e}", exc_info=True)
+            self.app.call_from_thread(
+                self.add_ai_message,
+                f"I encountered an error showing the approval dialog: {str(e)}. "
+                "Please provide feedback to refine the kernel or type 'restart' to begin again.",
+            )
+            # Re-enable input on error
+            self.app.call_from_thread(self._enable_input)
