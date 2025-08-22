@@ -19,7 +19,38 @@ uv pip install -r requirements.txt
 
 # For development, also install dev dependencies
 uv pip install -r requirements-dev.txt
+
+# Optional: Install Claude SDK for real AI assistance
+uv pip install claude-code-sdk
+# Or install with the optional dependency group:
+uv pip install -e ".[claude]"
 ```
+
+### Claude SDK Integration
+
+Brainstorm Buddy can use either a fake LLM client (for testing) or the real Claude Code SDK for AI-powered assistance.
+
+#### Using Real Claude
+
+1. **Install the SDK**:
+   ```bash
+   uv pip install claude-code-sdk
+   ```
+
+2. **Configure Settings** (optional):
+   - Set `use_fake_llm_client=false` in your settings
+   - The app will automatically detect and use the SDK if installed
+
+3. **Check Status**:
+   - In the app, press `:` to open the command palette
+   - Type `claude status` to see the current configuration
+
+#### Using Fake Client (Default for Testing)
+
+The fake client provides deterministic responses for testing without requiring API access:
+- Automatically used when claude-code-sdk is not installed
+- Can be forced by setting `use_fake_llm_client=true` in settings
+- Provides realistic responses for all brainstorming stages
 
 ## CLI Commands
 

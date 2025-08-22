@@ -28,6 +28,24 @@ class WelcomeScreen(Screen[None]):
     WelcomeScreen .container-medium {
         /* Use medium container for welcome screen */
     }
+
+    WelcomeScreen ListView {
+        background: $surface;
+    }
+
+    WelcomeScreen ListView > ListItem {
+        background: $surface;
+        color: $text;
+    }
+
+    WelcomeScreen ListView > ListItem:hover {
+        background: $primary 20%;
+    }
+
+    WelcomeScreen ListView:focus > ListItem.--highlight {
+        background: $accent;
+        color: $text;
+    }
     """
     )
 
