@@ -187,8 +187,8 @@ class TestWelcomeScreen:
         assert isinstance(call_args[0], MainScreen)
 
     def test_action_create_project(self) -> None:
-        """Test action_create_project navigates to wizard."""
-        from app.tui.views.new_project_wizard import NewProjectWizard
+        """Test action_create_project navigates to onboarding chat."""
+        from app.tui.views.onboarding_chat_screen import OnboardingChatScreen
 
         screen = WelcomeScreen()
         mock_app = MagicMock()
@@ -198,9 +198,9 @@ class TestWelcomeScreen:
             screen.action_create_project()
 
         mock_app.push_screen.assert_called_once()
-        # Verify it's pushing a NewProjectWizard
+        # Verify it's pushing an OnboardingChatScreen
         call_args = mock_app.push_screen.call_args[0]
-        assert isinstance(call_args[0], NewProjectWizard)
+        assert isinstance(call_args[0], OnboardingChatScreen)
 
     def test_action_select_project_no_selection(self) -> None:
         """Test action_select_project with no highlighted item."""

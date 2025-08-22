@@ -291,18 +291,40 @@ async def test_kernel_approval_modal_accept() -> None:
 
     modal.action_accept()
 
-    modal.dismiss.assert_called_once_with(True)
+    modal.dismiss.assert_called_once_with("accept")
 
 
 @pytest.mark.asyncio
-async def test_kernel_approval_modal_reject() -> None:
-    """Test rejecting changes in the modal."""
+async def test_kernel_approval_modal_clarify() -> None:
+    """Test requesting clarification in the modal."""
     modal = KernelApprovalModal("diff content", "test-project")
     modal.dismiss = MagicMock()  # type: ignore
 
-    modal.action_reject()
+    modal.action_clarify()
 
-    modal.dismiss.assert_called_once_with(False)
+    modal.dismiss.assert_called_once_with("clarify")
+
+
+@pytest.mark.asyncio
+async def test_kernel_approval_modal_restart() -> None:
+    """Test restart option in the modal."""
+    modal = KernelApprovalModal("diff content", "test-project")
+    modal.dismiss = MagicMock()  # type: ignore
+
+    modal.action_restart()
+
+    modal.dismiss.assert_called_once_with("restart")
+
+
+@pytest.mark.asyncio
+async def test_kernel_approval_modal_cancel() -> None:
+    """Test cancel option in the modal."""
+    modal = KernelApprovalModal("diff content", "test-project")
+    modal.dismiss = MagicMock()  # type: ignore
+
+    modal.action_cancel()
+
+    modal.dismiss.assert_called_once_with(None)
 
 
 def test_compute_patch_for_kernel_update() -> None:
