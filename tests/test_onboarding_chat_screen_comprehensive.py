@@ -655,6 +655,8 @@ class TestProcessMessageKernelReviewState:
             screen = OnboardingChatScreen()
             screen.state = OnboardingState.KERNEL_REVIEW
             screen.answers = "Previous answers"
+            # Set the flag indicating we're expecting clarification
+            screen._awaiting_clarification = True
 
         # Mock app context
         mock_app = Mock()
@@ -675,12 +677,56 @@ class TestProcessMessageKernelReviewState:
         # Should remain in KERNEL_REVIEW with refined kernel
         assert screen.state == OnboardingState.KERNEL_REVIEW
         assert screen.kernel_content == "Refined kernel content"
+        # Flag should be reset after processing clarification
+        assert screen._awaiting_clarification is False
         mock_controller.transcript.add_user.assert_called_once_with(
             "Kernel feedback: Please add more detail about X"
         )
         mock_controller.synthesize_kernel.assert_called_once_with("Previous answers")
         # Check for refined kernel display
         assert any("refined" in str(args).lower() for func, args in call_history)
+
+    @pytest.mark.asyncio
+    async def test_kernel_unexpected_input(
+        self, mock_settings: Mock, mock_controller: Mock
+    ) -> None:
+        """Test handling unexpected input in KERNEL_REVIEW when not awaiting clarification."""
+        with (
+            patch("app.tui.views.onboarding_chat_screen.load_settings", return_value=mock_settings),
+            patch(
+                "app.tui.views.onboarding_chat_screen.OnboardingController",
+                return_value=mock_controller,
+            ),
+            patch("app.tui.views.onboarding_chat_screen.LLMService"),
+        ):
+            screen = OnboardingChatScreen()
+            screen.state = OnboardingState.KERNEL_REVIEW
+            screen.kernel_content = "Test kernel"
+            screen.project_slug = "test-project"
+            # NOT setting _awaiting_clarification flag
+
+        # Mock app context
+        mock_app = Mock()
+        call_history = []
+        mock_app.call_from_thread = Mock(
+            side_effect=lambda func, *args: call_history.append((func, args))
+        )
+
+        with (
+            patch.object(type(screen), "app", property(lambda _: mock_app)),
+            patch(
+                "app.tui.views.onboarding_chat_screen.work", lambda f: f
+            ),  # Bypass @work decorator
+        ):
+            # Call the actual async method directly
+            await screen.process_message.__wrapped__(screen, "Random text")  # type: ignore[attr-defined]
+
+        # Should remain in KERNEL_REVIEW
+        assert screen.state == OnboardingState.KERNEL_REVIEW
+        # Should not have processed as clarification
+        assert screen.kernel_content == "Test kernel"
+        # Should prompt to use modal
+        assert any("use the review modal" in str(args).lower() for func, args in call_history)
 
 
 class TestCreateProject:

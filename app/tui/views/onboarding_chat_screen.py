@@ -104,6 +104,8 @@ class OnboardingChatScreen(Screen[bool]):
         self.state = OnboardingState.WELCOME
         self._creation_lock = asyncio.Lock()
         self._processing_message_shown = False
+        self._modal_showing = False  # Prevent duplicate modal display
+        self._awaiting_clarification = False  # Track if we're expecting clarification text
 
         # Project data
         self.project_name: str = ""
@@ -368,23 +370,36 @@ class OnboardingChatScreen(Screen[bool]):
                     self._clear_last_ai_message()
                     self._processing_message_shown = False
 
-                # In KERNEL_REVIEW state, user can provide clarification feedback
-                # Store the feedback and regenerate the kernel
-                self.app.call_from_thread(
-                    self.add_ai_message, "Let me refine the kernel based on your feedback..."
-                )
+                # Only process as clarification if we're expecting it
+                if self._awaiting_clarification:
+                    # Store the feedback and regenerate the kernel
+                    self.app.call_from_thread(
+                        self.add_ai_message, "Let me refine the kernel based on your feedback..."
+                    )
 
-                # Add feedback to transcript and regenerate
-                self.controller.transcript.add_user(f"Kernel feedback: {message}")
-                self.kernel_content = await self.controller.synthesize_kernel(self.answers)
+                    # Add feedback to transcript and regenerate
+                    self.controller.transcript.add_user(f"Kernel feedback: {message}")
+                    self.kernel_content = await self.controller.synthesize_kernel(self.answers)
 
-                self.app.call_from_thread(
-                    self.add_ai_message,
-                    "I've refined the kernel based on your feedback. Let me show you the updated version.",
-                )
+                    self.app.call_from_thread(
+                        self.add_ai_message,
+                        "I've refined the kernel based on your feedback. Let me show you the updated version.",
+                    )
 
-                # Show the modal again with the refined kernel
-                self.app.call_from_thread(self.show_kernel_approval_modal)
+                    # Reset the clarification flag
+                    self._awaiting_clarification = False
+
+                    # Show the modal again with the refined kernel
+                    self.app.call_from_thread(self.show_kernel_approval_modal)
+                else:
+                    # User typed something when we weren't expecting clarification
+                    self.app.call_from_thread(
+                        self.add_ai_message,
+                        "Please use the review modal to make your decision. "
+                        "Press Enter to show the modal again.",
+                    )
+                    # Show the modal again
+                    self.app.call_from_thread(self.show_kernel_approval_modal)
 
         except Exception as e:
             # Clear processing indicator if it was shown
@@ -508,6 +523,12 @@ stage: kernel
     @work
     async def show_kernel_approval_modal(self) -> None:
         """Show the kernel approval modal and handle the user's decision."""
+        # Prevent duplicate modal display
+        if self._modal_showing:
+            logger.debug("Modal already showing, skipping duplicate display")
+            return
+
+        self._modal_showing = True
         try:
             modal = KernelApprovalModal(self.kernel_content, self.project_slug, mode="proposal")
             decision = await self.app.push_screen_wait(modal)
@@ -537,14 +558,23 @@ stage: kernel
                 # Re-enable input for new conversation
                 self.app.call_from_thread(self._enable_input)
 
-            else:  # "clarify"
-                # User wants to provide feedback
-                logger.info("User wants to clarify kernel")
-                self.app.call_from_thread(
-                    self.add_ai_message,
-                    "Please tell me what you'd like to clarify or change about the kernel:",
-                )
-                # Re-enable input for feedback
+            else:  # "clarify" or None (ESC/Cancel)
+                if decision == "clarify":
+                    # User explicitly wants to provide feedback
+                    logger.info("User wants to clarify kernel")
+                    self._awaiting_clarification = True  # Set flag to expect clarification
+                    self.app.call_from_thread(
+                        self.add_ai_message,
+                        "Please tell me what you'd like to clarify or change about the kernel:",
+                    )
+                else:
+                    # Modal was cancelled (ESC or None)
+                    logger.info("User cancelled kernel review modal")
+                    self.app.call_from_thread(
+                        self.add_ai_message,
+                        "Review cancelled. Type anything to show the modal again, or say 'restart' to begin over.",
+                    )
+                # Re-enable input
                 self.app.call_from_thread(self._enable_input)
 
         except Exception as e:
@@ -556,3 +586,6 @@ stage: kernel
             )
             # Re-enable input on error
             self.app.call_from_thread(self._enable_input)
+        finally:
+            # Always reset the modal showing flag
+            self._modal_showing = False

@@ -316,6 +316,17 @@ async def test_kernel_approval_modal_restart() -> None:
     modal.dismiss.assert_called_once_with("restart")
 
 
+@pytest.mark.asyncio
+async def test_kernel_approval_modal_cancel() -> None:
+    """Test cancel option in the modal."""
+    modal = KernelApprovalModal("diff content", "test-project")
+    modal.dismiss = MagicMock()  # type: ignore
+
+    modal.action_cancel()
+
+    modal.dismiss.assert_called_once_with(None)
+
+
 def test_compute_patch_for_kernel_update() -> None:
     """Test computing patch for updating existing kernel."""
     old_kernel = """## Core Concept
