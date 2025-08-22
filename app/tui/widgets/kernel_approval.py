@@ -1,6 +1,6 @@
 """Modal widget for approving kernel changes with diff preview."""
 
-from typing import Literal
+from typing import Final, Literal
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -10,6 +10,9 @@ from textual.widgets import Button, Label, Static
 
 from app.tui.styles import get_modal_css
 
+# Modal return value for cancellation (ESC key or dismissal)
+MODAL_CANCELLED: Final[None] = None
+
 
 class KernelApprovalModal(ModalScreen[str | None]):
     """Modal for reviewing and approving kernel changes.
@@ -18,7 +21,7 @@ class KernelApprovalModal(ModalScreen[str | None]):
         "accept" - User accepts the kernel
         "clarify" - User wants to provide feedback and refine
         "restart" - User wants to start over from the beginning
-        None - User cancelled the modal (ESC key)
+        MODAL_CANCELLED - User cancelled the modal (ESC key)
     """
 
     # Use shared modal styles
@@ -110,7 +113,7 @@ class KernelApprovalModal(ModalScreen[str | None]):
 
     def action_cancel(self) -> None:
         """Cancel the modal without making a decision."""
-        self.dismiss(None)
+        self.dismiss(MODAL_CANCELLED)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press events."""

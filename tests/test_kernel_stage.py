@@ -9,7 +9,7 @@ from app.core.state import get_app_state
 from app.files.diff import compute_patch, generate_diff_preview
 from app.llm.claude_client import FakeClaudeClient, MessageDone, TextDelta
 from app.tui.views.session import SessionController
-from app.tui.widgets.kernel_approval import KernelApprovalModal
+from app.tui.widgets.kernel_approval import MODAL_CANCELLED, KernelApprovalModal
 from app.tui.widgets.session_viewer import SessionViewer
 
 
@@ -324,7 +324,7 @@ async def test_kernel_approval_modal_cancel() -> None:
 
     modal.action_cancel()
 
-    modal.dismiss.assert_called_once_with(None)
+    modal.dismiss.assert_called_once_with(MODAL_CANCELLED)
 
 
 def test_compute_patch_for_kernel_update() -> None:

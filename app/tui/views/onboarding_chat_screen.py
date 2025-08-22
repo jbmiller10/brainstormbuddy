@@ -23,13 +23,77 @@ from app.llm.claude_client import FakeClaudeClient
 from app.llm.llm_service import LLMService
 from app.tui.controllers.onboarding_controller import OnboardingController
 from app.tui.utils.text import truncate_description
-from app.tui.widgets.kernel_approval import KernelApprovalModal
+from app.tui.widgets.kernel_approval import MODAL_CANCELLED, KernelApprovalModal
 
 logger = logging.getLogger(__name__)
 
 
 class OnboardingState(Enum):
     """Conversation state tracking for onboarding flow.
+
+    State Transitions and Interactions:
+    ====================================
+
+    WELCOME
+       │
+       ├─[User enters name]
+       ▼
+    PROJECT_NAME
+       │
+       ├─[User provides project name]
+       ▼
+    BRAINDUMP
+       │
+       ├─[User describes idea]
+       ▼
+    SUMMARY_REVIEW
+       │
+       ├─[User accepts]──────────────────┐
+       │                                  │
+       ├─[User clarifies]─────┐          │
+       │     ▲                │          │
+       │     └────────────────┘          │
+       │                                  ▼
+       └─[User accepts after clarify]── QUESTIONS
+                                          │
+                         ┌─[Questions]─────┤
+                         │     ▲           │
+                         │     │           │
+                         └─[Answers]──────┘
+                                          │
+                         [All answered]───┤
+                                          ▼
+                                    KERNEL_REVIEW
+                                          │
+       ┌──────────────────────────────────┤
+       │                                  │
+       ├─[Accept]                         ├─[Clarify + feedback]
+       │                                  │      │
+       │                                  │      ├─[_awaiting_clarification=true]
+       │                                  │      │      │
+       │                                  │      │      ├─[User input]
+       │                                  │      │      │     │
+       │                                  │      │      │     └─► Regenerate kernel
+       │                                  │      │      │           │
+       │                                  │      │      │           └─► Show modal
+       │                                  │      │      │
+       │                                  │      │      └─[_awaiting_clarification=false]
+       │                                  │      │
+       │                                  │      └─► Show modal again
+       │                                  │
+       │                                  ├─[Cancel/ESC]
+       │                                  │      │
+       │                                  │      └─► Prompt to retry or restart
+       │                                  │
+       │                                  ├─[Restart]──► WELCOME
+       │                                  │
+       ▼                                  │
+    COMPLETE ◄────────────────────────────┘
+
+    Modal Interaction Flags:
+    ========================
+    - _modal_showing: Prevents duplicate modal display (thread safety)
+    - _awaiting_clarification: Validates expected clarification input
 
     Note: QUESTIONS state handles both displaying questions and receiving answers.
     There is no separate ANSWERS state - answers are processed within QUESTIONS
@@ -558,7 +622,7 @@ stage: kernel
                 # Re-enable input for new conversation
                 self.app.call_from_thread(self._enable_input)
 
-            else:  # "clarify" or None (ESC/Cancel)
+            else:  # "clarify" or MODAL_CANCELLED (ESC/Cancel)
                 if decision == "clarify":
                     # User explicitly wants to provide feedback
                     logger.info("User wants to clarify kernel")
@@ -567,8 +631,8 @@ stage: kernel
                         self.add_ai_message,
                         "Please tell me what you'd like to clarify or change about the kernel:",
                     )
-                else:
-                    # Modal was cancelled (ESC or None)
+                elif decision == MODAL_CANCELLED:
+                    # Modal was cancelled (ESC)
                     logger.info("User cancelled kernel review modal")
                     self.app.call_from_thread(
                         self.add_ai_message,
