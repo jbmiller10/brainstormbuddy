@@ -136,7 +136,7 @@ class OnboardingChatScreen(Screen[bool]):
 
     .onboarding-loading {
         color: $text-muted;
-        font-style: italic;
+        text-style: italic;
     }
 
     """
