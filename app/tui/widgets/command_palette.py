@@ -217,6 +217,13 @@ class CommandPalette(Container):
             modal = ResearchImportModal(workstream="research", db_path=db_path)
             await self.app.push_screen_wait(modal)
 
+        # Handle new project command
+        elif command == "new project":
+            from app.tui.views.onboarding_chat_screen import OnboardingChatScreen
+
+            # Launch the conversational onboarding screen
+            self.app.push_screen(OnboardingChatScreen())
+
         # Handle synthesis command
         elif command == "synthesis":
             from pathlib import Path
