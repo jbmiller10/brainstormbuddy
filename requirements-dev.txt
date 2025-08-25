@@ -144,7 +144,7 @@ rich==14.1.0
     #   textual
     #   twine
     #   typer
-ruff==0.12.9
+ruff==0.12.10
     # via brainstormbuddy (pyproject.toml)
 secretstorage==3.3.3
     # via keyring
