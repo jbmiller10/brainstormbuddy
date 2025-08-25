@@ -20,7 +20,7 @@ charset-normalizer==3.4.3
     # via requests
 click==8.2.1
     # via typer
-coverage==7.10.4
+coverage==7.10.5
     # via pytest-cov
 cryptography==45.0.6
     # via secretstorage
