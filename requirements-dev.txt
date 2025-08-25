@@ -156,7 +156,7 @@ twine==6.1.0
     # via brainstormbuddy (pyproject.toml)
 typer==0.16.1
     # via brainstormbuddy (pyproject.toml)
-types-pyyaml==6.0.12.20250809
+types-pyyaml==6.0.12.20250822
     # via brainstormbuddy (pyproject.toml)
 typing-extensions==4.14.1
     # via
